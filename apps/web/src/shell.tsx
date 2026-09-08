@@ -259,13 +259,6 @@ export function Shell() {
           </div>
           <RailNavigation expanded={primaryMenuExpanded} />
           <div className="mt-auto flex w-full flex-col gap-2 border-t border-border pt-2">
-            {(() => {
-              const link = <NavLink to={settingsNav[0]} aria-label="设置" className={(props) => railLinkClass({ ...props, expanded: primaryMenuExpanded })}>
-                <Settings size={18} className="shrink-0" aria-hidden="true" />
-                {primaryMenuExpanded && <span className="truncate text-sm font-medium">设置</span>}
-              </NavLink>
-              return primaryMenuExpanded ? link : <Tooltip content="设置" side="right" triggerClassName="w-full">{link}</Tooltip>
-            })()}
             <Tooltip content={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'} side="right" triggerClassName="w-full">
               <Button variant="ghost" className={cn('min-h-10 w-full gap-3 px-3 text-muted-foreground hover:text-foreground', !primaryMenuExpanded && 'justify-center')} onClick={() => runCommand('theme.toggle')} aria-label={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'}>
                 {effectiveTheme === 'light' ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
@@ -284,6 +277,13 @@ export function Shell() {
                 {primaryMenuExpanded && <span className="flex-1 text-left text-sm font-medium">收起侧栏</span>}
               </Button>
             </Tooltip>
+            {(() => {
+              const link = <NavLink to={settingsNav[0]} aria-label="设置" className={(props) => railLinkClass({ ...props, expanded: primaryMenuExpanded })}>
+                <Settings size={18} className="shrink-0" aria-hidden="true" />
+                {primaryMenuExpanded && <span className="truncate text-sm font-medium">设置</span>}
+              </NavLink>
+              return primaryMenuExpanded ? link : <Tooltip content="设置" side="right" triggerClassName="w-full">{link}</Tooltip>
+            })()}
           </div>
         </aside>
 

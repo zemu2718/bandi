@@ -28,8 +28,8 @@ export const aiClients: AiClient[] = [
 ]
 
 export const assets: Asset[] = [
-  { id:'sop-delivery', name:'软件功能交付', kind:'SOP', owner:'产品与研发', scope:'部门级', refs:7, path:'.claude/sops/software-delivery.md', status:'已保存' },
+  { id:'sop-delivery', name:'软件功能交付', kind:'SOP', owner:'星河科技', scope:'Team 共享', refs:7, path:'.claude/sops/software-delivery.md', status:'已保存' },
   { id:'rule-common', name:'公共安全边界', kind:'Rules', owner:'星河科技', scope:'公司共享', refs:6, path:'~/.bandi/shared/rules/common.md', status:'已保存' },
-  { id:'skill-review', name:'代码审查', kind:'Skill', owner:'研发部', scope:'公司共享', refs:4, path:'~/.bandi/shared/skills/code-review', status:'已保存' },
+  { id:'skill-review', name:'代码审查', kind:'Skill', owner:'星河科技', scope:'公司共享', refs:4, path:'~/.bandi/shared/skills/code-review', status:'已保存' },
   { id:'mcp-bandi', name:'Bandi MCP', kind:'MCP', owner:'系统', scope:'用户级', refs:13, path:'.claude.json', status:'已配置' },
 ]

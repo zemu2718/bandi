@@ -134,7 +134,6 @@ describe('应用壳导航布局', () => {
       expect(within(navigation).getByRole('link', { name })).toBeInTheDocument()
     }
     expect(within(navigation).queryByRole('link', { name: '组织治理' })).not.toBeInTheDocument()
-    expect(within(rail).getByRole('link', { name: '设置' })).toBeInTheDocument()
     expect(within(navigation).queryByRole('link', { name: /概览/ })).not.toBeInTheDocument()
     expect(within(navigation).queryByRole('link', { name: '项目' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toBeInTheDocument()
@@ -155,7 +154,6 @@ describe('应用壳导航布局', () => {
     const agents = initialState.agents.map((agent) => ({ ...agent, files: agent.files.map((file) => ({ ...file, status: '已同步' })) }))
     renderShell('expanded', 'light', '/', [], {
       agents,
-      memoryCandidates: [],
       agentDiagnostics: [],
       agentRecoveryOperations: [],
     })
@@ -179,7 +177,10 @@ describe('应用壳导航布局', () => {
     const rail = screen.getByLabelText('Bandi 配置管理')
 
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'expanded')
-    expect(within(rail).getByRole('button', { name: '收起侧栏' })).toHaveAttribute('aria-expanded', 'true')
+    const collapseButton = within(rail).getByRole('button', { name: '收起侧栏' })
+    const settingsLink = within(rail).getByRole('link', { name: '设置' })
+    expect(collapseButton).toHaveAttribute('aria-expanded', 'true')
+    expect(collapseButton.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toHaveTextContent('星河科技')
     expect(within(rail).getByText('任务简报')).toBeInTheDocument()
 

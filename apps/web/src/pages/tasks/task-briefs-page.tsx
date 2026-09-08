@@ -4,7 +4,7 @@ import { Button } from '../../components/ui/button'
 import { AppDialog } from '../../components/ui/dialog'
 import { MockBoundaryNote, EmptyState, EntityTabs, PageHeader } from '../../components/app/page'
 import { ErrorNotice, errorFromCause, type UserFacingError } from '../../components/app/error-notice'
-import { generateEntityId, isDesktopRuntime, removeTaskBriefV2, saveTaskBriefV2 } from '../../desktop-bridge'
+import { generateEntityId, isDesktopRuntime, removeTaskBriefV4, saveTaskBriefV4 } from '../../desktop-bridge'
 import { useApp } from '../../state'
 import type { TaskBriefDto } from '../../contracts'
 
@@ -50,20 +50,23 @@ export function TaskBriefsPage() {
 
 function TaskBriefList({ items, selectedId, onSelect }: { items: TaskBriefDto[]; selectedId?: string; onSelect: (id: string) => void }) {
   if (!items.length) return <p className="p-6 text-center text-sm text-muted-foreground">此分类中没有简报</p>
-  return <div className="divide-y divide-border">{items.map((item) => <button key={item.id} type="button" aria-current={item.id === selectedId ? 'true' : undefined} className="block min-h-16 w-full px-4 py-3 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-[current=true]:bg-muted" onClick={() => onSelect(item.id)}><b className="block truncate text-sm">{item.title}</b><span className="mt-1 block truncate text-xs text-muted-foreground">{item.brief || '未填写内容'}</span></button>)}</div>
+  return <div className="divide-y divide-border">{items.map((item) => <button key={item.id} type="button" aria-current={item.id === selectedId ? 'true' : undefined} className="block min-h-16 w-full px-4 py-3 text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-[current=true]:bg-muted" onClick={() => onSelect(item.id)}><b className="block truncate text-sm">{item.title}</b><span className="mt-1 block truncate text-xs text-muted-foreground">{item.goal}</span></button>)}</div>
 }
 
 function TaskBriefDetail({ item, onBack, onEdit }: { item: TaskBriefDto; onBack: () => void; onEdit: () => void }) {
   return <article className="min-w-0 p-5 sm:p-6" aria-labelledby="task-brief-detail-title">
     <Button variant="ghost" size="sm" className="mb-4 -ml-2 lg:hidden" onClick={onBack}><ArrowLeft size={15} aria-hidden="true" />返回简报列表</Button>
     <div className="flex flex-wrap items-start justify-between gap-3"><h2 id="task-brief-detail-title" className="break-words text-xl font-semibold">{item.title}</h2><Button variant="outline" size="sm" onClick={onEdit}>编辑</Button></div>
-    <div className="mt-6 border-t border-border pt-5"><div className="text-xs font-medium text-muted-foreground">内容</div><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7">{item.brief || '未填写内容'}</p></div>
+    <dl className="mt-6 grid gap-5 border-t border-border pt-5">{[['目标', item.goal], ['背景', item.context], ['约束', item.constraints], ['期望产出', item.expectedOutput]].map(([label, value]) => <div key={label}><dt className="text-xs font-medium text-muted-foreground">{label}</dt><dd className="mt-2 whitespace-pre-wrap break-words text-sm leading-7">{value || '未填写'}</dd></div>)}</dl>
   </article>
 }
 
 function TaskBriefForm({ initial, teamId, desktop, onClose, onSaved, onRemoved }: { initial?: TaskBriefDto; teamId: string; desktop: boolean; onClose: () => void; onSaved: (taskBrief: TaskBriefDto) => void; onRemoved: (taskBriefId: string) => void }) {
   const [title, setTitle] = useState(initial?.title ?? '')
-  const [brief, setBrief] = useState(initial?.brief ?? '')
+  const [goal, setGoal] = useState(initial?.goal ?? '')
+  const [context, setContext] = useState(initial?.context ?? '')
+  const [constraints, setConstraints] = useState(initial?.constraints ?? '')
+  const [expectedOutput, setExpectedOutput] = useState(initial?.expectedOutput ?? '')
   const [archivedAt, setArchivedAt] = useState(initial?.archivedAt)
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -71,16 +74,18 @@ function TaskBriefForm({ initial, teamId, desktop, onClose, onSaved, onRemoved }
   const [confirmingRemoval, setConfirmingRemoval] = useState(false)
   const [error, setError] = useState<UserFacingError>()
   const titleRef = useRef<HTMLInputElement>(null)
+  const goalRef = useRef<HTMLTextAreaElement>(null)
 
   const save = async () => {
     setSubmitted(true)
     if (!title.trim()) { titleRef.current?.focus(); return }
+    if (!goal.trim()) { goalRef.current?.focus(); return }
     if (!teamId || saving) return
     setSaving(true); setError(undefined)
     try {
       const id = initial?.id ?? (desktop ? await generateEntityId('task', `${teamId}-${title.trim()}`) : `task-${crypto.randomUUID()}`)
-      const taskBrief: TaskBriefDto = { id, teamId, title: title.trim(), brief: brief.trim() || undefined, archivedAt }
-      onSaved(desktop ? await saveTaskBriefV2(taskBrief) : taskBrief)
+      const taskBrief: TaskBriefDto = { id, teamId, title: title.trim(), goal: goal.trim(), context: context.trim(), constraints: constraints.trim(), expectedOutput: expectedOutput.trim(), archivedAt }
+      onSaved(desktop ? await saveTaskBriefV4(taskBrief) : taskBrief)
     } catch (cause) { setError(errorFromCause(cause, '无法保存任务简报', '简报内容仍保留，请检查后重试。')) }
     finally { setSaving(false) }
   }
@@ -88,7 +93,7 @@ function TaskBriefForm({ initial, teamId, desktop, onClose, onSaved, onRemoved }
     if (!initial || removing) return
     setRemoving(true); setError(undefined)
     try {
-      if (desktop) await removeTaskBriefV2(initial.id)
+      if (desktop) await removeTaskBriefV4(initial.id)
       onRemoved(initial.id)
     } catch (cause) {
       setError(errorFromCause(cause, '无法删除任务简报', '任务简报没有更改。请重试。'))
@@ -96,7 +101,7 @@ function TaskBriefForm({ initial, teamId, desktop, onClose, onSaved, onRemoved }
     } finally { setRemoving(false) }
   }
 
-  return <><AppDialog open onOpenChange={(open) => { if (!open && !saving && !removing) onClose() }} title={initial ? '编辑任务简报' : '新建任务简报'} description="保存目标、背景、约束和期望产出；不记录执行状态。" size="lg" footer={<><Button variant="outline" disabled={saving || removing} onClick={onClose}>取消</Button><Button disabled={saving || removing} aria-busy={saving} onClick={() => void save()}>{saving ? '正在保存…' : '保存简报'}</Button></>}><div className="grid gap-5"><div className="flex justify-end">{initial && <Button variant="ghost" size="sm" disabled={saving || removing} onClick={() => setConfirmingRemoval(true)}><Trash2 size={16} aria-hidden="true" />删除任务简报</Button>}</div><label className="text-sm font-medium" htmlFor="task-title">标题<div className="mt-2"><input ref={titleRef} autoFocus id="task-title" className="h-10 w-full px-3" value={title} onChange={(event) => setTitle(event.target.value)} aria-invalid={submitted && !title.trim()} aria-describedby={submitted && !title.trim() ? 'task-title-error' : undefined} /></div>{submitted && !title.trim() && <small id="task-title-error" className="mt-1 block text-danger">请输入标题。</small>}</label><label className="text-sm font-medium" htmlFor="task-brief">简报（可选）<textarea id="task-brief" className="mt-2 min-h-32 w-full resize-y p-3" value={brief} onChange={(event) => setBrief(event.target.value)} placeholder="写明目标、背景、约束和期望产出" /></label>{initial && <Button type="button" variant="outline" className="justify-self-start" disabled={saving || removing} onClick={() => setArchivedAt(archivedAt ? undefined : now())}>{archivedAt ? <ArchiveRestore size={16} aria-hidden="true" /> : <Archive size={16} aria-hidden="true" />}{archivedAt ? '恢复任务简报' : '归档任务简报'}</Button>}{error && <ErrorNotice error={error} />}</div></AppDialog>
+  return <><AppDialog open onOpenChange={(open) => { if (!open && !saving && !removing) onClose() }} title={initial ? '编辑任务简报' : '新建任务简报'} description="保存目标、背景、约束和期望产出；不记录执行状态。" size="lg" footer={<><Button variant="outline" disabled={saving || removing} onClick={onClose}>取消</Button><Button disabled={saving || removing} aria-busy={saving} onClick={() => void save()}>{saving ? '正在保存…' : '保存简报'}</Button></>}><div className="grid gap-5"><div className="flex justify-end">{initial && <Button variant="ghost" size="sm" disabled={saving || removing} onClick={() => setConfirmingRemoval(true)}><Trash2 size={16} aria-hidden="true" />删除任务简报</Button>}</div><label className="text-sm font-medium" htmlFor="task-title">标题<div className="mt-2"><input ref={titleRef} autoFocus id="task-title" className="h-10 w-full px-3" value={title} onChange={(event) => setTitle(event.target.value)} aria-invalid={submitted && !title.trim()} aria-describedby={submitted && !title.trim() ? 'task-title-error' : undefined} /></div>{submitted && !title.trim() && <small id="task-title-error" className="mt-1 block text-danger">请输入标题。</small>}</label><label className="text-sm font-medium" htmlFor="task-goal">目标<textarea ref={goalRef} id="task-goal" className="mt-2 min-h-24 w-full resize-y p-3" value={goal} onChange={(event) => setGoal(event.target.value)} aria-invalid={submitted && !goal.trim()} aria-describedby={submitted && !goal.trim() ? 'task-goal-error' : undefined} />{submitted && !goal.trim() && <small id="task-goal-error" className="mt-1 block text-danger">请输入目标。</small>}</label><label className="text-sm font-medium" htmlFor="task-context">背景（可选）<textarea id="task-context" className="mt-2 min-h-24 w-full resize-y p-3" value={context} onChange={(event) => setContext(event.target.value)} /></label><label className="text-sm font-medium" htmlFor="task-constraints">约束（可选）<textarea id="task-constraints" className="mt-2 min-h-24 w-full resize-y p-3" value={constraints} onChange={(event) => setConstraints(event.target.value)} /></label><label className="text-sm font-medium" htmlFor="task-expected-output">期望产出（可选）<textarea id="task-expected-output" className="mt-2 min-h-24 w-full resize-y p-3" value={expectedOutput} onChange={(event) => setExpectedOutput(event.target.value)} /></label>{initial && <Button type="button" variant="outline" className="justify-self-start" disabled={saving || removing} onClick={() => setArchivedAt(archivedAt ? undefined : now())}>{archivedAt ? <ArchiveRestore size={16} aria-hidden="true" /> : <Archive size={16} aria-hidden="true" />}{archivedAt ? '恢复任务简报' : '归档任务简报'}</Button>}{error && <ErrorNotice error={error} />}</div></AppDialog>
     <AppDialog open={confirmingRemoval} onOpenChange={(open) => { if (!open && !removing) setConfirmingRemoval(false) }} title="删除任务简报" description={initial ? `删除“${initial.title}”这份可复用工作简报。` : undefined} footer={<><Button variant="outline" disabled={removing} onClick={() => setConfirmingRemoval(false)}>取消</Button><Button variant="danger" disabled={removing} aria-busy={removing} onClick={() => void remove()}>{removing ? '正在删除…' : '删除任务简报'}</Button></>}><div className="rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm leading-6"><b>保留与影响</b><p className="mt-2 text-muted-foreground">Team、Agent 和电脑文件不会被删除。此操作不会终止任何 AI 编程工具会话或执行中的任务。</p></div></AppDialog>
   </>
 }

@@ -60,7 +60,6 @@ const assetKindLabels: Record<string, string> = {
   permissions: '权限',
   sop: 'SOP',
   SOP: 'SOP',
-  orchestration: '协作策略',
   hooks: '钩子',
   hook: '钩子',
   Hook: '钩子',

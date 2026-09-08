@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyAgentConfig, getAgentConfigPath, isAgentConfigPayload, normalizeAgentName, parseAgentComponentRefs, parseAgentContextConfig, parseAgentMcpRefs, parseAgentOrchestrationPolicy, parseAgentPermissions, parseAgentRuleRefs, parseAgentSkillRefs, parseAgentSopRefs, serializeAgentConfig, snapshotAgentConfig, validateAgentName, validateContextPolicy, validateContextWindowTokens } from '../agent-config-model'
+import { applyAgentConfig, getAgentConfigPath, isAgentConfigPayload, normalizeAgentName, parseAgentComponentRefs, parseAgentContextConfig, parseAgentMcpRefs, parseAgentPermissions, parseAgentRuleRefs, parseAgentSkillRefs, parseAgentSopRefs, serializeAgentConfig, snapshotAgentConfig, validateAgentName, validateContextPolicy, validateContextWindowTokens } from '../agent-config-model'
 import { initialAgents } from '../domain'
 
 const agent = initialAgents.find((item) => item.id === 'zhouce')!
@@ -36,16 +36,6 @@ describe('Agent 配置模型', () => {
     expect(applied?.outputProfileId).toBe('output-verifiable-delivery')
     expect(serializeAgentConfig(agent, payload)).toContain('triggerRatio: 0.85')
     expect(serializeAgentConfig(agent, payload)).toContain('outputProfileId: "output-verifiable-delivery"')
-  })
-
-  it('新身份配置不再写入主管副本，但继续接受旧字段', () => {
-    const legacy = { ...agent, managerAgentId: 'legacy-manager' }
-    const payload = snapshotAgentConfig(legacy, 'identity')!
-    expect(payload.kind).toBe('identity')
-    if (payload.kind !== 'identity') throw new Error('身份快照类型错误')
-    expect(payload.value.managerAgentId).toBe('legacy-manager')
-    expect(isAgentConfigPayload(payload)).toBe(true)
-    expect(serializeAgentConfig(legacy, payload)).not.toContain('managerAgentId:')
   })
 
   it('在身份配置中稳定保存头像引用并拒绝任意路径', () => {
@@ -135,14 +125,6 @@ describe('Agent 配置模型', () => {
     expect(parseAgentComponentRefs(content.replace(/}]$/, `},{"parameterId":"${parameterId}","type":"boolean","value":false}]`), key)).toBeUndefined()
     expect(parseAgentComponentRefs(content.replace('"type":"boolean","value":true', '"type":"secret","value":"token"'), key)).toBeUndefined()
     expect(parseAgentComponentRefs(content.replace('"type":"boolean","value":true', `"type":"string","value":"${'x'.repeat(4097)}"`), key)).toBeUndefined()
-  })
-
-  it('解析自身生成的规范 Orchestration YAML', () => {
-    const content = serializeAgentConfig(agent, { kind: 'orchestration', value: agent.orchestrationPolicy })!
-    expect(parseAgentOrchestrationPolicy(content)).toEqual(agent.orchestrationPolicy)
-    expect(parseAgentOrchestrationPolicy(content.replace('schemaVersion: 1', 'schemaVersion: 2'))).toBeUndefined()
-    expect(parseAgentOrchestrationPolicy(content.replace(/"maxDelegationDepth":\d+/, '"maxDelegationDepth":33'))).toBeUndefined()
-    expect(parseAgentOrchestrationPolicy(content.replace(/}$/, ',"unknown":true}'))).toBeUndefined()
   })
 
   it('解析自身生成的规范 Permissions YAML', () => {

@@ -27,7 +27,7 @@ describe('演示状态', () => {
       id: 'operation-1',
       agentId: 'worker',
       operationKind: 'create' as const,
-      status: 'organization_pending' as const,
+      status: 'team_pending' as const,
       createdAt: '2026-09-02T00:00:00Z',
     }
     const hydrated = reducer(initialState, {
@@ -39,52 +39,6 @@ describe('演示状态', () => {
       type: 'SYNC_AGENT_RECOVERY',
       operation: { ...pending, status: 'completed' },
     }).agentRecoveryOperations).toEqual([])
-  })
-
-  it('静默恢复 Desktop 正式 Memory 候选并区分正式 Revision', () => {
-    const hash = `sha256:${'a'.repeat(64)}` as const
-    const bundle = {
-      requestId: 'list-memory-worker',
-      space: {
-        id: 'memory-agent-worker',
-        scopeType: 'agent_long_term' as const,
-        scopeKey: { kind: 'agent_long_term' as const, agentId: 'worker' },
-        owner: { kind: 'agent' as const, agentId: 'worker' },
-        stewardAgentId: 'worker',
-        reviewPrincipal: { kind: 'agent' as const, agentId: 'manager' },
-        reviewPolicy: 'independent_reviewer' as const,
-        visibilityPolicy: 'agent_private' as const,
-        storageProfileVersion: 'memory-v3' as const,
-        state: 'active' as const,
-        storageLocator: { rootKind: 'managed' as const, displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' },
-        currentRevisionId: 'memory-revision-1',
-        contentHash: hash,
-        updatedAt: '2026-09-01T00:00:00Z',
-      },
-      candidate: {
-        id: 'candidate-written',
-        spaceId: 'memory-agent-worker',
-        proposerAgentId: 'worker',
-        reviewPrincipal: { kind: 'agent' as const, agentId: 'manager' },
-        source: { kind: 'manual' as const, label: 'test' },
-        summary: '已写入候选',
-        proposedContent: 'new',
-        proposedContentHash: hash,
-        submittedBaseline: { id: 'base', assetId: 'memory-agent-worker', containerId: 'memory-agent-worker', assetContentHash: hash, containerContentHash: hash },
-        status: 'written' as const,
-        version: 3,
-        createdAt: '2026-09-01T00:00:00Z',
-        updatedAt: '2026-09-01T00:01:00Z',
-      },
-      currentContent: 'new',
-    }
-    const state = { ...initialState, notice: { id: 'existing', tone: 'info' as const, title: '保留通知' } }
-
-    const result = reducer(state, { type: 'HYDRATE_FORMAL_MEMORY_REVIEWS', bundles: [bundle] })
-
-    expect(result.notice).toBe(state.notice)
-    expect(result.memoryCandidates.find((item) => item.id === bundle.candidate.id)?.status).toBe('已保存为正式版本')
-    expect(result.memorySpaces.find((item) => item.id === bundle.space.id)?.revision).toBe('memory-revision-1')
   })
 
   it('包含九个唯一内置客户端和空的会话最近 Agent', () => {
@@ -140,9 +94,9 @@ describe('演示状态', () => {
     const personal = initialState.teams.find((team) => team.id === 'team-personal')!
     const selected = { ...initialState, currentTeamId: initialState.teams[0].id }
     const snapshot = {
-      schemaVersion: 3 as const,
+      schemaVersion: 4 as const,
       teams: initialState.teams,
-      departments: [], roles: [], taskBriefs: [], serviceGrants: [],
+      taskBriefs: [],
     }
 
     expect(reducer(selected, {
@@ -165,27 +119,6 @@ describe('演示状态', () => {
     expect(refreshing.hydration.managedAgents).toBe('loading')
   })
 
-  it('Agent 与组织 hydration 顺序不影响 Team 和 Department 成员关系', () => {
-    const agent = { ...initialState.agents[0], id: 'hydrated-agent', teamId: 'team-a', primaryDepartmentId: 'department-a' }
-    const snapshot = {
-      schemaVersion: 3 as const,
-      teams: [{ id: 'team-a', name: 'Team A', memberAgentIds: [], departmentIds: ['department-a'], sharedAssetIds: [] }],
-      departments: [{ id: 'department-a', teamId: 'team-a', name: 'Department A', status: 'active' as const, responsibilities: [], boundaries: [], delegationDepth: 0, memberAgentIds: [], ownedSopIds: [] }], roles: [], taskBriefs: [], serviceGrants: [],
-    }
-    const emptyDesktop = { ...initialState, runtime: 'desktop' as const, agents: [], teams: [] }
-
-    const agentsFirst = reducer(reducer(emptyDesktop, { type: 'HYDRATE_MANAGED_AGENTS', agents: [agent], diagnostics: [] }), { type: 'HYDRATE_ORGANIZATION', snapshot })
-    const organizationFirst = reducer(reducer(emptyDesktop, { type: 'HYDRATE_ORGANIZATION', snapshot }), { type: 'HYDRATE_MANAGED_AGENTS', agents: [agent], diagnostics: [] })
-
-    expect(agentsFirst.teams).toEqual(organizationFirst.teams)
-    expect(agentsFirst.teams.find((team) => team.id === 'team-a')?.memberAgentIds).toEqual([agent.id])
-    expect(agentsFirst.departments).toEqual(organizationFirst.departments)
-    expect(agentsFirst.departments[0]).toMatchObject({ memberAgentIds: [agent.id], members: 1 })
-    expect(agentsFirst.teams.find((team) => team.id === 'team-personal')).toBeDefined()
-    expect(agentsFirst.currentTeamId).toBe('team-personal')
-    expect(organizationFirst.currentTeamId).toBe('team-personal')
-  })
-
   it('onboarding 初始启用，完成后只返回新内存状态', () => {
     expect(initialState.onboarding).toEqual({ status: 'active' })
     const completed = reducer(initialState, { type: 'COMPLETE_ONBOARDING' })
@@ -193,31 +126,6 @@ describe('演示状态', () => {
     expect(completed).not.toBe(initialState)
     expect(initialState.onboarding).toEqual({ status: 'active' })
     expect(reducer(completed, { type: 'COMPLETE_ONBOARDING' })).toBe(completed)
-  })
-
-  it('持久化治理实体同步会回写规范化结果并保留其他实体', () => {
-    const team = { ...initialState.teams[0], name: '规范化Team' }
-    const department = { ...initialState.departments[0], name: '规范化部门' }
-    const role = { ...initialState.roles[0], name: '规范化岗位' }
-
-    const withTeam = reducer(initialState, { type: 'SYNC_PERSISTED_TEAMS', teams: [team] })
-    const withDepartment = reducer(withTeam, { type: 'SYNC_PERSISTED_DEPARTMENTS', departments: [department] })
-    const result = reducer(withDepartment, { type: 'SYNC_PERSISTED_ROLES', roles: [role] })
-
-    expect(result.teams.find((item) => item.id === team.id)?.name).toBe('规范化Team')
-    expect(result.departments.find((item) => item.id === department.id)?.name).toBe('规范化部门')
-    expect(result.roles.find((item) => item.id === role.id)?.name).toBe('规范化岗位')
-    expect(result.teams).toHaveLength(initialState.teams.length)
-  })
-
-  it.each([
-    ['light', 'dark'],
-    ['dark', 'light'],
-  ] as const)('根据当前生效的 %s 主题切换为 %s', (effectiveTheme, expected) => {
-    const result = reducer(initialState, { type: 'THEME', effectiveTheme })
-
-    expect(result.theme).toBe(expected)
-    expect(result.uiPreferences.theme).toBe(expected)
   })
 
   it('保存指令生成新的不可变配置版本', () => {
@@ -408,15 +316,20 @@ describe('演示状态', () => {
     expect(result.teams).toBe(initialState.teams)
   })
 
-  it('拒绝创建提议者无法写入的 MemoryCandidate', () => {
+  it('Web 直接保存长期 Memory 并递增 revision', () => {
+    const space = initialState.memorySpaces[0]
     const result = reducer(initialState, {
-      type: 'CREATE_MEMORY_CANDIDATE',
-      candidate: {
-        id: 'MC-invalid', spaceId: 'mem-agent-zhouce', proposerAgentId: 'linxu', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhouce' },
-        summary: '错误目标', current: '', proposed: 'x', status: '待审核',
-      },
+      type: 'SAVE_MEMORY',
+      spaceId: space.id,
+      content: '更新后的长期事实',
     })
-    expect(result.memoryCandidates).toBe(initialState.memoryCandidates)
-    expect(result.notice?.tone).toBe('error')
+
+    expect(result.memorySpaces[0]).toMatchObject({
+      id: space.id,
+      content: '更新后的长期事实',
+      revision: 'r19',
+    })
+    expect(result.notice).toMatchObject({ tone: 'success', title: '长期记忆已保存' })
   })
+
 })

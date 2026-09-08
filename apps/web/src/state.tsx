@@ -23,11 +23,11 @@ import { applyAgentConfig, describeAgentConfigFile, getAgentConfigPath, isAgentC
 import { appendConfigRevision } from './config-revisions'
 import { projectSharedAssets } from './discovered-assets'
 import { configurationEnvironmentPath, isConfigurationEnvironment, normalizeConfigurationEnvironment, serializeConfigurationEnvironment, validateConfigurationEnvironment } from './configuration-environment-model'
-import type { AgentRecoveryOperationSummaryDto, Diagnostic, OrganizationSnapshotV3, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentRecoveryOperationSummaryDto, Diagnostic, LongTermDomainSnapshotDtoV4, TaskBriefDto, TeamDto } from './contracts'
 import type { TerminalId } from './terminal-model'
 import type { MainMenuLayoutPreference } from './navigation-layout'
-import { discoverConfig, isDesktopRuntime, listAgentRecoveryOperations, listAgents, loadLongTermDomainSnapshotV3, loadToolConfiguration, type ToolConfigurationSnapshotDto } from './desktop-bridge'
-import { organizationV3ToView } from './long-term-domain'
+import { discoverConfig, isDesktopRuntime, listAgentRecoveryOperations, listAgents, loadLongTermDomainSnapshotV4, loadToolConfiguration, type ToolConfigurationSnapshotDto } from './desktop-bridge'
+import { longTermDomainV4ToView } from './long-term-domain'
 import { applyToolConfigurationSnapshot, emptyToolConfiguration, type ToolConfigurationState } from './tool-configuration'
 import {
   DEFAULT_UI_PREFERENCES,
@@ -139,7 +139,7 @@ export type Action =
   | { type: 'HYDRATE_AGENT_RECOVERY'; operations: AgentRecoveryOperationSummaryDto[] }
   | { type: 'SYNC_AGENT_RECOVERY'; operation: AgentRecoveryOperationSummaryDto; agent?: FullAgent }
   | { type: 'FAIL_AGENT_RECOVERY_HYDRATION'; message: string }
-  | { type: 'HYDRATE_ORGANIZATION'; snapshot: OrganizationSnapshotV3 }
+  | { type: 'HYDRATE_ORGANIZATION'; snapshot: LongTermDomainSnapshotDtoV4 }
   | { type: 'FAIL_ORGANIZATION_HYDRATION'; message: string }
   | { type: 'HYDRATE_SHARED_ASSETS'; assets: FullAsset[] }
   | { type: 'FAIL_SHARED_ASSETS_HYDRATION'; message: string }
@@ -342,7 +342,7 @@ function saveAgentConfig(state: State, agentId: string, payload: AgentConfigPayl
   }
 }
 
-const legacyDialog = (sheet: Exclude<Extract<Action, { type: 'SHEET' }>['sheet'], null>, state: State): Exclude<DialogState, null> => {
+const legacyDialog = (sheet: Exclude<Extract<Action, { type: 'SHEET' }>['sheet'], null>): Exclude<DialogState, null> => {
   if (sheet === 'claude') return { kind: 'client-guide' }
   if (sheet === 'permission') return { kind: 'permission', agentId: 'zhouce' }
   if (sheet === 'shared') return { kind: 'shared', assetId: 'rule-common' }
@@ -383,7 +383,7 @@ export function reducer(state: State, action: Action): State {
     case 'CLOSE_DIALOG':
       return { ...state, dialog: null }
     case 'SHEET':
-      return { ...state, dialog: action.sheet ? legacyDialog(action.sheet, state) : null }
+      return { ...state, dialog: action.sheet ? legacyDialog(action.sheet) : null }
     case 'CREATE_AGENT': {
       if (state.agents.some((item) => item.id === action.agent.id || item.name === action.agent.name)) return state
       const initialized = initializeAgentConfigRecords(action.agent, state.configRevisions)
@@ -463,7 +463,7 @@ export function reducer(state: State, action: Action): State {
         hydrationErrors: { ...state.hydrationErrors, agentRecovery: action.message },
       }
     case 'HYDRATE_ORGANIZATION': {
-      const view = organizationV3ToView(action.snapshot)
+      const view = longTermDomainV4ToView(action.snapshot)
       const teams = reconcileAgentTeamMembership(view.teams, state.agents)
       return {
         ...state,
@@ -765,7 +765,7 @@ export function AppProvider({ children, initialState: providedState }: { childre
     void listAgents()
       .then(({ agents, diagnostics }) => dispatch({ type: 'HYDRATE_MANAGED_AGENTS', agents, diagnostics }))
       .catch((error) => dispatch({ type: 'FAIL_MANAGED_AGENTS_HYDRATION', message: errorMessage(error) }))
-    void loadLongTermDomainSnapshotV3()
+    void loadLongTermDomainSnapshotV4()
       .then((snapshot) => dispatch({ type: 'HYDRATE_ORGANIZATION', snapshot }))
       .catch((error) => dispatch({ type: 'FAIL_ORGANIZATION_HYDRATION', message: errorMessage(error) }))
     void discoverConfig({ requestId: 'hydrate-shared-assets', includeClaudeUserRoot: false })

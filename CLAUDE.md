@@ -2,7 +2,7 @@
 
 ## 产品与界面边界
 
-Bandi Desktop 的首要职责是以简单、明了、大气的界面，可视化管理 Team、长期 Agent、可选的 Team-scoped TaskBrief 及其长期配置资产，包括 Instructions、Skills、Memory、Rules、MCP、权限和工作流（SOP）。
+Bandi Desktop 的首要职责是以简单、明了、大气的界面，作为 9 个内置 AI 编程工具的长期 Agent / 配置管理器，可视化管理 Team、长期 Agent、可选的 Team-scoped TaskBrief 及其长期配置资产，包括 Instructions、Skills、Memory、Rules、MCP、权限和工作流（SOP）。内置工具固定为 Claude Code、Claude Desktop、Codex、Gemini、Grok、OpenCode、OpenClaw、Hermes 和 Pi。
 
 ### 核心职责边界
 

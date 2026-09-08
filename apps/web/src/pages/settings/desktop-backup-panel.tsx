@@ -191,7 +191,7 @@ export function DesktopBackupPanel() {
 
   return <div className="space-y-5">
     <section className="panel flex flex-wrap items-start justify-between gap-4 p-5">
-      <div><b>快照与恢复</b><p className="mt-1 text-sm leading-6 text-muted-foreground">保存所选受管配置文件，并可按资产恢复。</p><details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">查看安全范围</summary><p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">只包含 Bandi 当前发现并由你选中的可写受管配置文件。不包含 Team、部门、岗位、项目目录记录、跨部门服务、领域数据或正式记忆文件；凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入。</p></details></div>
+      <div><b>快照与恢复</b><p className="mt-1 text-sm leading-6 text-muted-foreground">保存所选受管配置文件，并可按资产恢复。</p><details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">查看安全范围</summary><p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">只包含 Bandi 当前发现并由你选中的可写受管配置文件。不包含 Team、TaskBrief、项目目录记录和其他领域数据或正式记忆文件；凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入。</p></details></div>
       <Button ref={createTriggerRef} disabled={loading || !writableAssets.length} onClick={() => setCreateOpen(true)}><Plus size={15} aria-hidden="true" />创建本地快照</Button>
     </section>
     {error && <ErrorNotice error={error} />}

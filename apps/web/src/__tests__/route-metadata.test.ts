@@ -12,20 +12,8 @@ describe('route metadata', () => {
 
   it('解析实体名称和主导航归属', () => {
     expect(resolveRouteMetadata('/agents/agent-a', {
-      agents: [{ id: 'agent-a', name: '设计主管' }],
-    })).toEqual({ section: 'agents', title: '设计主管', agentId: 'agent-a' })
-  })
-
-  it('根据组织页选择的部门解析标题', () => {
-    const context = { departments: [{ id: 'dev', name: '研发部' }] }
-    expect(resolveRouteMetadata('/organization?team=xinghe&department=dev', context)).toEqual({
-      section: 'organization',
-      title: '研发部',
-    })
-    expect(resolveRouteMetadata('/organization?department=missing', context)).toEqual({
-      section: 'organization',
-      title: '部门与岗位',
-    })
+      agents: [{ id: 'agent-a', name: '设计 Agent' }],
+    })).toEqual({ section: 'agents', title: '设计 Agent', agentId: 'agent-a' })
   })
 
   it('保留任务简报窗口标题', () => {

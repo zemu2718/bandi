@@ -278,8 +278,8 @@ export const initialAssets: FullAsset[] = [
 
 export const initialConfigRevisions: ConfigRevision[] = [
   { id: 'cfg-zhouce-instructions-r8', ownerType: 'agent', ownerId: 'zhouce', path: 'instructions.md', parentRevisionId: 'cfg-zhouce-instructions-r7', content: initialAgents.find((item) => item.id === 'zhouce')?.instructions ?? '', contentHash: 'demo-instructions-r8', savedAt: '8 分钟前', summary: '补充可验证交付要求', evidence: 'demo-fixture' },
-  { id: 'cfg-zhouce-instructions-r7', ownerType: 'agent', ownerId: 'zhouce', path: 'instructions.md', parentRevisionId: 'cfg-zhouce-instructions-r6', content: '你是软件开发部主管。负责研发交付，并向直属主管汇报。', contentHash: 'demo-instructions-r7', savedAt: '昨天', summary: '明确研发交付职责', evidence: 'demo-fixture' },
-  { id: 'cfg-zhouce-instructions-r6', ownerType: 'agent', ownerId: 'zhouce', path: 'instructions.md', content: '你是软件开发部主管。', contentHash: 'demo-instructions-r6', savedAt: '3 天前', summary: '建立主 Instructions', evidence: 'demo-fixture' },
+  { id: 'cfg-zhouce-instructions-r7', ownerType: 'agent', ownerId: 'zhouce', path: 'instructions.md', parentRevisionId: 'cfg-zhouce-instructions-r6', content: '你负责研发交付，并按升级条件报告。', contentHash: 'demo-instructions-r7', savedAt: '昨天', summary: '明确研发交付职责', evidence: 'demo-fixture' },
+  { id: 'cfg-zhouce-instructions-r6', ownerType: 'agent', ownerId: 'zhouce', path: 'instructions.md', content: '你负责软件研发交付。', contentHash: 'demo-instructions-r6', savedAt: '3 天前', summary: '建立主 Instructions', evidence: 'demo-fixture' },
   { id: 'cfg-sop-delivery-r4', ownerType: 'asset', ownerId: 'sop-delivery', path: '.claude/sops/software-delivery.md', content: JSON.stringify(initialAssets.find((item) => item.id === 'sop-delivery')?.steps ?? []), contentHash: 'demo-sop-delivery-r4', savedAt: '昨天', summary: '补充实现与验证步骤', evidence: 'demo-fixture' },
   { id: 'cfg-rule-common-r3', ownerType: 'asset', ownerId: 'rule-common', path: '~/.bandi/shared/rules/common.md', content: initialAssets.find((item) => item.id === 'rule-common')?.content ?? '', contentHash: 'demo-rule-common-r3', savedAt: '3 天前', summary: '明确权限不可自行扩大', evidence: 'demo-fixture' },
 ]

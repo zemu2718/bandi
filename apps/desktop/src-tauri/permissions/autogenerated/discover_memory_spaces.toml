@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-discover-memory-spaces"
+description = "Enables the discover_memory_spaces command without any pre-configured scope."
+commands.allow = ["discover_memory_spaces"]
+
+[[permission]]
+identifier = "deny-discover-memory-spaces"
+description = "Denies the discover_memory_spaces command without any pre-configured scope."
+commands.deny = ["discover_memory_spaces"]

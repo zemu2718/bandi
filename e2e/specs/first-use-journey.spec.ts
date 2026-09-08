@@ -1,16 +1,14 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { expect } from '@wdio/globals'
 import {
   agentFiles,
   appDataPath,
-  department,
-  departmentId,
   managedAgent,
   managedAgentsPath,
   managerAgentId,
   managerAgentName,
-  role,
   taskBriefId,
   team,
   teamId,
@@ -28,26 +26,14 @@ type Discovery = {
 }
 type Editor = { canonicalContent: string; baselineRef: JsonRecord }
 type SaveResult = { kind: string; revision?: { id: string }; challenge?: { id: string } }
-type ReviewPrincipal =
-  | { kind: 'agent'; agentId: string }
-  | { kind: 'chairman_user'; teamId: string }
-type MemorySpace = { id: string; reviewPrincipal: ReviewPrincipal }
-type EligibleSpaces = { spaces: MemorySpace[]; diagnostics: Array<{ severity: string; message: string }> }
-type MemoryBundle = {
-  candidate: {
-    id: string
-    version: number
-    submittedBaseline: JsonRecord
-    reviewPrincipal: ReviewPrincipal
-  }
-}
+type MemorySpace = { id: string }
+type DiscoveredMemorySpaces = { spaces: MemorySpace[] }
+type LoadedMemory = { baselineRef: JsonRecord }
 type MemoryResult = { kind: string; revision?: { id: string } }
 type Backup = { id: string; entryCount: number; entries: Array<{ assetId: string }> }
 type LongTermDomainSnapshot = {
   schemaVersion: number
   teams: Array<{ id: string }>
-  departments: Array<{ id: string; managerAgentId?: string }>
-  roles: Array<{ id: string }>
   taskBriefs: Array<{ id: string; teamId: string }>
 }
 type ManagedAgentView = {
@@ -70,8 +56,8 @@ const invoke = <T>(session: WebdriverIO.Browser, command: string, args: JsonReco
   args,
 )
 
-async function createAgent(session: WebdriverIO.Browser, id: string, name: string, managerAgentId?: string) {
-  const options = { id, name, managerAgentId }
+async function createAgent(session: WebdriverIO.Browser, id: string, name: string) {
+  const options = { id, name }
   return invoke(session, 'commit_managed_agent_creation', {
     request: {
       requestId: `create-${id}`,
@@ -81,6 +67,7 @@ async function createAgent(session: WebdriverIO.Browser, id: string, name: strin
         files: agentFiles(options),
         avatarBytes: null,
       },
+      team: { teamId },
     },
   })
 }
@@ -128,11 +115,9 @@ async function saveConfig(session: WebdriverIO.Browser, kind: 'instructions' | '
 }
 
 async function assertPersistedFacts(session: WebdriverIO.Browser) {
-  const snapshot = await invoke<LongTermDomainSnapshot>(session, 'load_long_term_domain_snapshot_v3')
-  expect(snapshot.schemaVersion).toBe(3)
+  const snapshot = await invoke<LongTermDomainSnapshot>(session, 'load_long_term_domain_snapshot_v4')
+  expect(snapshot.schemaVersion).toBe(4)
   expect(snapshot.teams.map((item) => item.id)).toContain(teamId)
-  expect(snapshot.departments).toContainEqual(expect.objectContaining({ id: departmentId, managerAgentId }))
-  expect(snapshot.roles.map((item) => item.id)).toContain(role.id)
   expect(snapshot.taskBriefs).toContainEqual(expect.objectContaining({ id: taskBriefId, teamId }))
 
   const result = await invoke<{ agents: ManagedAgentView[]; diagnostics: unknown[] }>(session, 'list_managed_agents')
@@ -143,7 +128,7 @@ async function assertPersistedFacts(session: WebdriverIO.Browser) {
   expect(worker?.permissions).toEqual({ files: '未授予', commands: '构建与测试', network: '禁止', delegation: '禁止' })
 
   const revisions = await invoke<Array<{ id: string }>>(session, 'list_memory_revisions', {
-    request: { requestId: 'list-memory-revisions', spaceId: `memory-agent-${workerAgentId}` },
+    request: { requestId: 'list-memory-revisions', spaceId: `memory-agent-${workerAgentId}`, agentId: workerAgentId },
   })
   expect(revisions).toHaveLength(1)
 
@@ -184,7 +169,7 @@ async function assertPersistedFacts(session: WebdriverIO.Browser) {
 describe('Desktop 首次使用真实闭环', () => {
   it(process.env.BANDI_E2E_VERIFY_ONLY === '1'
     ? '以相同数据目录启动新进程后恢复全部持久化事实'
-    : '通过真实 IPC 创建、保存、审核和备份', async () => {
+    : '通过真实 IPC 创建 Team、Agent、TaskBrief，直接保存 Memory 并备份', async () => {
     if (process.env.BANDI_E2E_VERIFY_ONLY === '1') {
       await assertPersistedFacts(browser)
       return
@@ -192,64 +177,49 @@ describe('Desktop 首次使用真实闭环', () => {
 
     await expect(browser.$('h1=先新建或导入一个长期 Agent')).toBeDisplayed()
 
-    await invoke(browser, 'save_team_v2', { team })
+    await invoke(browser, 'save_team_v4', { team })
     await createAgent(browser, managerAgentId, managerAgentName)
-    await createAgent(browser, workerAgentId, workerAgentName, managerAgentId)
-    await invoke(browser, 'save_department_v2', {
-      department: { ...department, managerAgentId },
-    })
-    await invoke(browser, 'save_role_v2', { role })
-    await invoke(browser, 'save_team_v2', {
-      team: {
-        ...team,
-        memberAgentIds: [managerAgentId, workerAgentId],
-        departmentIds: [departmentId],
-      },
+    await createAgent(browser, workerAgentId, workerAgentName)
+    await invoke(browser, 'save_team_v4', {
+      team: { ...team, memberAgentIds: [managerAgentId, workerAgentId] },
     })
 
-    await invoke(browser, 'save_task_brief_v2', {
+    await invoke(browser, 'save_task_brief_v4', {
       taskBrief: {
         id: taskBriefId,
         teamId,
         title: '完成首次长期配置闭环',
-        brief: '验证 Team、Agent 与上下文准备。',
+        goal: '验证 Team、Agent 与上下文准备。',
+        context: '首次使用真实 IPC。',
+        constraints: '仅写入 Bandi 自有数据。',
+        expectedOutput: '配置、Memory Revision 与备份均可验证。',
       },
     })
 
     const instructionsAssetId = await saveConfig(browser, 'instructions', '首次旅程已保存的 Instructions')
     await saveConfig(browser, 'permissions', 'schemaVersion: 1\npermissions:\n  files: "未授予"\n  commands: "构建与测试"\n  network: "禁止"\n  delegation: "禁止"')
 
-    const eligible = await invoke<EligibleSpaces>(browser, 'discover_eligible_memory_spaces', {
+    const discovered = await invoke<DiscoveredMemorySpaces>(browser, 'discover_memory_spaces', {
       request: { requestId: 'discover-memory', agentId: workerAgentId },
     })
-    expect(eligible.diagnostics.filter((item) => item.severity === 'error')).toHaveLength(0)
-    const agentMemory = eligible.spaces.find((item) => item.id === `memory-agent-${workerAgentId}`)
-    expect(agentMemory?.reviewPrincipal).toEqual({ kind: 'agent', agentId: managerAgentId })
-
-    const candidate = await invoke<MemoryBundle>(browser, 'create_memory_candidate', {
+    const agentMemory = discovered.spaces.find((item) => item.id === `memory-agent-${workerAgentId}`)
+    expect(agentMemory).toBeDefined()
+    const loaded = await invoke<LoadedMemory>(browser, 'load_memory', {
+      request: { requestId: 'load-memory', spaceId: agentMemory?.id, agentId: workerAgentId },
+    })
+    const memoryContent = '首次旅程正式长期记忆'
+    const savedMemory = await invoke<MemoryResult>(browser, 'save_memory', {
       request: {
-        requestId: 'create-memory-candidate',
-        candidateId: 'candidate-first-use',
+        requestId: 'save-memory',
         spaceId: agentMemory?.id,
-        proposerAgentId: workerAgentId,
-        source: { kind: 'manual', label: '真实首次旅程' },
-        summary: '记录首次闭环',
-        proposedContent: '首次旅程正式长期记忆',
+        agentId: workerAgentId,
+        content: memoryContent,
+        contentHash: `sha256:${createHash('sha256').update(memoryContent).digest('hex')}`,
+        expectedBaseline: loaded.baselineRef,
       },
     })
-    const reviewed = await invoke<MemoryResult>(browser, 'review_memory_candidate', {
-      request: {
-        requestId: 'approve-memory-candidate',
-        candidateId: candidate.candidate.id,
-        decision: 'approve',
-        expectedCandidateVersion: candidate.candidate.version,
-        expectedBaseline: candidate.candidate.submittedBaseline,
-        expectedReviewPrincipal: candidate.candidate.reviewPrincipal,
-        comment: '由独立主管审核通过',
-      },
-    })
-    expect(reviewed.kind).toBe('saved')
-    expect(reviewed.revision?.id).toBeTruthy()
+    expect(savedMemory.kind).toBe('saved')
+    expect(savedMemory.revision?.id).toBeTruthy()
 
     const backup = await invoke<Backup>(browser, 'create_backup_snapshot', {
       request: { requestId: 'create-backup', scope: { kind: 'files', assetIds: [instructionsAssetId] } },
@@ -258,7 +228,7 @@ describe('Desktop 首次使用真实闭环', () => {
     expect(backup.entries[0].assetId).toBe(instructionsAssetId)
 
     expect(await fs.readFile(path.join(managedAgentsPath, `agt_${workerAgentId}`, 'instructions.md'), 'utf8')).toBe('首次旅程已保存的 Instructions')
-    expect(await fs.readFile(path.join(managedAgentsPath, `agt_${workerAgentId}`, 'memory', 'long-term.md'), 'utf8')).toBe('首次旅程正式长期记忆')
+    expect(await fs.readFile(path.join(managedAgentsPath, `agt_${workerAgentId}`, 'memory', 'long-term.md'), 'utf8')).toBe(memoryContent)
     await expect(fs.stat(path.join(appDataPath, 'bandi.db'))).resolves.toBeDefined()
     await expect(fs.stat(path.join(appDataPath, 'revisions'))).resolves.toBeDefined()
     await expect(fs.stat(path.join(appDataPath, 'backups', backup.id))).resolves.toBeDefined()

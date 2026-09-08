@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import fixture from '../../../../packages/contracts/fixtures/core-contracts.valid.json'
-import memoryFixture from '../../../../packages/contracts/fixtures/formal-memory-v3.valid.json'
-import type { BaselineRefDto, Diagnostic, LocalServiceEvent, MemoryCandidateDto, MemoryRevisionDto, MemorySpaceDto, RecoverManagedAgentIdentityRequest, RestoreManagedAgentIdentityRequest, ReviewMemoryCandidateRequest, ReviewMemoryCandidateResult, SaveConfigRequest, SaveConfigResult, ValidationFailed } from '../contracts'
+import type {
+  BaselineRefDto,
+  Diagnostic,
+  LocalServiceEvent,
+  MemoryRevisionDto,
+  MemorySpaceDto,
+  RecoverManagedAgentIdentityRequest,
+  RestoreManagedAgentIdentityRequest,
+  SaveConfigRequest,
+  SaveConfigResult,
+  SaveMemoryRequest,
+  SaveMemoryResult,
+  ValidationFailed,
+} from '../contracts'
 
+const hash = `sha256:${'a'.repeat(64)}` as const
 const hashPattern = /^sha256:[0-9a-f]{64}$/
 
 describe('首切片核心共享合同', () => {
@@ -19,38 +32,23 @@ describe('首切片核心共享合同', () => {
     expect(diagnostic.range?.startLine).toBe(1)
   })
 
-  it('保存请求只允许已冻结的 Instructions、Context、Rules、Skills、MCP、Permissions、SOP 与 Orchestration 分支', () => {
-    const instructions = fixture.saveRequest as SaveConfigRequest
-    const context = fixture.contextSaveRequest as SaveConfigRequest
-    const rules = fixture.rulesSaveRequest as SaveConfigRequest
-    const skills = fixture.skillsSaveRequest as SaveConfigRequest
-    expect(instructions.change.kind).toBe('instructions')
-    expect(instructions.baseContent).toBe('# Original Instructions\n')
-    expect(instructions.confirmationRef).toBeUndefined()
-    expect(context.change.kind).toBe('context')
-    expect(context.expectedBaseline.assetId).toBe(context.assetId)
-    expect(rules.change.kind).toBe('rules')
-    expect(rules.expectedBaseline.assetId).toBe(rules.assetId)
-    expect(skills.change.kind).toBe('skills')
-    expect(skills.expectedBaseline.assetId).toBe(skills.assetId)
-    const mcp = fixture.mcpSaveRequest as SaveConfigRequest
-    expect(mcp.change.kind).toBe('mcp')
-    expect(mcp.expectedBaseline.assetId).toBe(mcp.assetId)
-    const sop = fixture.sopSaveRequest as SaveConfigRequest
-    expect(sop.change.kind).toBe('sop')
-    expect(sop.expectedBaseline.assetId).toBe(sop.assetId)
-    const orchestration = fixture.orchestrationSaveRequest as SaveConfigRequest
-    expect(orchestration.change.kind).toBe('orchestration')
-    expect(orchestration.expectedBaseline.assetId).toBe(orchestration.assetId)
-    const hooks = fixture.hooksSaveRequest as SaveConfigRequest
-    expect(hooks.change.kind).toBe('hooks')
-    expect(hooks.expectedBaseline.assetId).toBe(hooks.assetId)
-    const commands = fixture.commandsSaveRequest as SaveConfigRequest
-    expect(commands.change.kind).toBe('commands')
-    expect(commands.expectedBaseline.assetId).toBe(commands.assetId)
-    const permissions = fixture.permissionsSaveRequest as SaveConfigRequest
-    expect(permissions.change.kind).toBe('permissions')
-    expect(permissions.expectedBaseline.assetId).toBe(permissions.assetId)
+  it('保存请求覆盖 Agent 自身长期配置', () => {
+    const requests = [
+      fixture.saveRequest,
+      fixture.contextSaveRequest,
+      fixture.rulesSaveRequest,
+      fixture.skillsSaveRequest,
+      fixture.mcpSaveRequest,
+      fixture.permissionsSaveRequest,
+      fixture.sopSaveRequest,
+      fixture.hooksSaveRequest,
+      fixture.commandsSaveRequest,
+    ] as SaveConfigRequest[]
+    expect(requests.map((request) => request.change.kind)).toEqual([
+      'instructions', 'context', 'rules', 'skills', 'mcp',
+      'permissions', 'sop', 'hooks', 'commands',
+    ])
+    expect(requests.every((request) => request.expectedBaseline.assetId === request.assetId)).toBe(true)
   })
 
   it('权限扩大确认绑定资产、内容哈希与过期时间', () => {
@@ -79,29 +77,41 @@ describe('首切片核心共享合同', () => {
     expect(restore.confirmed).toBe(true)
   })
 
-  it('正式 Memory 使用独立空间、候选、审核和版本合同', () => {
-    const space = memoryFixture.space as MemorySpaceDto
-    const candidate = memoryFixture.candidate as MemoryCandidateDto
-    const request = memoryFixture.reviewRequest as ReviewMemoryCandidateRequest
-    const result = memoryFixture.savedResult as ReviewMemoryCandidateResult
+  it('长期 Memory 直接保存并生成独立 revision', () => {
+    const space: MemorySpaceDto = {
+      id: 'memory-agent-zhouce',
+      scopeType: 'agent_long_term',
+      scopeKey: { kind: 'agent_long_term', agentId: 'zhouce' },
+      owner: { kind: 'agent', agentId: 'zhouce' },
+      visibilityPolicy: 'agent_private',
+      storageProfileVersion: 'memory-v4',
+      state: 'active',
+      storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' },
+      currentRevisionId: 'memory-revision-2',
+      contentHash: hash,
+      updatedAt: '2026-09-01T00:02:00Z',
+    }
+    const request: SaveMemoryRequest = { requestId: 'save-memory-1', spaceId: space.id, content: '新的长期事实' }
+    const revision: MemoryRevisionDto = {
+      id: 'memory-revision-2',
+      spaceId: space.id,
+      parentRevisionId: 'memory-revision-1',
+      contentHash: hash,
+      storageLocator: space.storageLocator,
+      writeReceiptId: 'memory-write-2',
+      writtenAt: space.updatedAt,
+    }
+    const result: SaveMemoryResult = {
+      kind: 'saved', requestId: request.requestId, space, revision,
+      writeReceipt: { id: 'memory-write-2', containerId: space.id, previousContainerHash: hash, writtenContainerHash: hash, verifiedAt: space.updatedAt, atomicReplace: true },
+    }
 
-    expect(space.scopeType).toBe('agent_long_term')
-    expect(space.scopeKey).toEqual({ kind: 'agent_long_term', agentId: 'zhouce' })
-    expect(space.owner).toEqual({ kind: 'agent', agentId: 'zhouce' })
-    expect(space.stewardAgentId).toBe('zhouce')
-    expect(space.storageProfileVersion).toBe('memory-v3')
-    expect(space.storageLocator.relativePath).toBe('memory/long-term.md')
-    expect(candidate.spaceId).toBe(space.id)
-    expect(candidate.proposerAgentId).not.toBe(candidate.reviewPrincipal.kind === 'agent' ? candidate.reviewPrincipal.agentId : candidate.reviewPrincipal.teamId)
-    expect(candidate.proposedContentHash).toMatch(hashPattern)
-    expect(request.decision).toBe('approve')
-    expect(request.expectedBaseline.assetId).toBe(space.id)
+    expect(request.spaceId).toBe(space.id)
+    expect(space.storageProfileVersion).toBe('memory-v4')
     expect(result.kind).toBe('saved')
-    if (result.kind !== 'saved') throw new Error('正式 Memory 保存结果类型错误')
-    const revision = result.revision as MemoryRevisionDto
-    expect(revision.candidateId).toBe(candidate.id)
-    expect(revision.reviewDecisionId).toBe(result.decision.id)
-    expect(revision.contentHash).toMatch(hashPattern)
+    if (result.kind !== 'saved') throw new Error('长期 Memory 保存结果类型错误')
+    expect(result.revision.parentRevisionId).toBe('memory-revision-1')
+    expect(result.revision.contentHash).toMatch(hashPattern)
     expect(result.writeReceipt.atomicReplace).toBe(true)
   })
 })

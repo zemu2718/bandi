@@ -14,14 +14,6 @@ describe('配置事实 selectors', () => {
     expect(getAvailableAgents(state).map((agent) => agent.id)).toEqual(['zhiheng', 'zhouce', 'linxu'])
   })
 
-  it('Team 可独立存在，Department 和 Role 可后补', () => {
-    const source = initialState.agents[0]
-    const agent = { ...source, teamId: 'xinghe', primaryDepartmentId: undefined, roleId: undefined }
-    const state = { ...initialState, agents: [agent] }
-
-    expect(getAgentConfigStatus(state, agent).issues.some((issue) => issue.code === 'role-scope-mismatch')).toBe(false)
-  })
-
   it('聚合全部待处理配置并让待处理优先于首次欢迎', () => {
     const warningAgent = {
       ...initialState.agents[0],
@@ -29,25 +21,23 @@ describe('配置事实 selectors', () => {
     }
     const errorAgent = {
       ...initialState.agents[1],
-      roleId: 'missing-role',
+      ruleRefs: ['missing-rule'],
     }
-    const candidate = { ...initialState.memoryCandidates[0], id: 'candidate-extra', status: '待审核' as const }
     const summary = getConfigurationStatusSummary({
       ...initialState,
       onboarding: { status: 'active' },
       agents: [warningAgent, errorAgent],
-      memoryCandidates: [candidate],
       agentDiagnostics: [{ code: 'invalid-agent', severity: 'error', message: 'Agent 配置无效' }],
-      agentRecoveryOperations: [{ id: 'recovery', agentId: errorAgent.id, operationKind: 'create', status: 'organization_pending', createdAt: '2026-09-08T00:00:00Z' }],
+      agentRecoveryOperations: [{ id: 'recovery', agentId: errorAgent.id, operationKind: 'create', status: 'team_pending', createdAt: '2026-09-08T00:00:00Z' }],
     })
 
     expect(summary.phase).toBe('pending')
-    expect(summary.items.map((item) => item.kind)).toEqual(['agent', 'agent', 'memory', 'diagnostic', 'recovery'])
+    expect(summary.items.map((item) => item.kind)).toEqual(['agent', 'agent', 'diagnostic', 'recovery'])
   })
 
   it('按读取、首次使用和正常状态确定阶段', () => {
     const healthyAgents = initialState.agents.filter((agent) => getAgentConfigStatus(initialState, agent).level === 'healthy')
-    const healthy = { ...initialState, onboarding: { status: 'completed' as const }, agents: healthyAgents, memoryCandidates: [], agentDiagnostics: [], agentRecoveryOperations: [] }
+    const healthy = { ...initialState, onboarding: { status: 'completed' as const }, agents: healthyAgents, agentDiagnostics: [], agentRecoveryOperations: [] }
     expect(getConfigurationStatusSummary(healthy).phase).toBe('healthy')
     expect(getConfigurationStatusSummary({ ...healthy, agents: [], onboarding: { status: 'active' } }).phase).toBe('first-use')
     expect(getConfigurationStatusSummary({ ...healthy, runtime: 'desktop', hydration: { ...healthy.hydration, managedAgents: 'loading' } }).phase).toBe('loading')
@@ -57,18 +47,6 @@ describe('配置事实 selectors', () => {
 
   it('最近保存只来自 ConfigRevision', () => {
     expect(getLatestRevisionForAgent(initialState, 'zhouce')?.id).toBe('cfg-zhouce-instructions-r8')
-  })
-
-  it('报告 package 兼容状态和 Role 作用域', () => {
-    const source = initialState.agents.find((agent) => agent.id === 'zhouce')!
-    const agent = {
-      ...source,
-      packageSchema: { schemaVersion: 2, compatibility: 'future' as const },
-      roleId: 'missing-role',
-    }
-    const state = { ...initialState, agents: initialState.agents.map((item) => item.id === agent.id ? agent : item) }
-    const codes = getAgentConfigStatus(state, agent).issues.map((issue) => issue.code)
-    expect(codes).toEqual(expect.arrayContaining(['package-future', 'role-missing']))
   })
 
   it('外部只读引用报告未验证包状态', () => {

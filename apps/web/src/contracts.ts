@@ -37,7 +37,6 @@ export type ManagedAgentDeletionImpactDto = {
 export type ManagedAgentDeletionImpactsDto = {
   sharedAssetReferences: ManagedAgentDeletionImpactDto[]
   organizationRelationships: ManagedAgentDeletionImpactDto[]
-  reviewResponsibilities: ManagedAgentDeletionImpactDto[]
   formalMemory: ManagedAgentDeletionImpactDto[]
   automaticCleanup: ManagedAgentDeletionImpactDto[]
   historyAndBackups: ManagedAgentDeletionImpactDto[]
@@ -242,7 +241,7 @@ export type AgentRecoveryStatus =
   | 'prepared'
   | 'filesystem_committed'
   | 'revision_pending'
-  | 'organization_pending'
+  | 'team_pending'
   | 'database_committed'
   | 'blocked'
   | 'completed'
@@ -278,12 +277,15 @@ export type TaskBriefDto = {
   id: Id
   teamId: Id
   title: string
-  brief?: string
+  goal: string
+  context: string
+  constraints: string
+  expectedOutput: string
   archivedAt?: Timestamp
 }
 
-export type OrganizationSnapshotV3 = {
-  schemaVersion: 3
+export type LongTermDomainSnapshotDtoV4 = {
+  schemaVersion: 4
   teams: TeamDto[]
   taskBriefs: TaskBriefDto[]
 }
@@ -447,7 +449,6 @@ export type SharedAssetNodeDto = {
   id: Id
   kind: SharedAssetKind | 'unknown'
   teamId: Id
-  departmentId?: Id
   locator: AssetLocatorDto
   contentHash: ContentHash
   parseStatus: 'parsed' | 'invalid'

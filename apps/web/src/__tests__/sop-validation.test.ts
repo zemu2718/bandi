@@ -8,7 +8,7 @@ const step = (changes: Partial<SopStep> = {}): SopStep => ({
   objective: '准备输入',
   input: '',
   output: '',
-  owner: '产品主管',
+  owner: '产品负责人',
   dependsOn: [],
   ...changes,
 })

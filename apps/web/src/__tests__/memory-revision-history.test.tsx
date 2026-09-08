@@ -13,11 +13,6 @@ const revision: MemoryRevisionDto = {
   id: 'memory-revision-2',
   spaceId: 'memory-agent-zhouce',
   parentRevisionId: 'memory-revision-1',
-  candidateId: 'memory-candidate-2',
-  reviewDecisionId: 'memory-decision-2',
-  proposerAgentId: 'zhouce',
-  reviewPrincipal: { kind: 'agent', agentId: 'zhiheng' },
-  sourceContentHash: hash,
   contentHash: hash,
   storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' },
   writeReceiptId: 'memory-write-2',
@@ -29,7 +24,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('正式记忆版本历史', () => {
+describe('长期记忆版本历史', () => {
   it('加载期间显示真实进度状态', async () => {
     let resolve!: (value: MemoryRevisionDto[]) => void
     vi.spyOn(desktopBridge, 'listMemoryRevisions').mockReturnValue(new Promise((done) => { resolve = done }))
@@ -61,9 +56,7 @@ describe('正式记忆版本历史', () => {
     fireEvent.click(screen.getByText('版本详情'))
     expect(screen.getByText(revision.id)).toBeInTheDocument()
     expect(screen.getByText(revision.parentRevisionId!)).toBeInTheDocument()
-    expect(screen.getByText(revision.candidateId)).toBeInTheDocument()
     expect(screen.queryByText(revision.writtenAt)).not.toBeInTheDocument()
-    expect(screen.getByText(new RegExp(revision.reviewPrincipal.kind === 'agent' ? revision.reviewPrincipal.agentId : revision.reviewPrincipal.teamId))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /恢复/ })).not.toBeInTheDocument()
   })
 
@@ -73,7 +66,7 @@ describe('正式记忆版本历史', () => {
     fireEvent.click(screen.getByRole('button', { name: '正式版本历史' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('MemoryRevision 历史已损坏')
-    expect(screen.getByRole('dialog', { name: '正式记忆版本历史' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '长期记忆版本历史' })).toBeInTheDocument()
   })
 
   it('每次打开都会重新读取补记后的历史', async () => {

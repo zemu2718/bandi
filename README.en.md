@@ -8,9 +8,9 @@
 
 # Bandi
 
-**Visualize and manage persistent AI agent configuration.**
+**A persistent agent and configuration manager for nine AI coding tools.**
 
-Manage persistent agents, teams, configuration, and history locally—then get back to work in your own Claude Code.
+Manage agents, teams, configuration, and history for Claude Code, Claude Desktop, Codex, Gemini, Grok, OpenCode, OpenClaw, Hermes, and Pi locally—then return to your own tool to work.
 
 [![Apache License 2.0](https://img.shields.io/github/license/zemu2718/bandi?style=flat-square)](LICENSE) ![Development](https://img.shields.io/badge/status-development-orange?style=flat-square) [![Desktop platforms](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml/badge.svg?branch=main)](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml?query=branch%3Amain)
 

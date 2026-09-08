@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Check, FileDiff, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, FileDiff, ShieldAlert } from 'lucide-react'
 import { ClientLaunchDialog } from './components/client-launch-dialog'
 import { Button } from './components/ui/button'
 import { AppDialog } from './components/ui/dialog'
-import { DiagnosticList, ErrorNotice, errorFromCause, type UserFacingError } from './components/app/error-notice'
-import { MonoPath, StatusBadge, toneForStatus } from './components/app/page'
+import { ErrorNotice, errorFromCause, type UserFacingError } from './components/app/error-notice'
+import { MonoPath, StatusBadge } from './components/app/page'
 import { useApp } from './state'
 import { buildBackupPreview, createDemoSnapshot, describeBackupScope } from './backup-policy'
 import type { BackupScope } from './domain'
-import { generateEntityId, isDesktopRuntime, loadMemoryReview, recoverMemoryRevision, reviewMemoryCandidate, saveDepartmentV2, saveTeamV2 } from './desktop-bridge'
-import type { MemoryReviewBundleDto, ReviewMemoryCandidateResult } from './contracts'
-import { formatDisplayTimestamp, memoryScopeLabel } from './presentation'
+import { generateEntityId, isDesktopRuntime, saveTeamV4 } from './desktop-bridge'
+import { formatDisplayTimestamp } from './presentation'
 import { normalizeTeamMark, resolveTeamIdentity, TEAM_COLOR_PRESETS } from './team-identity'
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -86,7 +85,7 @@ export function GlobalSheets() {
     const allResolved = Boolean(conflicts.a && conflicts.b)
     const choices = (key: string) => <div className="mt-3 flex flex-wrap gap-2">{['外部版本', '我的版本', '手动合并'].map((choice) => <Button key={choice} variant={conflicts[key] === choice ? 'default' : 'outline'} size="sm" onClick={() => setConflicts((value) => ({ ...value, [key]: choice }))}>{choice}</Button>)}</div>
     return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title="解决配置文件冲突" description="同一文本区域被同时修改，无法安全自动合并。" size="lg" footer={<><Button variant="outline" onClick={close}>取消保存</Button><Button disabled={!allResolved} onClick={() => done('2 处示例冲突已逐项处理 · 结果仅在当前页面有效')}>{allResolved ? '完成演示' : `请先解决 ${2 - Object.keys(conflicts).length} 处冲突`}</Button></>}>
-      {[['a', '生产发布必须由董事长批准', '生产发布由部门主管批准'], ['b', '验证证据必须附在汇报中', '验证证据按需提供']].map(([key, external, mine], index) => <div key={key} className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-4"><div className="mb-3 flex items-center gap-2 text-danger"><AlertTriangle size={18} /><b>冲突 {index + 1}</b></div><pre className="overflow-x-auto text-xs leading-6">{`<<<< 外部版本\n${external}\n====\n${mine}\n>>>> 你的编辑`}</pre>{choices(key)}</div>)}
+      {[['a', '生产发布必须由董事长批准', '生产发布由负责人批准'], ['b', '验证证据必须附在汇报中', '验证证据按需提供']].map(([key, external, mine], index) => <div key={key} className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-4"><div className="mb-3 flex items-center gap-2 text-danger"><AlertTriangle size={18} /><b>冲突 {index + 1}</b></div><pre className="overflow-x-auto text-xs leading-6">{`<<<< 外部版本\n${external}\n====\n${mine}\n>>>> 你的编辑`}</pre>{choices(key)}</div>)}
     </AppDialog>
   }
 
@@ -113,12 +112,6 @@ export function GlobalSheets() {
     </AppDialog>
   }
 
-  if (dialog.kind === 'memory') {
-    const candidate = state.memoryCandidates.find((item) => item.id === dialog.candidateId)
-    if (!candidate) return <MissingDialog title="记忆修改建议不存在" close={close} />
-    return <MemoryReviewDialog candidate={candidate} close={close} />
-  }
-
   if (dialog.kind === 'backup-restore') {
     const snapshot = state.backupSnapshots.find((item) => item.id === dialog.snapshotId)
     if (!snapshot) return <MissingDialog title="快照不存在" close={close} />
@@ -138,98 +131,39 @@ export function GlobalSheets() {
   return null
 }
 
-function MemoryReviewDialog({ candidate, close }: { candidate: ReturnType<typeof useApp>['state']['memoryCandidates'][number]; close: () => void }) {
+function OrganizationDialog({ dialog, close }: { dialog: Extract<NonNullable<ReturnType<typeof useApp>['state']['dialog']>, { kind: 'organization' }>; close: () => void }) {
   const { state, dispatch } = useApp()
-  const [bundle, setBundle] = useState<MemoryReviewBundleDto>()
-  const [result, setResult] = useState<ReviewMemoryCandidateResult>()
-  const [loading, setLoading] = useState(isDesktopRuntime())
+  const navigate = useNavigate()
+  const currentTeam = state.teams.find((item) => item.id === dialog.id)
+  const [name, setName] = useState(currentTeam?.name ?? '')
+  const [teamMark, setTeamMark] = useState(currentTeam?.mark ?? '')
+  const [teamColor, setTeamColor] = useState(currentTeam?.color ?? TEAM_COLOR_PRESETS[0][1])
+  const [mission, setMission] = useState(currentTeam?.mission ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<UserFacingError>()
   const desktop = isDesktopRuntime()
-  const demoSpace = state.memorySpaces.find((item) => item.id === candidate.spaceId)
-  const proposer = state.agents.find((item) => item.id === candidate.proposerAgentId)
-  const principal = bundle?.space.reviewPrincipal ?? candidate.reviewPrincipal
-  const reviewerLabel = principal.kind === 'agent'
-    ? state.agents.find((item) => item.id === principal.agentId)?.name ?? principal.agentId
-    : `Team 负责人（${state.teams.find((item) => item.id === principal.teamId)?.name ?? principal.teamId}）`
-  const selfReview = principal.kind === 'agent' && principal.agentId === candidate.proposerAgentId
-
-  useEffect(() => {
-    if (!desktop) return
-    let active = true
-    loadMemoryReview(`load-memory-${candidate.id}`, candidate.id)
-      .then((value) => { if (active) setBundle(value) })
-      .catch((cause) => { if (active) setError(errorFromCause(cause, '无法读取记忆修改建议', '内容没有变化。请检查本地服务后重新打开。')) })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [candidate.id, desktop])
-
-  const reviewDemo = (status: '要求修改' | '已驳回' | '已写入演示版本') => {
-    dispatch({ type: 'REVIEW_MEMORY_CANDIDATE', candidateId: candidate.id, status })
-    close()
-  }
-  const reviewDesktop = async (decision: 'request_changes' | 'reject' | 'approve') => {
-    if (!bundle || saving) return
-    setSaving(true)
-    setError(undefined)
+  const duplicate = state.teams.some((item) => item.id !== dialog.id && item.name === name.trim())
+  const normalizedTeamMark = normalizeTeamMark(teamMark)
+  const invalidTeamMark = Boolean(teamMark.trim() && !normalizedTeamMark)
+  const teamIdentity = resolveTeamIdentity({ name, mark: normalizedTeamMark, color: teamColor })
+  const save = async () => {
+    setSaving(true); setError(undefined)
     try {
-      const next = await reviewMemoryCandidate({
-        requestId: `review-memory-${candidate.id}-${decision}`,
-        candidateId: bundle.candidate.id,
-        decision,
-        expectedCandidateVersion: bundle.candidate.version,
-        expectedBaseline: bundle.candidate.submittedBaseline,
-        expectedReviewPrincipal: bundle.candidate.reviewPrincipal,
-      })
-      setResult(next)
-      dispatch({ type: 'SYNC_FORMAL_MEMORY_REVIEW', result: next })
-      if (next.kind === 'saved' || next.kind === 'review_recorded') {
-        dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: next.kind === 'saved' ? '正式记忆已写入' : '审核决定已记录', description: next.kind === 'saved' ? `已生成记忆版本 ${next.revision.id}` : '正式记忆文件未发生变化。' } })
-      }
-    } catch (cause) {
-      setError(errorFromCause(cause, '无法完成记忆审核', '审核决定没有提交。请检查本地服务后重试。'))
-    } finally {
-      setSaving(false)
-    }
+      const id = dialog.id ?? (desktop ? await generateEntityId('team', name) : `team-${crypto.randomUUID()}`)
+      const team = { id, name: name.trim(), mark: normalizedTeamMark, color: teamColor, mission: mission.trim(), boundary: currentTeam?.boundary ?? 'Team 归属不自动授予权限。', memberAgentIds: state.agents.filter((agent) => agent.teamId === id).map((agent) => agent.id), sharedAssetIds: currentTeam?.sharedAssetIds ?? [] }
+      if (desktop) { const persisted = await saveTeamV4(team); dispatch({ type: 'SYNC_PERSISTED_TEAMS', teams: [{ ...team, ...persisted }] }) }
+      else dispatch(dialog.mode === 'create' ? { type: 'CREATE_TEAM', team } : { type: 'UPDATE_TEAM', teamId: id, changes: team })
+      close()
+      dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: dialog.mode === 'create' ? 'Team 已创建' : 'Team 配置已保存', description: `${team.name} 的长期配置已更新。` } })
+      if (dialog.mode === 'create') { dispatch({ type: 'SELECT_TEAM', teamId: id }); navigate(dialog.returnTo ?? `/organization/teams/${encodeURIComponent(id)}`, { replace: true }) }
+    } catch (cause) { setError(errorFromCause(cause, `无法${dialog.mode === 'create' ? '创建' : '保存'} Team`, 'Team 配置没有变化。请检查本地服务后重试。')) }
+    finally { setSaving(false) }
   }
-  const recoverRevision = async () => {
-    if (result?.kind !== 'revision_pending' || saving) return
-    setSaving(true)
-    setError(undefined)
-    try {
-      const next = await recoverMemoryRevision({ requestId: `recover-memory-${candidate.id}`, candidateId: result.candidate.id, recoveryRef: result.recoveryRef })
-      setResult(next)
-      dispatch({ type: 'SYNC_FORMAL_MEMORY_REVIEW', result: next })
-      if (next.kind === 'saved') dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: '记忆版本已补记', description: `已生成正式版本 ${next.revision.id}，未重复写入文件。` } })
-    } catch (cause) {
-      setError(errorFromCause(cause, '无法补记记忆版本', '正式记忆文件不会重复写入。请检查本地服务后重试补记。'))
-    } finally {
-      setSaving(false)
-    }
-  }
-  const displayCandidate = bundle?.candidate
-  const current = bundle?.currentContent ?? candidate.current
-  const proposed = displayCandidate?.proposedContent ?? candidate.proposed
-  const status = result && 'candidate' in result ? result.candidate.status : displayCandidate?.status ?? candidate.status
-  const diagnostics = result && 'diagnostics' in result ? result.diagnostics : undefined
-  const formalOwner = bundle?.space.owner
-  const ownerLabel = formalOwner?.kind === 'agent'
-    ? state.agents.find((item) => item.id === formalOwner.agentId)?.name ?? formalOwner.agentId
-    : demoSpace?.owner ?? '—'
-
-  return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={`审核正式记忆修改建议 ${candidate.id}`} description={desktop ? '审核关系、内容起点和写入结果由本地服务重新确认。' : '当前为浏览器演示，不会写入文件。'} size="xl" footer={<><Button variant="outline" disabled={loading || saving} onClick={() => desktop ? reviewDesktop('request_changes') : reviewDemo('要求修改')}>要求修改</Button><Button variant="outline" disabled={loading || saving} onClick={() => desktop ? reviewDesktop('reject') : reviewDemo('已驳回')}>驳回</Button><Button disabled={loading || saving || selfReview || Boolean(result && (result.kind === 'saved' || result.kind === 'review_recorded'))} onClick={() => desktop ? reviewDesktop('approve') : reviewDemo('已写入演示版本')}>{saving ? '正在处理…' : desktop ? '批准并写入正式记忆' : '批准并写入演示版本'}</Button></>}>
-    {loading ? <p className="text-sm text-muted-foreground">正在读取正式记忆与审核起点…</p> : <><div className="grid gap-5 lg:grid-cols-[300px_1fr]"><div className="panel p-4"><InfoRow label="记忆范围">{bundle ? memoryScopeLabel(bundle.space.scopeType) : demoSpace?.scopeType ?? candidate.spaceId}</InfoRow><InfoRow label="所有者">{ownerLabel}</InfoRow><InfoRow label="归口">{state.agents.find((item) => item.id === bundle?.space.stewardAgentId)?.name ?? demoSpace?.steward ?? '—'}</InfoRow><InfoRow label="审核">{reviewerLabel}</InfoRow><InfoRow label="提议者">{proposer?.name ?? candidate.proposerAgentId}</InfoRow><InfoRow label="状态"><StatusBadge tone={toneForStatus(status)}>{status}</StatusBadge></InfoRow>{result?.kind === 'saved' && <InfoRow label="正式版本">{result.revision.id}</InfoRow>}</div><div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border max-sm:grid-cols-1"><div><div className="bg-muted px-4 py-2 text-xs font-semibold">当前正式内容</div><pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words p-4 text-sm text-muted-foreground">{current || '（空）'}</pre></div><div className="border-l border-border max-sm:border-l-0 max-sm:border-t"><div className="bg-primary/8 px-4 py-2 text-xs font-semibold">建议写回</div><pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words p-4 text-sm">{proposed}</pre></div></div></div>{!selfReview ? <div className="mt-5 flex items-center gap-2 text-sm text-success"><Check size={17} aria-hidden="true" />提议者与审核者已分离。</div> : <div className="mt-5 text-sm text-danger">提议者不能自审，请先调整审核者。</div>}{result?.kind === 'baseline_changed' && <div className="mt-5 rounded-lg border border-warning/30 bg-warning/8 p-4 text-sm text-warning">正式内容已在审核期间变化，请关闭后基于当前内容重新提交修改建议。</div>}{result?.kind === 'revision_pending' && <div className="mt-5 rounded-lg border border-warning/30 bg-warning/8 p-4 text-sm text-warning"><p>文件已写入，但记忆版本尚待补记。请勿重复批准或重复写入。</p><Button className="mt-3" variant="outline" size="sm" disabled={saving} onClick={recoverRevision}>{saving ? '正在补记…' : '补记记忆版本'}</Button></div>}{diagnostics?.length ? <div role="alert" className="mt-4 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger"><DiagnosticList items={diagnostics} /></div> : null}{error && <ErrorNotice error={error} className="mt-4" />}</>}
+  return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={`${dialog.mode === 'create' ? '创建' : '编辑'} Team`} size="md" footer={<><Button variant="outline" onClick={close}>取消</Button><Button disabled={saving || !name.trim() || duplicate || invalidTeamMark} onClick={save}>{saving ? '正在保存…' : desktop ? '保存配置' : '保存演示配置'}</Button></>}>
+    <label className="block text-sm font-medium">名称<input className="mt-2 h-10 w-full px-3" value={name} onChange={(event) => setName(event.target.value)} aria-invalid={duplicate} />{duplicate && <span className="mt-1 block text-xs text-danger">已有名为“{name.trim()}”的 Team。</span>}</label>
+    <div className="mt-4"><div className="flex items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl text-xs font-semibold" style={{ backgroundColor: teamIdentity.color, color: teamIdentity.foreground }} aria-hidden="true">{teamIdentity.mark}</span><div><div className="text-sm font-medium">Team 标识</div><p className="mt-1 text-xs text-muted-foreground">默认根据名称生成，也可设置 1–2 个字母或数字。</p></div></div><label className="mt-3 block text-sm font-medium">文字标识<input className="mt-2 h-10 w-full px-3" value={teamMark} placeholder={teamIdentity.mark} maxLength={2} aria-invalid={invalidTeamMark} onChange={(event) => setTeamMark(event.target.value)} /></label>{invalidTeamMark && <p className="mt-1 text-xs text-danger">请输入 1–2 个字母或数字。</p>}<fieldset className="mt-4"><legend className="text-sm font-medium">标识颜色</legend><div className="mt-2 flex flex-wrap gap-2">{TEAM_COLOR_PRESETS.map(([colorName, color]) => <button key={color} type="button" aria-label={colorName} aria-pressed={teamColor === color} className="grid size-10 place-items-center rounded-lg border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" style={{ borderColor: teamColor === color ? color : undefined }} onClick={() => setTeamColor(color)}><span className="size-5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" /></button>)}</div></fieldset></div>
+    <label className="mt-4 block text-sm font-medium">使命<textarea className="mt-2 min-h-24 w-full p-3" value={mission} onChange={(event) => setMission(event.target.value)} /></label>{error && <ErrorNotice error={error} className="mt-4" />}<p className="mt-4 text-xs text-muted-foreground">{desktop ? 'Team 配置保存到 Bandi 本机数据；不会移动 Agent 配置或授予权限。' : 'Team 变更仅在当前页面更新，不移动 Agent 配置、不授予权限。'}</p>
   </AppDialog>
-}
-
-function OrganizationDialog({ dialog, close }: { dialog: Extract<NonNullable<ReturnType<typeof useApp>['state']['dialog']>, { kind: 'organization' }>; close: () => void }) {
-  const { state, dispatch } = useApp(); const navigate = useNavigate(); const currentTeam = dialog.entity === 'team' ? state.teams.find((item) => item.id === dialog.id) : undefined; const currentDepartment = dialog.entity === 'department' ? state.departments.find((item) => item.id === dialog.id) : undefined
-  const [name, setName] = useState(currentTeam?.name ?? currentDepartment?.name ?? ''); const [teamMark, setTeamMark] = useState(currentTeam?.mark ?? ''); const [teamColor, setTeamColor] = useState(currentTeam?.color ?? TEAM_COLOR_PRESETS[0][1]); const [teamId, setTeamId] = useState(currentDepartment?.teamId ?? state.currentTeamId ?? state.teams[0]?.id ?? ''); const [parentId, setParentId] = useState(currentDepartment?.parentDepartmentId ?? ''); const [mission, setMission] = useState(currentTeam?.mission ?? currentDepartment?.mission ?? ''); const [managerAgentId, setManagerAgentId] = useState(currentDepartment?.managerAgentId ?? ''); const [generatedId, setGeneratedId] = useState(''); const [saving, setSaving] = useState(false); const [error, setError] = useState<UserFacingError>(); const desktop = isDesktopRuntime(); const duplicate = dialog.entity === 'team' ? state.teams.some((item) => item.id !== dialog.id && item.name === name.trim()) : state.departments.some((item) => item.id !== dialog.id && item.teamId === teamId && item.name === name.trim()); const normalizedTeamMark = normalizeTeamMark(teamMark); const invalidTeamMark = dialog.entity === 'team' && Boolean(teamMark.trim() && !normalizedTeamMark); const teamIdentity = resolveTeamIdentity({ name, mark: normalizedTeamMark, color: teamColor })
-  const departmentMembers = state.agents.filter((item) => currentDepartment?.memberAgentIds.includes(item.id) && item.teamId === currentDepartment.teamId && item.status === 'active')
-  const invalidGovernanceAgent = dialog.entity === 'department' && Boolean(managerAgentId && !departmentMembers.some((item) => item.id === managerAgentId))
-  const descendantIds = useMemo(() => { const result = new Set<string>(); if (!currentDepartment) return result; const visit = (id: string) => state.departments.filter((item) => item.parentDepartmentId === id).forEach((item) => { result.add(item.id); visit(item.id) }); visit(currentDepartment.id); return result }, [currentDepartment, state.departments]); const invalidParent = Boolean(parentId && (parentId === currentDepartment?.id || descendantIds.has(parentId)))
-  const save = async () => { setSaving(true); setError(undefined); try { const id = dialog.id ?? (generatedId || (desktop ? await generateEntityId(dialog.entity, name) : `${dialog.entity}-${crypto.randomUUID()}`)); if (!dialog.id && !generatedId) setGeneratedId(id); if (dialog.entity === 'team') { const team = { id, name: name.trim(), mark: normalizedTeamMark, color: teamColor, mission: mission.trim(), boundary: currentTeam?.boundary ?? '组织身份不自动授予权限。', memberAgentIds: state.agents.filter((agent) => agent.teamId === id).map((agent) => agent.id), departmentIds: currentTeam?.departmentIds ?? [], sharedAssetIds: currentTeam?.sharedAssetIds ?? [] }; if (desktop) { const persisted = await saveTeamV2(team); dispatch({ type: 'SYNC_PERSISTED_TEAMS', teams: [{ ...team, ...persisted }] }) } else dispatch(dialog.mode === 'create' ? { type: 'CREATE_TEAM', team } : { type: 'UPDATE_TEAM', teamId: id, changes: team }); close(); dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: dialog.mode === 'create' ? 'Team已创建' : 'Team配置已保存', description: `${team.name} 的组织配置已更新。` } }); if (dialog.mode === 'create') { dispatch({ type: 'SELECT_TEAM', teamId: id }); navigate(dialog.returnTo ?? `/organization?team=${encodeURIComponent(id)}`, { replace: true }) } } else { const department = { id, name: name.trim(), teamId, parentDepartmentId: parentId || undefined, parent: state.departments.find((item) => item.id === parentId)?.name, managerAgentId: managerAgentId || undefined, manager: state.agents.find((item) => item.id === managerAgentId)?.name, mission: mission.trim(), members: currentDepartment?.members ?? 0, responsibilities: currentDepartment?.responsibilities ?? [], boundaries: currentDepartment?.boundaries ?? ['不隐式授予权限'], delegationDepth: currentDepartment?.delegationDepth ?? 1, memberAgentIds: currentDepartment?.memberAgentIds ?? [], ownedSopIds: currentDepartment?.ownedSopIds ?? [] }; if (desktop) { const persisted = await saveDepartmentV2({ ...department, teamId: department.teamId }); dispatch({ type: 'SYNC_PERSISTED_DEPARTMENTS', departments: [{ ...department, ...persisted, teamId: persisted.teamId, members: persisted.memberAgentIds.length }] }) } else dispatch(dialog.mode === 'create' ? { type: 'CREATE_DEPARTMENT', department } : { type: 'UPDATE_DEPARTMENT', departmentId: id, changes: department }); close(); dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: dialog.mode === 'create' ? '部门已创建' : '部门配置已保存', description: `${department.name} 的组织配置已更新。` } }); if (dialog.mode === 'create') navigate(`/organization?team=${encodeURIComponent(teamId)}&department=${encodeURIComponent(id)}`, { replace: true }) } } catch (cause) { setError(errorFromCause(cause, `无法${dialog.mode === 'create' ? '创建' : '保存'}${dialog.entity === 'team' ? 'Team' : '部门'}`, '组织配置没有变化。请检查本地服务后重试。')) } finally { setSaving(false) } }
-  return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={`${dialog.mode === 'create' ? '创建' : '编辑'}${dialog.entity === 'team' ? 'Team' : '部门'}`} size="md" footer={<><Button variant="outline" onClick={close}>取消</Button><Button disabled={saving || !name.trim() || duplicate || invalidTeamMark || invalidParent || invalidGovernanceAgent || (dialog.entity === 'department' && !teamId)} onClick={save}>{saving ? '正在保存…' : desktop ? '保存配置' : '保存演示配置'}</Button></>}><label className="block text-sm font-medium">名称<input className="mt-2 h-10 w-full px-3" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={duplicate} aria-describedby={duplicate ? 'organization-name-error' : undefined} />{duplicate && <span id="organization-name-error" className="mt-1 block text-xs text-danger">{dialog.entity === 'team' ? `已有名为“${name.trim()}”的Team。` : `${state.teams.find((item) => item.id === teamId)?.name ?? '所选Team'}中已有名为“${name.trim()}”的部门。`}</span>}</label>{dialog.entity === 'team' && <div className="mt-4"><div className="flex items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl text-xs font-semibold" style={{ backgroundColor: teamIdentity.color, color: teamIdentity.foreground }} aria-hidden="true">{teamIdentity.mark}</span><div><div className="text-sm font-medium">Team 标识</div><p className="mt-1 text-xs text-muted-foreground">默认根据名称生成，也可设置 1–2 个字母或数字。</p></div></div><label className="mt-3 block text-sm font-medium">文字标识<input className="mt-2 h-10 w-full px-3" value={teamMark} placeholder={teamIdentity.mark} maxLength={2} aria-invalid={invalidTeamMark} aria-describedby={invalidTeamMark ? 'team-mark-error' : 'team-mark-help'} onChange={(event) => setTeamMark(event.target.value)} /></label>{invalidTeamMark ? <p id="team-mark-error" className="mt-1 text-xs text-danger">请输入 1–2 个字母或数字。</p> : <p id="team-mark-help" className="mt-1 text-xs text-muted-foreground">留空时自动使用“{teamIdentity.mark}”。</p>}<fieldset className="mt-4"><legend className="text-sm font-medium">标识颜色</legend><div className="mt-2 flex flex-wrap gap-2">{TEAM_COLOR_PRESETS.map(([colorName, color]) => <button key={color} type="button" aria-label={colorName} aria-pressed={teamColor === color} className="grid size-10 place-items-center rounded-lg border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" style={{ borderColor: teamColor === color ? color : undefined }} onClick={() => setTeamColor(color)}><span className="size-5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" /></button>)}</div></fieldset></div>}{dialog.entity === 'department' && <>{dialog.mode === 'create' ? <label className="mt-4 block text-sm font-medium">所属Team<select className="mt-2 h-10 w-full px-3" value={teamId} onChange={(e) => { setTeamId(e.target.value); setParentId('') }}>{state.teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <div className="mt-4"><div className="text-sm font-medium">所属Team</div><div className="mt-2 rounded-lg border border-border bg-muted/35 px-3 py-2.5 text-sm">{state.teams.find((item) => item.id === teamId)?.name ?? '未找到所属Team'}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">当前不能更改部门所属Team。</p></div>}<label className="mt-4 block text-sm font-medium">上级部门<select className="mt-2 h-10 w-full px-3" value={parentId} onChange={(e) => setParentId(e.target.value)}><option value="">顶级部门</option>{state.departments.filter((item) => item.teamId === teamId && item.id !== currentDepartment?.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{invalidParent && <span className="mt-1 block text-xs text-danger">不能移动到自身或后代部门，组织关系必须无环。</span>}</label></>}{dialog.entity === 'department' && dialog.mode === 'edit' && <label className="mt-4 block text-sm font-medium">部门主管<select aria-label="部门主管" className="mt-2 h-10 w-full px-3" value={managerAgentId} onChange={(event) => setManagerAgentId(event.target.value)}><option value="">未设置</option>{departmentMembers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{invalidGovernanceAgent && <span className="mt-1 block text-xs text-danger">当前主管已停用、归档或不再属于本部门，请清空或重新选择。</span>}<span className="mt-1 block text-xs leading-5 text-muted-foreground">仅可选择本部门已启用成员；设置主管关系不会授予文件、命令、网络或委派权限。</span></label>}<label className="mt-4 block text-sm font-medium">使命<textarea className="mt-2 min-h-24 w-full p-3" value={mission} onChange={(e) => setMission(e.target.value)} /></label>{error && <ErrorNotice error={error} className="mt-4" />}<p className="mt-4 text-xs text-muted-foreground">{desktop ? '组织关系保存到 Bandi 本机数据；不会移动 Agent 配置、授予权限或修改外部配置。' : '组织变更仅在当前页面更新，不移动 Agent 配置、不授予权限。'}</p></AppDialog>
 }
 
 function MissingDialog({ title, close }: { title: string; close: () => void }) { return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={title} size="sm" footer={<Button onClick={close}>关闭</Button>}><p className="text-sm text-muted-foreground">要查看的内容已不存在，请关闭后重新选择。</p></AppDialog> }

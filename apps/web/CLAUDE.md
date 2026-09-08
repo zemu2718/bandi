@@ -5,8 +5,8 @@
 ## 技术与职责
 
 - 本目录是 React 19、TypeScript、Vite、Tailwind CSS v4 的界面实现。
-- Web 端负责 Team、长期 Agent、可选 Team-scoped TaskBrief 与配置资产的查看、编辑和明确反馈；TaskBrief 必须属于一个 Team，只记录可交给外部客户端的目标、背景、约束和期望产出，不持久化 Agent，也不承担任务执行、聊天、终端、调度或运行监控。
-- 当前模拟能力不得伪装成真实探测、安装、连接、保存、备份、命令执行或 Claude Code Session 启动。Bandi Desktop 中受管 AgentPackage 的创建、身份保存和头像读写属于已接入的窄能力；纯 Web 与外部引用仍保持演示/只读边界。
+- Web 端负责 9 个内置 AI 编程工具（Claude Code、Claude Desktop、Codex、Gemini、Grok、OpenCode、OpenClaw、Hermes、Pi）的 Team、长期 Agent、可选 Team-scoped TaskBrief 与配置资产的查看、编辑和明确反馈；应用内只展示 Bandi 自有受管配置，不读取或展示宿主配置内容。TaskBrief 必须属于一个 Team，只记录可交给外部客户端的目标、背景、约束和期望产出，不持久化 Agent，也不承担任务执行、聊天、终端、调度或运行监控。
+- 当前模拟能力不得伪装成真实探测、安装、连接、保存、备份、命令执行或任何工具的 Session 启动。Bandi Desktop 中受管 AgentPackage 的创建、身份保存和头像读写属于已接入的窄能力；纯 Web 与外部引用仍保持演示/只读边界。工具方案只保存选择与配置，不自动安装任何工具集成。
 - 未明确接入真实能力前，业务 mock 只保存在 React 当前页面内存；不得写入 `localStorage`、文件、Tauri 或后端。仅严格白名单、版本化的本机 `UiPreferences` 可使用单一 `localStorage` key；不得持久化整个 `State`、`SettingsState` 或业务对象。工作台 Logo 与背景图仅通过固定 `logo` / `background` 槽位保存到桌面应用数据目录，不接受任意路径或远程 URL，也不进入配置版本、备份或同步。
 
 ## 事实来源

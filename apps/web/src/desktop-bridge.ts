@@ -1,6 +1,6 @@
 import type { AppCommandId } from './app-commands'
 import type { FullAgent } from './domain'
-import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, DiscoveryRequest, DiscoveryResult, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, OrganizationSnapshotV3, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, DiscoveryRequest, DiscoveryResult, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, TaskBriefDto, TeamDto } from './contracts'
 
 const commandEvent = 'bandi://app-command'
 
@@ -141,24 +141,24 @@ export async function selectClaudeAgentFile(): Promise<string | null> {
   return open({ directory: false, multiple: false, filters: [{ name: 'Claude Agent', extensions: ['md'] }] })
 }
 
-export async function loadLongTermDomainSnapshotV3(): Promise<OrganizationSnapshotV3> {
-  return invokeDesktop('load_long_term_domain_snapshot_v3', {})
+export async function loadLongTermDomainSnapshotV4(): Promise<LongTermDomainSnapshotDtoV4> {
+  return invokeDesktop('load_long_term_domain_snapshot_v4', {})
 }
 
-export async function saveTeamV2(team: TeamDto): Promise<TeamDto> {
-  return invokeDesktop('save_team_v2', { team })
+export async function saveTeamV4(team: TeamDto): Promise<TeamDto> {
+  return invokeDesktop('save_team_v4', { team })
 }
 
-export async function removeTeamV2(teamId: string): Promise<void> {
-  return invokeDesktop('remove_team_v2', { request: { teamId } })
+export async function removeTeamV4(teamId: string): Promise<void> {
+  return invokeDesktop('remove_team_v4', { request: { teamId } })
 }
 
-export async function saveTaskBriefV2(taskBrief: TaskBriefDto): Promise<TaskBriefDto> {
-  return invokeDesktop('save_task_brief_v2', { taskBrief })
+export async function saveTaskBriefV4(taskBrief: TaskBriefDto): Promise<TaskBriefDto> {
+  return invokeDesktop('save_task_brief_v4', { taskBrief })
 }
 
-export async function removeTaskBriefV2(taskBriefId: string): Promise<void> {
-  return invokeDesktop('remove_task_brief_v2', { request: { taskBriefId } })
+export async function removeTaskBriefV4(taskBriefId: string): Promise<void> {
+  return invokeDesktop('remove_task_brief_v4', { request: { taskBriefId } })
 }
 
 export async function generateEntityId(prefix: 'team' | 'task', name: string): Promise<string> {

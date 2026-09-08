@@ -92,7 +92,7 @@ describe('Desktop Backup 面板', () => {
     expect(await screen.findByText(/保存所选受管配置文件/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('查看安全范围'))
     expect(screen.getByText(/只包含 Bandi 当前发现并由你选中的可写受管配置文件/)).toBeInTheDocument()
-    expect(screen.getByText(/不包含 Team、部门、岗位、项目目录记录、跨部门服务、领域数据或正式记忆文件/)).toBeInTheDocument()
+    expect(screen.getByText(/不包含 Team、TaskBrief、项目目录记录和其他领域数据或正式记忆文件/)).toBeInTheDocument()
     expect(screen.getByText(/凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入/)).toBeInTheDocument()
   })
 

@@ -8,9 +8,9 @@
 
 # Bandi · 班底
 
-**可视化管理 AI Agent 的长期配置。**
+**9 个 AI 编程工具的长期 Agent / 配置管理器。**
 
-本地优先地管理长期 Agent、Team、配置与历史，再回到你自己的 Claude Code 中工作。
+本地优先地管理 Claude Code、Claude Desktop、Codex、Gemini、Grok、OpenCode、OpenClaw、Hermes 与 Pi 的长期 Agent、Team、配置和历史，再回到你自己的工具中工作。
 
 [![Apache License 2.0](https://img.shields.io/github/license/zemu2718/bandi?style=flat-square)](LICENSE) ![Development](https://img.shields.io/badge/status-development-orange?style=flat-square) [![Desktop platforms](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml/badge.svg?branch=main)](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml?query=branch%3Amain)
 

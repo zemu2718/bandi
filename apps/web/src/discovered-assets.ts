@@ -53,7 +53,7 @@ export function projectSharedAssets(assets: SharedAssetNodeDto[]): FullAsset[] {
       kind,
       teamId: asset.teamId,
       owner: '共享资产',
-      scope: asset.departmentId ? '部门级' : 'Team 共享',
+      scope: 'Team 共享',
       refs: 0,
       path,
       status: asset.parseStatus === 'parsed' ? '已发现' : '解析失败',

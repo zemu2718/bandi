@@ -21,6 +21,10 @@ tmp/
 .idea/
 *.swp
 
+# Python 缓存
+__pycache__/
+*.py[cod]
+
 # 测试运行产物
 .playwright-cli/
 e2e/.logs/

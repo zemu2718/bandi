@@ -36,9 +36,4 @@ describe('Agent 文件源码投影', () => {
     }
   })
 
-  it('生成协作与编排规范路径源码', () => {
-    const result = agentFileSource(agent, context, 'config/orchestration.yaml')
-    expect(result).toMatchObject({ status: 'available', language: 'yaml' })
-    if (result.status === 'available') expect(result.content).toContain('orchestration:')
-  })
 })

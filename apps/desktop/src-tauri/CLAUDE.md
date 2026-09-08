@@ -5,9 +5,9 @@
 ## 技术与职责
 
 - 本目录使用 Rust 与 Tauri 2，为 Bandi Desktop 提供最小化的桌面壳和经明确授权的本机能力。
-- Desktop 的职责是支持 Team、长期 Agent、可选 Team-scoped TaskBrief 与配置资产管理，不得演变为任务执行器、内嵌终端、聊天客户端、人员调度器或 Claude Code 运行监控台。
-- TaskBrief 必须属于一个 Team，只保存目标、背景、约束和期望产出，不持久化 Agent；所有实际任务下达、协作、工具调用、Todo、日志、调度、审批、汇报和验收继续留在用户自己的 Claude Code CLI。
-- 不得返回伪造的探测、安装、保存、备份、命令执行或 Claude Code 启动成功；未实现或未执行时必须明确报告真实状态。
+- Desktop 的职责是支持 9 个内置 AI 编程工具（Claude Code、Claude Desktop、Codex、Gemini、Grok、OpenCode、OpenClaw、Hermes、Pi）的 Team、长期 Agent、可选 Team-scoped TaskBrief 与配置资产管理，不得演变为任务执行器、内嵌终端、聊天客户端、人员调度器或运行监控台。
+- TaskBrief 必须属于一个 Team，只保存目标、背景、约束和期望产出，不持久化 Agent；所有实际任务下达、协作、工具调用、Todo、日志、调度、审批、汇报和验收继续留在用户自己的 AI 编程工具中。
+- 不得返回伪造的探测、安装、保存、备份、命令执行或工具启动成功；未实现、未执行或未经 smoke 验证时必须明确报告 `not_checked` 或 `degraded`。工具方案不自动安装集成。
 
 ## Tauri 与权限
 

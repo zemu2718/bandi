@@ -9,12 +9,15 @@ import { useApp } from '../state'
 import { Button } from './ui/button'
 import { AppDialog } from './ui/dialog'
 
-function buildContextSummary(teamName: string, agentName: string, task?: { title: string; brief?: string }): string {
+function buildContextSummary(teamName: string, agentName: string, task?: { title: string; goal: string; context: string; constraints: string; expectedOutput: string }): string {
   return [
     `Team：${teamName}`,
     `Agent：${agentName}`,
     `任务简报：${task?.title ?? '未关联'}`,
-    task?.brief && `任务背景：${task.brief}`,
+    task?.goal && `目标：${task.goal}`,
+    task?.context && `背景：${task.context}`,
+    task?.constraints && `约束：${task.constraints}`,
+    task?.expectedOutput && `期望产出：${task.expectedOutput}`,
     '',
     '请在不扩大既有权限的前提下使用以上上下文。任务执行、Todo、日志、审批和验收仍由当前 AI 编程工具会话负责。',
   ].filter(Boolean).join('\n')

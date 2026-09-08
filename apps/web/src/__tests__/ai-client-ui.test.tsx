@@ -14,7 +14,7 @@ vi.mock('../desktop-bridge', () => ({
   isDesktopRuntime: () => desktopBridge.desktop,
   listAgents: () => Promise.resolve({ agents: [], diagnostics: [] }),
   listAgentRecoveryOperations: () => Promise.resolve([]),
-  loadLongTermDomainSnapshotV3: () => Promise.resolve({ schemaVersion: 3, teams: [], departments: [], roles: [], taskBriefs: [], serviceGrants: [] }),
+  loadLongTermDomainSnapshotV4: () => Promise.resolve({ schemaVersion: 4, teams: [], taskBriefs: [] }),
   loadToolConfiguration: () => Promise.resolve({ revision: 0, selectedPlanId: 'default', builtInToolIds: [], plans: [{ id: 'default', name: '默认方案', toolIds: [] }], customTools: [] }),
   requestClientLaunchV3: desktopBridge.requestClientLaunchV3,
 }))
@@ -67,8 +67,8 @@ describe('AI 编程工具界面', () => {
 
   it('Agent 候选只包含所选 Team 的已启用成员', async () => {
     const teams = [
-      { id: 'team-a', name: 'Team A', memberAgentIds: ['zhouce', 'songyan'], departmentIds: [], sharedAssetIds: [] },
-      { id: 'team-b', name: 'Team B', memberAgentIds: ['zhiheng'], departmentIds: [], sharedAssetIds: [] },
+      { id: 'team-a', name: 'Team A', memberAgentIds: ['zhouce', 'songyan'], sharedAssetIds: [] },
+      { id: 'team-b', name: 'Team B', memberAgentIds: ['zhiheng'], sharedAssetIds: [] },
     ]
     const agents = initialState.agents.map((agent) => ({
       ...agent,

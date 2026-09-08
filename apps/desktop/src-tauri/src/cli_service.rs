@@ -3,7 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Serialize;
+use rusqlite::{Connection, OpenFlags};
+use serde::{Deserialize, Serialize};
 
 use crate::{domain_store, local_service};
 

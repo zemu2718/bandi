@@ -40,12 +40,6 @@ describe('Agent 配置文件投影', () => {
     )
   })
 
-  it('agent.yaml 只归属概览和身份，编排文件归属唯一协作入口', () => {
-    expect(getFilesForAgentSection(agent, 'permissions').map((item) => item.file.path)).not.toContain('agent.yaml')
-    expect(getFilesForAgentSection(agent, 'sop').map((item) => item.file.path)).not.toContain('agent.yaml')
-    expect(getFilesForAgentSection(agent, 'collaboration').map((item) => item.file.path)).toContain('config/orchestration.yaml')
-  })
-
   it('AgentPackage 无路径时选择默认文件并规范 URL', () => {
     const route = resolveAgentConfigRoute(agent, new URLSearchParams('tab=package'))
     expect(route.section).toBe('package')

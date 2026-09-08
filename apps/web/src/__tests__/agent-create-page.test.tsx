@@ -4,7 +4,6 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import contractsFixture from '../../../../packages/contracts/fixtures/core-contracts.valid.json'
 import { AgentCreatePage } from '../pages/agents/agent-create-page'
 import { AppProvider, initialState, useApp, type State } from '../state'
 
@@ -78,16 +77,6 @@ function enterName(name = '阿策') {
   fireEvent.change(screen.getByRole('textbox', { name: /Agent 名称/ }), { target: { value: name } })
 }
 
-function expandOptionalOrganization() {
-  fireEvent.click(screen.getByText('更多设置（头像、部门与岗位）'))
-}
-
-function selectOptionalOrganization() {
-  expandOptionalOrganization()
-  fireEvent.change(screen.getByRole('combobox', { name: /所属部门/ }), { target: { value: 'dev' } })
-  fireEvent.change(screen.getByRole('combobox', { name: /岗位/ }), { target: { value: 'role-web-engineer' } })
-}
-
 describe('Agent 创建页', () => {
   it('普通创建以模板优先的 Dialog 呈现，只要求名称', () => {
     bridge.desktop = true
@@ -101,7 +90,6 @@ describe('Agent 创建页', () => {
     expect(screen.getByRole('textbox', { name: /角色定位/ })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /工作方法与约束/ })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: '所属 Team' })).not.toBeInTheDocument()
-    expect(screen.getByText('更多设置（头像、部门与岗位）').closest('details')).not.toHaveAttribute('open')
     expect(screen.queryByText('1 身份与组织')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '继续' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '创建 Agent' })).toBeInTheDocument()
@@ -156,8 +144,7 @@ describe('Agent 创建页', () => {
     expect(agent.instructions).toContain('先确认变更范围和验证证据')
     expect(agent.responsibilities).toEqual([])
     expect(agent.ruleRefs).toEqual([])
-    expect(agent.permissions).toEqual({ files: '未授予', commands: '未授予', network: '未授予', delegation: '未授予' })
-    expect(agent.serviceGrants).toEqual([])
+    expect(agent.permissions).toEqual({ files: '未授予', commands: '未授予', network: '未授予' })
   })
 
   it('修改模板字段后切换模板需要确认，且不覆盖名称', () => {
@@ -188,74 +175,6 @@ describe('Agent 创建页', () => {
     expect(screen.getByRole('textbox', { name: /Agent 名称/ })).toHaveValue('阿策')
   })
 
-  it('单 Team 时仅填写名称即可创建 Agent，并保持安全默认', async () => {
-    bridge.desktop = true
-    bridge.commitManagedAgentCreation.mockImplementation(async (_requestId, agent) => managedResult(agent))
-    const { router } = renderPage({ ...initialState, currentTeamId: 'team-personal', teams: [{ ...initialState.teams[0], id: 'team-personal', name: '个人 Team' }] })
-    enterName()
-
-    fireEvent.click(screen.getByRole('button', { name: '创建 Agent' }))
-
-    await waitFor(() => expect(bridge.commitManagedAgentCreation).toHaveBeenCalledTimes(1))
-    const [requestId, agent, files, grants] = bridge.commitManagedAgentCreation.mock.calls[0]
-    expect(requestId).toBe('create-agent-fixed-agent-id')
-    expect(agent).toMatchObject({
-      id: 'agent-backend-id',
-      name: '阿策',
-      mission: '',
-      responsibilities: [],
-      deliverables: [],
-      decisionBoundaries: [],
-      escalationConditions: [],
-      prohibitions: [],
-      completionDefinition: [],
-      permissions: { files: '未授予', commands: '未授予', network: '未授予', delegation: '未授予' },
-      serviceGrants: [],
-    })
-    expect(bridge.allocateAgentId).toHaveBeenCalledWith('create-agent-fixed-agent-id')
-    expect(agent.teamId).toBe('team-personal')
-    expect(agent.primaryDepartmentId).toBeUndefined()
-    expect(agent.roleId).toBeUndefined()
-    expect(grants).toEqual([])
-    expect(files.map((file: { path: string }) => file.path).sort()).toEqual([
-      'agent.yaml', 'config/commands.yaml', 'config/context.yaml', 'config/hooks.yaml', 'config/mcp.yaml',
-      'config/orchestration.yaml', 'config/permissions.yaml', 'config/rules.yaml', 'config/skills.yaml',
-      'config/sop.yaml', 'instructions.md',
-    ])
-    const orchestration = files.find((file: { path: string }) => file.path === 'config/orchestration.yaml')
-    expect(orchestration?.content).toBe(contractsFixture.orchestrationSaveRequest.baseContent)
-    expect(orchestration?.content).not.toContain('requireWorkspaceBinding')
-    await waitFor(() => expect(router.state.location.pathname).toBe('/agents/agent-backend-id'))
-    expect(router.state.location.search).toBe('')
-    expect(await screen.findByText('Agent 已创建')).toBeInTheDocument()
-    expect(screen.getByText(/任务使用与执行仍在 Claude Code 中完成/)).toBeInTheDocument()
-  })
-
-  it('多 Team 时继承当前 Team，部门和岗位仍可跳过', async () => {
-    bridge.desktop = true
-    bridge.commitManagedAgentCreation.mockImplementation(async (_requestId, agent) => managedResult(agent))
-    renderPage()
-    enterName()
-
-    expect(screen.queryByRole('combobox', { name: '所属 Team' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '创建 Agent' }))
-
-    await waitFor(() => expect(bridge.commitManagedAgentCreation).toHaveBeenCalledTimes(1))
-    const agent = bridge.commitManagedAgentCreation.mock.calls[0][1]
-    expect(agent.teamId).toBe(initialState.currentTeamId)
-    expect(agent.primaryDepartmentId).toBeUndefined()
-    expect(agent.roleId).toBeUndefined()
-  })
-
-  it('部门深链接预填 Team 和部门并展开更多设置，岗位仍可后补', () => {
-    renderPage(initialState, '/agents/new?department=dev')
-
-    expect(screen.queryByRole('combobox', { name: /所属 Team/ })).not.toBeInTheDocument()
-    expect(screen.getByText('更多设置（头像、部门与岗位）').closest('details')).toHaveAttribute('open')
-    expect(screen.getByRole('combobox', { name: /所属部门/ })).toHaveValue('dev')
-    expect(screen.getByRole('combobox', { name: /岗位/ })).toHaveValue('')
-  })
-
   it('忽略 legacy 工作区深链接，不创建绑定', async () => {
     bridge.desktop = true
     bridge.commitManagedAgentCreation.mockImplementation(async (_requestId, agent) => managedResult(agent))
@@ -275,7 +194,6 @@ describe('Agent 创建页', () => {
     expect(screen.getByRole('dialog', { name: '导入 Agent' })).toBeInTheDocument()
     expect(screen.getByText(/当前支持 Claude Code 的 \.claude\/agents\/\*\.md/)).toBeInTheDocument()
     expect(screen.queryByText('1 身份与组织')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: /所属部门|岗位|适用项目/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '导入 Agent' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /选择 Agent 文件/ }))
@@ -285,7 +203,7 @@ describe('Agent 创建页', () => {
     expect(screen.getByText(`将添加到当前 Team：${initialState.teams.find((team) => team.id === initialState.currentTeamId)?.name}`)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '导入 Agent' }))
 
-    await waitFor(() => expect(bridge.importClaudeAgent).toHaveBeenCalledWith('/tmp/.claude/agents/reviewer.md', 'sha256:source', 'import-agent-fixed-agent-id', expect.objectContaining({ id: 'agent-backend-id', instructions: 'Review carefully.', primaryDepartmentId: undefined, roleId: undefined, serviceGrants: [] }), expect.any(Array), []))
+    await waitFor(() => expect(bridge.importClaudeAgent).toHaveBeenCalledWith('/tmp/.claude/agents/reviewer.md', 'sha256:source', 'import-agent-fixed-agent-id', expect.objectContaining({ id: 'agent-backend-id', instructions: 'Review carefully.', teamId: initialState.currentTeamId }), expect.any(Array)))
     await waitFor(() => expect(router.state.location.pathname).toBe('/agents/agent-backend-id'))
     expect(router.state.location.search).toBe('')
     expect(await screen.findByText('Agent 已导入')).toBeInTheDocument()
@@ -317,7 +235,7 @@ describe('Agent 创建页', () => {
 
   it('半成功状态保留草稿并引导到全局恢复', async () => {
     bridge.desktop = true
-    bridge.commitManagedAgentCreation.mockImplementation(async (_requestId, agent) => managedResult(agent, 'organization_pending'))
+    bridge.commitManagedAgentCreation.mockImplementation(async (_requestId, agent) => managedResult(agent, 'team_pending'))
     renderPage({ ...initialState, teams: [initialState.teams[0]] })
     enterName()
     fireEvent.click(screen.getByRole('button', { name: '创建 Agent' }))
@@ -327,15 +245,4 @@ describe('Agent 创建页', () => {
     expect(bridge.commitManagedAgentCreation).toHaveBeenCalledTimes(1)
   })
 
-  it('完整组织创建只提交同作用域的三字段', async () => {
-    bridge.desktop = true
-    bridge.commitManagedAgentCreation.mockImplementation(async (_requestId, agent) => managedResult(agent))
-    renderPage()
-    enterName()
-    selectOptionalOrganization()
-    fireEvent.click(screen.getByRole('button', { name: '创建 Agent' }))
-
-    await waitFor(() => expect(bridge.commitManagedAgentCreation).toHaveBeenCalledTimes(1))
-    expect(bridge.commitManagedAgentCreation.mock.calls[0][1]).toMatchObject({ teamId: 'xinghe', primaryDepartmentId: 'dev', roleId: 'role-web-engineer' })
-  })
 })

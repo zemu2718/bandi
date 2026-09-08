@@ -9,7 +9,7 @@ import { AppProvider, initialState, useApp, type State } from '../state'
 beforeEach(() => vi.stubGlobal('crypto', { randomUUID: () => 'fixed-id' }))
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-const task = { id: 'task-a', teamId: initialState.currentTeamId, title: '整理发布说明', brief: '汇总本次变更' }
+const task = { id: 'task-a', teamId: initialState.currentTeamId, title: '整理发布说明', goal: '汇总本次变更', context: '版本即将发布', constraints: '仅整理已验证内容', expectedOutput: '发布说明草稿' }
 
 function Probe() {
   const { state } = useApp()
@@ -31,6 +31,10 @@ describe('任务简报页', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '保存简报' }))
     expect(within(dialog).getByText('请输入标题。')).toBeInTheDocument()
     expect(within(dialog).getByRole('textbox', { name: /标题/ })).toHaveFocus()
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /标题/ }), { target: { value: '发布说明' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存简报' }))
+    expect(within(dialog).getByText('请输入目标。')).toBeInTheDocument()
+    expect(within(dialog).getByRole('textbox', { name: /^目标/ })).toHaveFocus()
     expect(within(dialog).queryByRole('combobox', { name: /所属 Team|项目/ })).not.toBeInTheDocument()
   })
 

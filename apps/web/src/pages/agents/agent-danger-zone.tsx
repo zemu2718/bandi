@@ -20,7 +20,6 @@ const impactGroups: Array<{
 }> = [
   { key: 'sharedAssetReferences', title: '共享资产引用' },
   { key: 'organizationRelationships', title: '组织关系' },
-  { key: 'reviewResponsibilities', title: '审核责任' },
   { key: 'formalMemory', title: '正式记忆' },
   { key: 'automaticCleanup', title: '自动清理项' },
   { key: 'historyAndBackups', title: '历史与备份' },

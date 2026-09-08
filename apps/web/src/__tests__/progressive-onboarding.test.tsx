@@ -11,7 +11,7 @@ import { AppProvider, initialState, type State } from '../state'
 
 const desktopBridge = vi.hoisted(() => ({
   desktop: false,
-  loadLongTermDomainSnapshotV3: vi.fn(),
+  loadLongTermDomainSnapshotV4: vi.fn(),
   discoverConfig: vi.fn(),
   loadToolConfiguration: vi.fn(),
   listAgents: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('../desktop-bridge', () => ({
   listAgents: desktopBridge.listAgents,
   discoverConfig: desktopBridge.discoverConfig,
   listManagedAgents: () => Promise.resolve([]),
-  loadLongTermDomainSnapshotV3: desktopBridge.loadLongTermDomainSnapshotV3,
+  loadLongTermDomainSnapshotV4: desktopBridge.loadLongTermDomainSnapshotV4,
   loadToolConfiguration: desktopBridge.loadToolConfiguration,
   listAgentRecoveryOperations: desktopBridge.listAgentRecoveryOperations,
   continueAgentRecovery: desktopBridge.continueAgentRecovery,
@@ -42,7 +42,7 @@ beforeEach(() => {
   storage.clear()
   desktopBridge.desktop = false
   desktopBridge.listAgents.mockReset()
-  desktopBridge.loadLongTermDomainSnapshotV3.mockReset().mockResolvedValue({ schemaVersion: 3, teams: [], departments: [], roles: [], taskBriefs: [], serviceGrants: [] })
+  desktopBridge.loadLongTermDomainSnapshotV4.mockReset().mockResolvedValue({ schemaVersion: 4, teams: [], taskBriefs: [] })
   desktopBridge.discoverConfig.mockReset().mockResolvedValue({ requestId: 'hydrate-shared-assets', profileVersion: 'agent-package-v1', containers: [], assets: [], sharedAssets: [], references: [], diagnostics: [] })
   desktopBridge.loadToolConfiguration.mockReset().mockResolvedValue({ revision: 0, selectedPlanId: 'default', builtInToolIds: [], plans: [{ id: 'default', name: '默认方案', toolIds: [] }], customTools: [] })
   desktopBridge.listAgentRecoveryOperations.mockReset()
@@ -84,14 +84,13 @@ function renderRoutes(initialEntry: string, state: State) {
 const emptyState: State = {
   ...initialState,
   teams: [],
-  departments: [],
 }
 
 describe('渐进式首次体验', () => {
   it('重新读取完成前保留已有诊断', async () => {
     desktopBridge.desktop = true
     const nextAgents = deferred<{ agents: never[]; diagnostics: never[] }>()
-    const diagnostic = { code: 'orchestration-invalid', severity: 'error' as const, message: '配置不符合 schema' }
+    const diagnostic = { code: 'agent-config-invalid', severity: 'error' as const, message: '配置不符合 schema' }
     desktopBridge.listAgents
       .mockResolvedValueOnce({ agents: [], diagnostics: [diagnostic] })
       .mockReturnValueOnce(nextAgents.promise)
@@ -110,7 +109,7 @@ describe('渐进式首次体验', () => {
   it('Desktop 持久展示多项读取失败并允许重试', async () => {
     desktopBridge.desktop = true
     desktopBridge.listAgents.mockRejectedValueOnce(new Error('agent root unavailable')).mockResolvedValue({ agents: [], diagnostics: [] })
-    desktopBridge.loadLongTermDomainSnapshotV3.mockRejectedValueOnce(new Error('database unavailable')).mockResolvedValue({ schemaVersion: 3, teams: [], departments: [], roles: [], taskBriefs: [], serviceGrants: [] })
+    desktopBridge.loadLongTermDomainSnapshotV4.mockRejectedValueOnce(new Error('database unavailable')).mockResolvedValue({ schemaVersion: 4, teams: [], taskBriefs: [] })
     desktopBridge.listAgentRecoveryOperations.mockImplementation(() => new Promise(() => undefined))
     const router = createMemoryRouter([{ path: '/', element: <AppProvider><HomePage /></AppProvider> }], { initialEntries: ['/'] })
     render(<RouterProvider router={router} />)
@@ -133,7 +132,7 @@ describe('渐进式首次体验', () => {
       id: 'operation-pending',
       agentId: initialState.agents[0].id,
       operationKind: 'create' as const,
-      status: 'organization_pending' as const,
+      status: 'team_pending' as const,
       createdAt: '2026-09-02T00:00:00Z',
     }
     desktopBridge.continueAgentRecovery.mockResolvedValue({
@@ -158,7 +157,7 @@ describe('渐进式首次体验', () => {
     renderRoutes('/', {
       ...emptyState,
       agents: [],
-      agentRecoveryOperations: [{ id: 'operation-pending', agentId: 'missing-agent', operationKind: 'create', status: 'organization_pending', createdAt: '2026-09-08T00:00:00Z' }],
+      agentRecoveryOperations: [{ id: 'operation-pending', agentId: 'missing-agent', operationKind: 'create', status: 'team_pending', createdAt: '2026-09-08T00:00:00Z' }],
     })
 
     expect(screen.getByText('Agent 配置尚未完整保存')).toBeInTheDocument()
@@ -175,7 +174,6 @@ describe('渐进式首次体验', () => {
       ...initialState,
       onboarding: { status: 'completed' },
       agents: healthyAgents,
-      memoryCandidates: [],
       agentDiagnostics: [],
       agentRecoveryOperations: [],
     })
@@ -191,21 +189,11 @@ describe('渐进式首次体验', () => {
     renderRoutes('/', { ...emptyState, agents: [] })
 
     expect(screen.getByRole('heading', { name: '先新建或导入一个长期 Agent' })).toBeInTheDocument()
-    expect(screen.getByText('无需预先创建部门或岗位。')).toBeInTheDocument()
+    expect(screen.getByText('无需预先配置额外组织层级。')).toBeInTheDocument()
     expect(screen.getByText(/Claude Code 的 \.claude\/agents\/\*\.md 文件导入为受管副本/)).toBeInTheDocument()
     expect(screen.getByText(/浏览器演示不会读取或写入本机文件/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '新建 Agent' })).toHaveAttribute('href', '/agents/new')
     expect(screen.getByRole('link', { name: '导入 Agent' })).toHaveAttribute('href', '/agents/new?mode=import')
   })
 
-  it('无 Team 时保留部门与岗位深链并只引导创建 Team', () => {
-    renderRoutes('/organization', emptyState)
-
-    expect(screen.getByRole('heading', { name: '部门与岗位' })).toBeInTheDocument()
-    expect(screen.getByText('还没有 Team')).toBeInTheDocument()
-    expect(screen.getByText('先创建 Team，再按需设置部门与岗位。')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '创建 Team' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '创建部门' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: '当前 Team' })).not.toBeInTheDocument()
-  })
 })
