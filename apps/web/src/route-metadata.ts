@@ -2,7 +2,7 @@ export type NavigationSection =
   | 'home'
   | 'agents'
   | 'organization'
-  | 'workspaces'
+  | 'tasks'
   | 'assets'
   | 'settings'
 
@@ -16,9 +16,7 @@ type NamedEntity = { id: string; name: string }
 
 type RouteMetadataContext = {
   agents?: NamedEntity[]
-  companies?: NamedEntity[]
-  departments?: NamedEntity[]
-  workspaces?: NamedEntity[]
+  teams?: NamedEntity[]
   assets?: NamedEntity[]
 }
 
@@ -36,16 +34,12 @@ export function resolveRouteMetadata(
   context: RouteMetadataContext = {},
 ): RouteMetadata {
   const [pathname, search = ''] = location.split('?')
-  if (pathname === '/') return { section: 'home', title: '配置概览' }
+  if (pathname === '/') return { section: 'home', title: '配置状态' }
   if (pathname === '/agents/new') {
     const mode = new URLSearchParams(search).get('mode')
     return {
       section: 'agents',
-      title: mode === 'import'
-        ? '导入 Claude Agent'
-        : mode === 'reference'
-          ? '仅登记外部引用'
-          : '创建个人 Agent',
+      title: mode === 'import' ? '导入 Agent' : '新建 Agent',
     }
   }
   if (pathname.startsWith('/agents/')) {
@@ -54,17 +48,9 @@ export function resolveRouteMetadata(
     return { section: 'agents', title: agent?.name ?? 'Agent 配置', agentId: agent?.id }
   }
   if (pathname === '/agents') return { section: 'agents', title: 'Agent' }
-  if (pathname.startsWith('/organization/companies/')) return { section: 'organization', title: entityName(pathname, '/organization/companies/', context.companies) ?? '公司详情' }
-  if (pathname.startsWith('/organization/departments/')) return { section: 'organization', title: entityName(pathname, '/organization/departments/', context.departments) ?? '部门详情' }
-  if (pathname === '/organization') {
-    const departmentId = new URLSearchParams(search).get('department')
-    const department = context.departments?.find((item) => item.id === departmentId)
-    return { section: 'organization', title: department?.name ?? '组织' }
-  }
-  if (pathname.startsWith('/organization')) return { section: 'organization', title: '组织' }
-  if (pathname === '/workspaces/new') return { section: 'workspaces', title: '添加工作区' }
-  if (pathname.startsWith('/workspaces/')) return { section: 'workspaces', title: entityName(pathname, '/workspaces/', context.workspaces) ?? '工作区配置' }
-  if (pathname === '/workspaces') return { section: 'workspaces', title: '工作区' }
+  if (pathname.startsWith('/organization/teams/')) return { section: 'organization', title: entityName(pathname, '/organization/teams/', context.teams) ?? 'Team 详情' }
+  if (pathname === '/organization') return { section: 'organization', title: 'Team 管理' }
+  if (pathname === '/tasks') return { section: 'tasks', title: '任务简报' }
   if (pathname === '/assets/skills') return { section: 'assets', title: '技能' }
   if (pathname.startsWith('/assets/')) return { section: 'assets', title: entityName(pathname, '/assets/', context.assets) ?? '资产详情' }
   if (pathname === '/assets') return { section: 'assets', title: '资产' }

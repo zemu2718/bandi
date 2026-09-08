@@ -9,7 +9,7 @@ use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    config_fs::restricted_atomic_write,
+    config_fs::{ensure_regular_directory, ensure_regular_file, restricted_atomic_write},
     domain_store,
     local_service::{self, DiagnosticDto, LoadEditorRequest},
 };
@@ -61,11 +61,7 @@ pub(super) fn diagnostic(code: &str, message: &str, remediation: &str) -> Diagno
 
 fn ensure_storage_root(root: &Path) -> Result<(), String> {
     fs::create_dir_all(root).map_err(|_| "无法创建 Backup 存储目录".to_string())?;
-    let metadata = fs::symlink_metadata(root).map_err(|_| "无法检查 Backup 存储目录")?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err("Backup 存储目录必须是普通目录".into());
-    }
-    Ok(())
+    ensure_regular_directory(root, "Backup 存储目录")
 }
 
 fn content_relative_path(snapshot_id: &str, asset_id: &str) -> String {
@@ -132,8 +128,16 @@ pub(super) fn load_entries(
             ))
         })
         .map_err(|_| "无法读取 Backup 快照条目".to_string())?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|_| "Backup 快照条目已损坏".to_string())
+    let entries = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "Backup 快照条目已损坏".to_string())?;
+    if entries
+        .iter()
+        .any(|(entry, _)| entry.kind == "orchestration")
+    {
+        return Err("旧版 Backup 含 orchestration 资产，拒绝预览或恢复整个快照".into());
+    }
+    Ok(entries)
 }
 
 fn manifest_hash(entries: &[BackupSnapshotEntryDto]) -> Result<String, String> {
@@ -383,6 +387,23 @@ pub(super) fn verify_entry_content(
             "不要恢复该快照，并重新创建本地快照",
         ))
     })?;
+    let snapshot_dir = target.parent().ok_or_else(|| {
+        Box::new(diagnostic(
+            "backup_content_ref_invalid",
+            "Backup 内容引用无效",
+            "不要恢复该快照，并重新创建本地快照",
+        ))
+    })?;
+    if ensure_regular_directory(backup_root, "Backup 存储目录").is_err()
+        || ensure_regular_directory(snapshot_dir, "Backup 快照目录").is_err()
+        || ensure_regular_file(&target, "Backup 内容文件").is_err()
+    {
+        return Err(Box::new(diagnostic(
+            "backup_content_invalid",
+            "Backup 存储路径或内容文件类型无效",
+            "不要恢复该快照，并重新创建本地快照",
+        )));
+    }
     let metadata = fs::symlink_metadata(&target).map_err(|_| {
         Box::new(diagnostic(
             "backup_content_missing",
@@ -390,13 +411,10 @@ pub(super) fn verify_entry_content(
             "不要恢复该快照，并检查本地快照存储",
         ))
     })?;
-    if metadata.file_type().is_symlink()
-        || !metadata.is_file()
-        || metadata.len() > MAX_BACKUP_CONTENT_BYTES as u64
-    {
+    if metadata.len() > MAX_BACKUP_CONTENT_BYTES as u64 {
         return Err(Box::new(diagnostic(
             "backup_content_invalid",
-            "Backup 内容文件类型或大小无效",
+            "Backup 内容文件大小无效",
             "不要恢复该快照，并重新创建本地快照",
         )));
     }

@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FactoryResetPanel } from '../pages/settings/factory-reset-panel'
-import { ToolsHandoffSection } from '../pages/settings/tools-handoff-section'
+import { ToolsConfigurationSection } from '../pages/settings/tools-configuration-section'
 import { AppProvider, initialState } from '../state'
 import { applyToolConfigurationSnapshot } from '../tool-configuration'
 import { MAIN_MENU_LAYOUT_STORAGE_KEY } from '../navigation-layout'
@@ -41,7 +41,7 @@ function renderTools() {
       hydration: { ...initialState.hydration, toolConfiguration: 'succeeded' },
       ...applyToolConfigurationSnapshot(initialSnapshot),
     }}>
-      <ToolsHandoffSection />
+      <ToolsConfigurationSection />
     </AppProvider>,
   )
 }
@@ -186,5 +186,17 @@ describe('恢复出厂状态面板', () => {
     expect(localStorage.getItem(LEGACY_THEME_STORAGE_KEY)).toBe('dark')
     expect(localStorage.getItem(MAIN_MENU_LAYOUT_STORAGE_KEY)).toBe('[]')
     expect(localStorage.getItem('unrelated-key')).toBe('keep')
+  })
+
+  it('回滚失败时不保证数据保持原状', async () => {
+    bridge.commitFactoryReset.mockRejectedValue(new Error('FACTORY_RESET_ROLLBACK_FAILED: rollback failed'))
+    render(<FactoryResetPanel />)
+
+    await openAndConfirm()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('无法确认所有数据已回滚')
+    expect(alert).toHaveTextContent('停止编辑')
+    expect(alert).not.toHaveTextContent('恢复尚未提交')
   })
 })

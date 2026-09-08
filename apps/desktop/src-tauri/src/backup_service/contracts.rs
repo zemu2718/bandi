@@ -92,6 +92,12 @@ pub(crate) struct BackupRestoreEntryResultDto {
     pub(crate) status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) revision_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) retryable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) file_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) recovery_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) diagnostics: Vec<DiagnosticDto>,
 }

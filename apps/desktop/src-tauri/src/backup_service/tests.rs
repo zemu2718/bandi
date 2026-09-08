@@ -15,11 +15,9 @@ fn fixture(name: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf, String)
     fs::write(package.join("agent.yaml"), "schemaVersion: 1\nid: alpha\n").unwrap();
     fs::write(package.join("instructions.md"), "# Alpha\n").unwrap();
     let discovery = local_service::discover_at(
-        &root.path().join("registry"),
         &managed,
         local_service::DiscoveryRequest {
             request_id: "discover".into(),
-            workspace_ids: Vec::new(),
             include_claude_user_root: false,
         },
     );
@@ -81,6 +79,55 @@ fn backup_requests_reject_paths_and_unknown_fields() {
 }
 
 #[test]
+fn preview_and_restore_reject_snapshot_containing_orchestration() {
+    let (root, managed, _, relative_backup, asset_id) = fixture("backup-orchestration");
+    let database = root.path().join("bandi.db");
+    let backup_root = root.path().join(relative_backup);
+    let snapshot = create_snapshot_at(
+        &database,
+        &managed,
+        &backup_root,
+        create_request(asset_id.clone()),
+    )
+    .unwrap();
+    let connection = domain_store::open_at(&database).unwrap();
+    connection
+        .execute(
+            "UPDATE backup_snapshot_entries SET asset_kind = 'orchestration' WHERE snapshot_id = ?1",
+            [&snapshot.id],
+        )
+        .unwrap();
+    drop(connection);
+
+    let preview = preview_restore_at(
+        &database,
+        &managed,
+        &backup_root,
+        PreviewBackupRestoreRequest {
+            request_id: "preview-orchestration".into(),
+            snapshot_id: snapshot.id.clone(),
+            asset_ids: vec![asset_id.clone()],
+        },
+    );
+    assert!(preview.unwrap_err().contains("orchestration"));
+
+    let restore = restore_snapshot_at(
+        &database,
+        &managed,
+        &root.path().join("revisions"),
+        &backup_root,
+        RestoreBackupSnapshotRequest {
+            request_id: "restore-orchestration".into(),
+            snapshot_id: snapshot.id,
+            asset_ids: vec![asset_id],
+            preview_ref: "preview-missing".into(),
+            confirmed: true,
+        },
+    );
+    assert!(restore.unwrap_err().contains("orchestration"));
+}
+
+#[test]
 fn snapshot_history_survives_reopen_and_detects_tampering() {
     let (root, managed, _, relative_backup, asset_id) = fixture("backup-history");
     let database = root.path().join("bandi.db");
@@ -126,11 +173,9 @@ fn multi_asset_snapshot_keeps_content_references_aligned() {
     )
     .unwrap();
     let discovery = local_service::discover_at(
-        &root.path().join("registry"),
         &managed,
         local_service::DiscoveryRequest {
             request_id: "discover-two".into(),
-            workspace_ids: Vec::new(),
             include_claude_user_root: false,
         },
     );
@@ -236,12 +281,54 @@ fn restore_rejects_symlinked_snapshot_content() {
     assert_eq!(preview.entries[0].status, "integrity_failed");
 }
 
+#[cfg(unix)]
+#[test]
+fn restore_rejects_symlinked_backup_ancestors() {
+    use std::os::unix::fs::symlink;
+
+    for linked_part in ["root", "snapshot"] {
+        let (root, managed, _, relative_backup, asset_id) =
+            fixture(&format!("backup-symlink-{linked_part}"));
+        let database = root.path().join("bandi.db");
+        let backup_root = root.path().join(relative_backup);
+        let snapshot = create_snapshot_at(
+            &database,
+            &managed,
+            &backup_root,
+            create_request(asset_id.clone()),
+        )
+        .unwrap();
+        if linked_part == "root" {
+            let real_root = root.path().join("real-backups");
+            fs::rename(&backup_root, &real_root).unwrap();
+            symlink(&real_root, &backup_root).unwrap();
+        } else {
+            let snapshot_dir = backup_root.join(&snapshot.id);
+            let real_dir = root.path().join("real-snapshot");
+            fs::rename(&snapshot_dir, &real_dir).unwrap();
+            symlink(&real_dir, &snapshot_dir).unwrap();
+        }
+
+        let preview = preview_restore_at(
+            &database,
+            &managed,
+            &backup_root,
+            PreviewBackupRestoreRequest {
+                request_id: format!("preview-symlink-{linked_part}"),
+                snapshot_id: snapshot.id,
+                asset_ids: vec![asset_id],
+            },
+        )
+        .unwrap();
+        assert_eq!(preview.entries[0].status, "integrity_failed");
+    }
+}
+
 #[test]
 fn restore_creates_safety_snapshot_revision_and_rejects_stale_preview() {
     let (root, managed, package, relative_backup, asset_id) = fixture("backup-restore");
     let database = root.path().join("bandi.db");
     let backup_root = root.path().join(relative_backup);
-    let registry = root.path().join("registry");
     let revisions = root.path().join("revisions");
     let snapshot = create_snapshot_at(
         &database,
@@ -264,7 +351,6 @@ fn restore_creates_safety_snapshot_revision_and_rejects_stale_preview() {
     .unwrap();
     let result = restore_snapshot_at(
         &database,
-        &registry,
         &managed,
         &revisions,
         &backup_root,
@@ -287,7 +373,6 @@ fn restore_creates_safety_snapshot_revision_and_rejects_stale_preview() {
     assert_eq!(list_snapshots_at(&database).unwrap().len(), 2);
     assert!(restore_snapshot_at(
         &database,
-        &registry,
         &managed,
         &revisions,
         &backup_root,
@@ -329,7 +414,6 @@ fn restore_reports_baseline_change_after_preview_without_writing() {
     fs::write(package.join("instructions.md"), "# External\n").unwrap();
     let result = restore_snapshot_at(
         &database,
-        &root.path().join("registry"),
         &managed,
         &root.path().join("revisions"),
         &backup_root,

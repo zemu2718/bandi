@@ -3,7 +3,7 @@
     {
       "id": "skill-review",
       "kind": "skill",
-      "companyId": "xinghe",
+      "teamId": "xinghe",
       "locator": {
         "rootKind": "bandi",
         "displayPath": "skill-review/SKILL.md",
@@ -20,7 +20,6 @@
       "sourceContainerId": "container-source",
       "referrerKind": "agent",
       "referrerId": "zhouce",
-      "workspaceId": "bandi",
       "targetAssetId": "skill-review",
       "targetKind": "skill",
       "state": "resolved",
@@ -29,8 +28,8 @@
         "displayPath": "skill-review/SKILL.md",
         "relativePath": "skill-review/SKILL.md"
       },
-      "targetCompanyId": "xinghe",
-      "sourcePath": "agt_zhouce/workspaces/bandi/config.yaml"
+      "targetTeamId": "xinghe",
+      "sourcePath": "agt_zhouce/skills.yaml"
     }
   ]
 }

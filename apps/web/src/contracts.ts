@@ -35,7 +35,6 @@ export type ManagedAgentDeletionImpactDto = {
 }
 
 export type ManagedAgentDeletionImpactsDto = {
-  workspaceBindings: ManagedAgentDeletionImpactDto[]
   sharedAssetReferences: ManagedAgentDeletionImpactDto[]
   organizationRelationships: ManagedAgentDeletionImpactDto[]
   reviewResponsibilities: ManagedAgentDeletionImpactDto[]
@@ -73,16 +72,8 @@ export type ManagedAgentDeletionResultDto = PreviewManagedAgentDeletionRequest &
   pendingCleanup: string[]
 }
 
-export type CreateWorkspaceBindingRequest = {
-  requestId: Id
-  agentId: Id
-  workspaceId: Id
-  value: string
-}
-
 export type SaveConfigOwner = {
   agentId: Id
-  workspaceId?: Id
 }
 
 export type SaveConfigRequest = {
@@ -97,10 +88,8 @@ export type SaveConfigRequest = {
     | { kind: 'mcp'; value: string }
     | { kind: 'permissions'; value: string }
     | { kind: 'sop'; value: string }
-    | { kind: 'orchestration'; value: string }
     | { kind: 'hooks'; value: string }
     | { kind: 'commands'; value: string }
-    | { kind: 'workspace_binding'; value: string }
   expectedBaseline: BaselineRefDto
   baseContent: string
   confirmationRef?: Id
@@ -209,8 +198,8 @@ export type RestoreManagedAgentIdentityRequest = {
   confirmed: boolean
 }
 
-export type RootKind = 'workspace' | 'claude_user' | 'managed' | 'bandi' | 'authorized_external'
-export type OfficialScope = 'user' | 'project' | 'local' | 'managed' | 'bandi'
+export type RootKind = 'claude_user' | 'managed' | 'bandi' | 'authorized_external'
+export type OfficialScope = 'user' | 'local' | 'managed' | 'bandi'
 
 export type AssetLocatorDto = {
   rootKind: RootKind
@@ -230,31 +219,13 @@ export type SourceContainerDto = {
 export type SourceAssetSummaryDto = {
   id: Id
   containerId: Id
-  kind: 'instructions' | 'context' | 'rules' | 'skills' | 'mcp' | 'permissions' | 'sop' | 'orchestration' | 'hooks' | 'commands' | 'workspace_binding'
+  kind: 'instructions' | 'context' | 'rules' | 'skills' | 'mcp' | 'permissions' | 'sop' | 'hooks' | 'commands'
   officialScope: OfficialScope
   assetContentHash: ContentHash
   containerContentHash: ContentHash
   writable: boolean
   parseStatus: 'parsed' | 'invalid' | 'unsupported' | 'redacted'
   diagnostics: Diagnostic[]
-}
-
-export type RegisterWorkspaceRequest = {
-  requestId: Id
-  workspaceId: Id
-  selectedPath: string
-}
-
-export type WorkspaceRegistrationResult = {
-  requestId: Id
-  workspaceId: Id
-  canonicalPath: string
-  capability: {
-    status: 'supported' | 'degraded' | 'unavailable' | 'not_checked'
-    reason: string
-    evidence: string[]
-    remediation: string[]
-  }
 }
 
 export type ClaudeAgentPreviewDto = {
@@ -265,14 +236,6 @@ export type ClaudeAgentPreviewDto = {
   instructions: string
   recognizedFields: string[]
   ignoredFields: string[]
-}
-
-export type ExternalAgentReferenceDto = {
-  agentId: Id
-  canonicalRoot: string
-  metadata: import('./domain').FullAgent
-  createdAt: Timestamp
-  updatedAt: Timestamp
 }
 
 export type AgentRecoveryStatus =
@@ -300,65 +263,67 @@ export type AgentCommitResultDto = {
   identityResult?: SaveManagedAgentIdentityResult
 }
 
-export type PersistedServiceGrant = {
+export type TeamDto = {
   id: Id
+  name: string
+  mark?: string
+  color?: string
+  mission?: string
+  boundary?: string
+  memberAgentIds: Id[]
+  sharedAssetIds: Id[]
+}
+
+export type TaskBriefDto = {
+  id: Id
+  teamId: Id
+  title: string
+  brief?: string
+  archivedAt?: Timestamp
+}
+
+export type OrganizationSnapshotV3 = {
+  schemaVersion: 3
+  teams: TeamDto[]
+  taskBriefs: TaskBriefDto[]
+}
+
+export type RequestClientLaunchV3 = {
+  clientId: import('./client-adapters').BuiltInClientId
+  adapterId: import('./client-adapters').ClientAdapterId
+  terminalId: import('./terminal-model').TerminalId
+  intent: 'start_with_context'
+  teamId: Id
   agentId: Id
-  departmentId: Id
-  capabilities: string[]
-  workspaceIds: Id[]
-  prohibitions: string[]
-  status: '有效' | '暂停'
+  taskId?: Id
 }
 
-export type OrganizationSnapshot = {
-  schemaVersion: 1
-  companies: import('./domain').Company[]
-  departments: import('./domain').FullDepartment[]
-  roles: import('./domain').Role[]
-  workspaces: import('./domain').FullWorkspace[]
-  serviceGrants: PersistedServiceGrant[]
+export type ClientLaunchResultV3 = RequestClientLaunchV3 & {
+  capability: {
+    status: 'supported' | 'degraded' | 'unavailable' | 'not_checked'
+    reason: string
+    evidence: string[]
+    remediation: string[]
+  }
+  outcome: 'context_prepared'
 }
 
-export type FormalMemoryScopeType =
-  | 'agent_long_term'
-  | 'agent_workspace'
-  | 'workspace_shared'
-  | 'department_workspace'
+export type FormalMemoryScopeType = 'agent_long_term'
+export type FormalMemoryScopeTypeV3 = FormalMemoryScopeType
 
-export type MemoryScopeKeyDto =
-  | { kind: 'agent_long_term'; agentId: Id }
-  | { kind: 'agent_workspace'; agentId: Id; workspaceId: Id }
-  | { kind: 'workspace_shared'; workspaceId: Id }
-  | { kind: 'department_workspace'; departmentId: Id; workspaceId: Id }
+export type MemoryScopeKeyDto = { kind: 'agent_long_term'; agentId: Id }
+export type MemoryScopeKeyV3Dto = MemoryScopeKeyDto
 
-export type MemoryOwnerDto =
-  | { kind: 'agent'; agentId: Id }
-  | { kind: 'workspace'; workspaceId: Id }
-  | { kind: 'department_workspace'; departmentId: Id; workspaceId: Id }
-
-export type ReviewPrincipalDto =
-  | { kind: 'agent'; agentId: Id }
-  | { kind: 'chairman_user'; companyId: Id }
-
-export type FormalMemoryCandidateStatus =
-  | 'pending_review'
-  | 'changes_requested'
-  | 'rejected'
-  | 'approved_pending_write'
-  | 'written'
-  | 'revision_pending'
-export type MemoryReviewDecision = 'request_changes' | 'reject' | 'approve'
+export type MemoryOwnerDto = { kind: 'agent'; agentId: Id }
+export type MemoryOwnerV3Dto = MemoryOwnerDto
 
 export type MemorySpaceDto = {
   id: Id
   scopeType: FormalMemoryScopeType
   scopeKey: MemoryScopeKeyDto
   owner: MemoryOwnerDto
-  stewardAgentId: Id
-  reviewPrincipal: ReviewPrincipalDto
-  reviewPolicy: 'independent_reviewer'
-  visibilityPolicy: 'agent_private' | 'workspace_shared' | 'department_workspace'
-  storageProfileVersion: 'memory-v1'
+  visibilityPolicy: 'agent_private'
+  storageProfileVersion: 'memory-v4'
   state: 'active' | 'read_only_history'
   storageLocator: AssetLocatorDto
   currentRevisionId?: Id
@@ -366,103 +331,32 @@ export type MemorySpaceDto = {
   updatedAt: Timestamp
 }
 
-export type DiscoverEligibleMemorySpacesRequest = {
-  requestId: Id
-  agentId: Id
-}
-
-export type EligibleMemorySpacesResult = {
-  requestId: Id
-  spaces: MemorySpaceDto[]
-  diagnostics: Diagnostic[]
-}
-
-export type MemoryCandidateDto = {
-  id: Id
-  spaceId: Id
-  proposerAgentId: Id
-  reviewPrincipal: ReviewPrincipalDto
-  source: { kind: 'manual' | 'import'; label: string }
-  summary: string
-  proposedContent: string
-  proposedContentHash: ContentHash
-  submittedBaseline: BaselineRefDto
-  status: FormalMemoryCandidateStatus
-  version: number
-  createdAt: Timestamp
-  updatedAt: Timestamp
-}
-
-export type MemoryReviewDecisionDto = {
-  id: Id
-  candidateId: Id
-  actorPrincipal: ReviewPrincipalDto
-  decision: MemoryReviewDecision
-  comment?: string
-  decidedAt: Timestamp
-}
-
 export type MemoryRevisionDto = {
   id: Id
   spaceId: Id
   parentRevisionId?: Id
-  candidateId: Id
-  reviewDecisionId: Id
-  proposerAgentId: Id
-  reviewPrincipal: ReviewPrincipalDto
-  sourceContentHash: ContentHash
   contentHash: ContentHash
   storageLocator: AssetLocatorDto
   writeReceiptId: Id
   writtenAt: Timestamp
 }
 
-export type CreateMemoryCandidateRequest = {
+export type SaveMemoryRequest = {
   requestId: Id
-  candidateId: Id
   spaceId: Id
-  proposerAgentId: Id
-  source: { kind: 'manual' | 'import'; label: string }
-  summary: string
-  proposedContent: string
+  content: string
 }
 
-export type MemoryReviewBundleDto = {
-  requestId: Id
-  space: MemorySpaceDto
-  candidate: MemoryCandidateDto
-  currentContent: string
-}
-
-export type ReviewMemoryCandidateRequest = {
-  requestId: Id
-  candidateId: Id
-  decision: MemoryReviewDecision
-  expectedCandidateVersion: number
-  expectedBaseline: BaselineRefDto
-  expectedReviewPrincipal: ReviewPrincipalDto
-  comment?: string
-}
-
-export type RecoverMemoryRevisionRequest = {
-  requestId: Id
-  candidateId: Id
-  recoveryRef: Id
-}
+export type SaveMemoryResult =
+  | { kind: 'saved'; requestId: Id; space: MemorySpaceDto; revision: MemoryRevisionDto; writeReceipt: WriteReceiptDto }
+  | { kind: 'unchanged'; requestId: Id; space: MemorySpaceDto }
+  | ValidationFailed
+  | { kind: 'save_failed'; requestId: Id; diagnostics: Diagnostic[]; retryable: boolean }
 
 export type ListMemoryRevisionsRequest = {
   requestId: Id
   spaceId: Id
 }
-
-export type ReviewMemoryCandidateResult =
-  | { kind: 'review_recorded'; requestId: Id; candidate: MemoryCandidateDto; decision: MemoryReviewDecisionDto }
-  | { kind: 'saved'; requestId: Id; candidate: MemoryCandidateDto; decision: MemoryReviewDecisionDto; revision: MemoryRevisionDto; writeReceipt: WriteReceiptDto }
-  | { kind: 'candidate_changed'; requestId: Id; candidate: MemoryCandidateDto; diagnostics: Diagnostic[] }
-  | { kind: 'baseline_changed'; requestId: Id; candidateId: Id; base: ConfigSide; current: ConfigSide; proposed: ConfigSide; diagnostics: Diagnostic[] }
-  | { kind: 'governance_changed' | 'self_review_forbidden' | 'validation_failed'; requestId: Id; diagnostics: Diagnostic[] }
-  | { kind: 'save_failed'; requestId: Id; diagnostics: Diagnostic[]; retryable: boolean; fileState: 'unchanged' | 'write_not_verified' }
-  | { kind: 'revision_pending'; requestId: Id; candidate: MemoryCandidateDto; decision: MemoryReviewDecisionDto; writeReceipt: WriteReceiptDto; recoveryRef: Id; diagnostics: Diagnostic[] }
 
 export type CreateBackupSnapshotRequest = {
   requestId: Id
@@ -526,8 +420,11 @@ export type RestoreBackupSnapshotRequest = {
 
 export type BackupRestoreEntryResultDto = {
   assetId: Id
-  status: 'restored' | 'baseline_changed' | 'integrity_failed' | 'save_failed' | 'skipped'
+  status: 'restored' | 'baseline_changed' | 'integrity_failed' | 'validation_failed' | 'save_failed' | 'skipped'
   revisionId?: Id
+  retryable?: boolean
+  fileState?: 'unchanged' | 'write_not_verified' | 'verified_written_revision_pending'
+  recoveryRef?: Id
   diagnostics?: Diagnostic[]
 }
 
@@ -541,7 +438,6 @@ export type BackupRestoreResultDto = {
 
 export type DiscoveryRequest = {
   requestId: Id
-  workspaceIds: Id[]
   includeClaudeUserRoot: boolean
 }
 
@@ -550,7 +446,7 @@ export type SharedAssetKind = 'rule' | 'skill' | 'mcp' | 'sop' | 'hook' | 'comma
 export type SharedAssetNodeDto = {
   id: Id
   kind: SharedAssetKind | 'unknown'
-  companyId: Id
+  teamId: Id
   departmentId?: Id
   locator: AssetLocatorDto
   contentHash: ContentHash
@@ -563,12 +459,11 @@ export type AssetReferenceDto = {
   sourceContainerId: Id
   referrerKind: 'agent'
   referrerId: Id
-  workspaceId?: Id
   targetAssetId: Id
   targetKind: SharedAssetKind
   state: 'resolved' | 'unresolved' | 'dangling' | 'type_mismatch' | 'out_of_scope' | 'target_invalid'
   targetLocator?: AssetLocatorDto
-  targetCompanyId?: Id
+  targetTeamId?: Id
   sourcePath: string
 }
 

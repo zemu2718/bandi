@@ -1,6 +1,6 @@
 import { ArrowLeft, Code2, Copy, Eye, History } from 'lucide-react'
-import { getAgentFileAssociation, projectAgentFilePreview, type AgentFileView, type AgentProjectionContext } from '../../agent-config-projection'
-import { projectAgentFileSource } from '../../agent-file-source'
+import { agentFilePreview, getAgentFileAssociation, type AgentFileView, type AgentProjectionContext } from '../../agent-config-projection'
+import { agentFileSource } from '../../agent-file-source'
 import { Button } from '../../components/ui/button'
 import { FieldRow, MockBoundaryNote, MonoPath, PathActions } from '../../components/app/page'
 import type { FullAgent } from '../../domain'
@@ -10,14 +10,14 @@ import { listConfigRevisions } from '../../config-revisions'
 export function AgentConfigFileViewer({ agent, context, path, view, onView, onBack, embedded = false }: { agent: FullAgent; context: AgentProjectionContext; path: string; view: AgentFileView; onView: (view: AgentFileView) => void; onBack?: () => void; embedded?: boolean }) {
   const { state, dispatch } = useApp()
   const association = getAgentFileAssociation(agent, path)
-  if (!association) return <div role="status" className="panel border-warning/30 p-5"><b>文件不存在</b><p className="mt-2 text-sm text-muted-foreground">URL 指向的文件不在当前 AgentPackage 演示记录中。</p>{onBack && <Button className="mt-4" variant="outline" onClick={onBack}><ArrowLeft size={15} aria-hidden="true" />返回结构化配置</Button>}</div>
-  const preview = projectAgentFilePreview(agent, context, path)
-  const source = projectAgentFileSource(agent, context, path)
+  if (!association) return <div role="status" className="panel border-warning/30 p-5"><b>文件不存在</b><p className="mt-2 text-sm text-muted-foreground">链接指向的文件不在当前 Agent 配置记录中。</p>{onBack && <Button className="mt-4" variant="outline" onClick={onBack}><ArrowLeft size={15} aria-hidden="true" />返回结构化配置</Button>}</div>
+  const preview = agentFilePreview(agent, context, path)
+  const source = agentFileSource(agent, context, path)
   const sourceDetails = {
     'bandi-managed': { label: 'Bandi Desktop 受管配置', note: '只读源码根据 Bandi Desktop 已加载的受管配置生成。' },
     'claude-agent-import': { label: 'Claude Agent 受管副本', note: '源码来自已导入的 Bandi 受管副本；原始 Claude Agent 文件不会被修改。' },
     'bandi-demo': { label: '当前页面演示', note: '只读源码根据当前页面中的配置生成，不读取或写入本机文件。' },
-    'external-reference': { label: '外部只读引用', note: '只读源码仅根据已登记的外部引用生成，未读取对应目录内容。' },
+    'external-reference': { label: '历史外部只读引用', note: '仅展示历史记录，未读取对应目录内容，也不再支持添加。' },
   }[agent.packageSource.kind]
   const revisions = listConfigRevisions(state.configRevisions, { ownerType: 'agent', ownerId: agent.id, path })
   const previewText = preview

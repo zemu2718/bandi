@@ -49,10 +49,8 @@ struct CreateManagedAgentRequest {
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AgentOrganizationReconcileRequest {
-    company_id: String,
-    primary_department_id: String,
-    grants: domain_store::SaveServiceGrantsRequest,
+struct AgentTeamReconcileRequest {
+    team_id: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -60,14 +58,14 @@ struct AgentOrganizationReconcileRequest {
 struct CommitManagedAgentCreationRequest {
     request_id: String,
     create: CreateManagedAgentRequest,
-    organization: Option<AgentOrganizationReconcileRequest>,
+    team: Option<AgentTeamReconcileRequest>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CommitManagedAgentIdentityRequest {
     save: SaveManagedAgentIdentityRequest,
-    organization: Option<AgentOrganizationReconcileRequest>,
+    team: Option<AgentTeamReconcileRequest>,
 }
 
 #[derive(serde::Deserialize)]
@@ -333,13 +331,6 @@ fn validate_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-fn workspace_registry_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map(|path| path.join("workspaces"))
-        .map_err(|_| "无法访问 Workspace Registry".into())
-}
-
 fn domain_database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -354,163 +345,63 @@ fn shared_assets_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|_| "无法访问 Bandi 共享资产根".into())
 }
 
-fn workspace_path_from_registry(
-    app: &tauri::AppHandle,
-    workspace_id: &str,
-) -> Result<PathBuf, String> {
-    let database_path = domain_store::workspace_path_at(&domain_database_path(app)?, workspace_id)?;
-    let registry_path = local_service::workspace_path_from_registry_at(
-        &workspace_registry_root(app)?,
-        workspace_id,
-    )?;
-    if database_path != registry_path {
-        return Err("工作区 Registry 与本地数据库路径不一致".into());
-    }
-    Ok(registry_path)
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CreateWorkspaceRequest {
-    request_id: String,
-    selected_path: String,
-    workspace: domain_store::WorkspaceDto,
+#[tauri::command]
+fn load_long_term_domain_snapshot_v4(
+    app: tauri::AppHandle,
+) -> Result<domain_store::LongTermDomainSnapshotDtoV4, String> {
+    domain_store::load_long_term_domain_snapshot_v4_at(&domain_database_path(&app)?)
 }
 
 #[tauri::command]
-fn create_workspace(
+fn save_team_v4(
     app: tauri::AppHandle,
-    request: CreateWorkspaceRequest,
-) -> Result<domain_store::WorkspaceDto, String> {
+    team: domain_store::TeamDtoV4,
+) -> Result<domain_store::TeamDtoV4, String> {
     let _mutation = factory_reset::mutation_guard()?;
-    if request.workspace.path != request.selected_path {
-        return Err("工作区创建请求路径不一致".into());
-    }
-    let registry = workspace_registry_root(&app)?;
-    let outcome = local_service::register_workspace_with_status_at(
-        &registry,
-        local_service::RegisterWorkspaceRequest {
-            request_id: request.request_id,
-            workspace_id: request.workspace.id.clone(),
-            selected_path: request.selected_path,
-        },
-    )?;
-    let mut workspace = request.workspace;
-    workspace.path = outcome.result.canonical_path;
-    match domain_store::save_workspace_governed_at(
-        &domain_database_path(&app)?,
-        &managed_agents_root(&app)?,
-        domain_store::SaveWorkspaceRequest { workspace },
-    ) {
-        Ok(workspace) => Ok(workspace),
-        Err(error) => {
-            if outcome.created {
-                let _ =
-                    local_service::unregister_workspace_at(&registry, &outcome.result.workspace_id);
-            }
-            Err(error)
-        }
-    }
+    domain_store::save_team_v4_at(&domain_database_path(&app)?, team)
 }
 
 #[tauri::command]
-fn load_organization_snapshot(
+fn remove_team_v4(
     app: tauri::AppHandle,
-) -> Result<domain_store::OrganizationSnapshotDto, String> {
-    domain_store::load_snapshot_at(&domain_database_path(&app)?)
-}
-
-#[tauri::command]
-fn save_company(
-    app: tauri::AppHandle,
-    request: domain_store::SaveCompanyRequest,
-) -> Result<domain_store::CompanyDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    domain_store::save_company_governed_at(
-        &domain_database_path(&app)?,
-        &managed_agents_root(&app)?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn save_department(
-    app: tauri::AppHandle,
-    request: domain_store::SaveDepartmentRequest,
-) -> Result<domain_store::DepartmentDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    domain_store::save_department_governed_at(
-        &domain_database_path(&app)?,
-        &managed_agents_root(&app)?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn save_role(
-    app: tauri::AppHandle,
-    request: domain_store::SaveRoleRequest,
-) -> Result<domain_store::RoleDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    domain_store::save_role_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn save_workspace(
-    app: tauri::AppHandle,
-    request: domain_store::SaveWorkspaceRequest,
-) -> Result<domain_store::WorkspaceDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    let canonical = workspace_path_from_registry(&app, &request.workspace.id)?;
-    if canonical.as_os_str() != request.workspace.path.as_str() {
-        return Err("工作区路径与 Registry 记录不一致".into());
-    }
-    domain_store::save_workspace_governed_at(
-        &domain_database_path(&app)?,
-        &managed_agents_root(&app)?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn remove_workspace(
-    app: tauri::AppHandle,
-    request: domain_store::RemoveWorkspaceRequest,
+    request: domain_store::RemoveTeamRequestV4,
 ) -> Result<(), String> {
     let _mutation = factory_reset::mutation_guard()?;
-    let registry = workspace_registry_root(&app)?;
-    let database = domain_database_path(&app)?;
-    let workspace_id = request.workspace_id.clone();
-    let canonical = local_service::workspace_path_from_registry_at(&registry, &workspace_id)?;
-    domain_store::remove_workspace_at(&database, request)?;
-    if let Err(error) = local_service::unregister_workspace_at(&registry, &workspace_id) {
-        if domain_store::import_workspace_record_at(&database, &workspace_id, &canonical).is_err() {
-            return Err(format!("{error}；本地数据库补偿失败"));
-        }
-        return Err(error);
-    }
-    Ok(())
+    domain_store::remove_team_v4_at(&domain_database_path(&app)?, request)
 }
 
 #[tauri::command]
-fn save_service_grants(
+fn save_task_brief_v4(
     app: tauri::AppHandle,
-    request: domain_store::SaveServiceGrantsRequest,
-) -> Result<Vec<domain_store::ServiceGrantDto>, String> {
+    task_brief: domain_store::TaskBriefDtoV4,
+) -> Result<domain_store::TaskBriefDtoV4, String> {
     let _mutation = factory_reset::mutation_guard()?;
-    domain_store::save_service_grants_at(&domain_database_path(&app)?, request)
+    domain_store::save_task_brief_v4_at(&domain_database_path(&app)?, task_brief)
+}
+
+#[tauri::command]
+fn remove_task_brief_v4(
+    app: tauri::AppHandle,
+    request: domain_store::RemoveTaskBriefRequestV4,
+) -> Result<(), String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    domain_store::remove_task_brief_v4_at(&domain_database_path(&app)?, request)
 }
 
 #[tauri::command]
 fn generate_entity_id(prefix: String, name: String) -> Result<String, String> {
-    if !matches!(
-        prefix.as_str(),
-        "company" | "department" | "role" | "workspace"
-    ) || name.trim().is_empty()
-    {
+    if !matches!(prefix.as_str(), "team" | "task") || name.trim().is_empty() {
         return Err("实体标识请求无效".into());
     }
     Ok(domain_store::stable_entity_id(&prefix, &name))
+}
+
+#[tauri::command]
+fn allocate_agent_id(request_id: String) -> Result<String, String> {
+    if !validate_identifier(&request_id) || request_id == "." || request_id == ".." {
+        return Err("Agent 创建请求标识无效".into());
+    }
+    Ok(local_service::stable_id("agent", &request_id)[..30].to_string())
 }
 
 #[tauri::command]
@@ -592,9 +483,9 @@ fn discover_config(
         .parent()
         .ok_or_else(|| "AGENT_STORAGE_UNAVAILABLE: Agent 根目录无效".to_string())?
         .to_path_buf();
-    let snapshot = domain_store::load_snapshot_at(&domain_database_path(&app)?)?;
+    let snapshot =
+        domain_store::load_long_term_domain_snapshot_v4_at(&domain_database_path(&app)?)?;
     Ok(local_service::discover_with_shared_at(
-        &workspace_registry_root(&app)?,
         &managed,
         &shared_assets_root(&app)?,
         &snapshot,
@@ -703,7 +594,6 @@ fn restore_backup_snapshot(
     let _mutation = factory_reset::mutation_guard()?;
     backup_service::restore_snapshot_at(
         &domain_database_path(&app)?,
-        &workspace_registry_root(&app)?,
         &managed_agents_root(&app)?,
         &revisions_root(&app)?,
         &backup_root(&app)?,
@@ -728,24 +618,6 @@ fn read_config_revision_content(
 }
 
 #[tauri::command]
-fn create_workspace_binding(
-    app: tauri::AppHandle,
-    request: local_service::CreateWorkspaceBindingRequest,
-) -> Result<local_service::SaveConfigResult, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    let managed = managed_agent_dir(&app, "probe")?
-        .parent()
-        .ok_or_else(|| "AGENT_STORAGE_UNAVAILABLE: Agent 根目录无效".to_string())?
-        .to_path_buf();
-    Ok(local_service::create_workspace_binding_at(
-        &workspace_registry_root(&app)?,
-        &managed,
-        &revisions_root(&app)?,
-        request,
-    ))
-}
-
-#[tauri::command]
 fn save_config(
     app: tauri::AppHandle,
     request: local_service::SaveConfigRequest,
@@ -756,7 +628,7 @@ fn save_config(
         .ok_or_else(|| "AGENT_STORAGE_UNAVAILABLE: Agent 根目录无效".to_string())?
         .to_path_buf();
     Ok(local_service::save_config_registered_at(
-        &workspace_registry_root(&app)?,
+        &domain_database_path(&app)?,
         &managed,
         &revisions_root(&app)?,
         request,
@@ -774,7 +646,7 @@ fn recover_config_revision(
         .ok_or_else(|| "AGENT_STORAGE_UNAVAILABLE: Agent 根目录无效".to_string())?
         .to_path_buf();
     Ok(local_service::recover_config_revision_registered_at(
-        &workspace_registry_root(&app)?,
+        &domain_database_path(&app)?,
         &managed,
         &revisions_root(&app)?,
         request,
@@ -792,46 +664,29 @@ fn restore_config_revision(
         .ok_or_else(|| "AGENT_STORAGE_UNAVAILABLE: Agent 根目录无效".to_string())?
         .to_path_buf();
     Ok(local_service::restore_config_revision_registered_at(
-        &workspace_registry_root(&app)?,
+        &domain_database_path(&app)?,
         &managed,
         &revisions_root(&app)?,
         request,
     ))
 }
 
-#[cfg(target_os = "macos")]
-fn open_workspace_directory(
-    terminal_id: ai_adapters::TerminalId,
-    cwd: &Path,
-) -> Result<bool, String> {
-    std::process::Command::new("/usr/bin/open")
-        .arg("-b")
-        .arg(terminal_id.bundle_id())
-        .arg(cwd)
-        .status()
-        .map(|status| status.success())
-        .map_err(|_| "无法调用固定目录打开程序".into())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn open_workspace_directory(
-    _terminal_id: ai_adapters::TerminalId,
-    _cwd: &Path,
-) -> Result<bool, String> {
-    Ok(false)
-}
-
 #[tauri::command]
-fn request_client_handoff(
+fn request_client_launch_v3(
     app: tauri::AppHandle,
-    request: ai_adapters::ClientHandoffRequest,
-) -> ai_adapters::ClientHandoffResult {
-    ai_adapters::request_handoff_at(
-        request,
-        |workspace_id| workspace_path_from_registry(&app, workspace_id),
-        cfg!(target_os = "macos"),
-        open_workspace_directory,
-    )
+    request: ai_adapters::ClientLaunchRequestV3,
+) -> Result<ai_adapters::ClientLaunchResultV3, String> {
+    let database = domain_database_path(&app)?;
+    let agents_root = managed_agents_root(&app)?;
+    ai_adapters::prepare_context(request, |context| {
+        domain_store::validate_client_launch_context_at(
+            &database,
+            &agents_root,
+            context.team_id,
+            context.agent_id,
+            context.task_id,
+        )
+    })
 }
 
 fn asset_name(slot: &str) -> Result<(&'static str, usize), String> {
@@ -937,6 +792,51 @@ fn managed_agent_dir(app: &tauri::AppHandle, agent_id: &str) -> Result<PathBuf, 
     managed_agents_root(app).map(|path| path.join(format!("agt_{agent_id}")))
 }
 
+fn remove_legacy_project_files(agents_root: &Path) -> Result<(), String> {
+    let metadata = match fs::symlink_metadata(agents_root) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("AGENT_CLEANUP_FAILED: 无法读取受管 Agent 根".into()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err("AGENT_CLEANUP_FAILED: 受管 Agent 根不是普通目录".into());
+    }
+    for entry in fs::read_dir(agents_root)
+        .map_err(|_| "AGENT_CLEANUP_FAILED: 无法扫描受管 Agent 根".to_string())?
+    {
+        let entry =
+            entry.map_err(|_| "AGENT_CLEANUP_FAILED: 无法读取受管 Agent 条目".to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(agent_id) = name.strip_prefix("agt_") else {
+            continue;
+        };
+        if !validate_identifier(agent_id) {
+            continue;
+        }
+        let package_metadata = fs::symlink_metadata(entry.path())
+            .map_err(|_| "AGENT_CLEANUP_FAILED: 无法读取受管 AgentPackage".to_string())?;
+        if package_metadata.file_type().is_symlink() || !package_metadata.is_dir() {
+            continue;
+        }
+        let projects = entry.path().join("projects");
+        let project_metadata = match fs::symlink_metadata(&projects) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Err("AGENT_CLEANUP_FAILED: 无法读取旧项目配置".into()),
+        };
+        if project_metadata.file_type().is_symlink() {
+            fs::remove_file(projects)
+                .map_err(|_| "AGENT_CLEANUP_FAILED: 无法移除旧项目配置链接".to_string())?;
+        } else if project_metadata.is_dir() {
+            fs::remove_dir_all(projects)
+                .map_err(|_| "AGENT_CLEANUP_FAILED: 无法移除旧项目配置".to_string())?;
+        } else {
+            return Err("AGENT_CLEANUP_FAILED: 旧项目配置目标类型异常".into());
+        }
+    }
+    Ok(())
+}
+
 fn validate_package_path(path: &str) -> Result<(), String> {
     if path.is_empty()
         || path.starts_with('/')
@@ -969,7 +869,6 @@ const REQUIRED_AGENT_PACKAGE_FILES: &[&str] = &[
     "config/mcp.yaml",
     "config/permissions.yaml",
     "config/sop.yaml",
-    "config/orchestration.yaml",
     "config/hooks.yaml",
     "config/commands.yaml",
 ];
@@ -978,6 +877,9 @@ fn validate_agent_package_files(files: &[AgentPackageFile]) -> Result<(), String
     let mut paths = HashSet::new();
     for file in files {
         validate_package_path(&file.path)?;
+        if file.path == "config/orchestration.yaml" {
+            return Err("INVALID_AGENT_PACKAGE: config/orchestration.yaml 已不再受支持".into());
+        }
         if !paths.insert(file.path.as_str()) {
             return Err(format!(
                 "INVALID_AGENT_PACKAGE: 文件路径重复：{}",
@@ -1001,6 +903,22 @@ fn validate_agent_record(
     let object = agent
         .as_object()
         .ok_or_else(|| "INVALID_AGENT_RECORD: Agent 记录必须是对象".to_string())?;
+    const REMOVED_FIELDS: &[&str] = &[
+        "roleId",
+        "departmentId",
+        "primaryDepartmentId",
+        "managerAgentId",
+        "serviceGrants",
+        "orchestrationPolicy",
+    ];
+    if let Some(field) = REMOVED_FIELDS
+        .iter()
+        .find(|field| object.contains_key(**field))
+    {
+        return Err(format!(
+            "INVALID_AGENT_RECORD: 已删除字段 {field} 不再受支持"
+        ));
+    }
     if object.get("id").and_then(serde_json::Value::as_str) != Some(agent_id) {
         return Err("INVALID_AGENT_RECORD: Agent ID 与请求不一致".into());
     }
@@ -1151,14 +1069,6 @@ fn managed_agent_deletion_facts(
             .as_bytes(),
     );
     let impacts = domain_store::managed_agent_deletion_impact_at(database, agent_id)?;
-    let workspace_bindings = entries
-        .iter()
-        .filter_map(|(path, _)| {
-            path.strip_prefix("workspaces/")
-                .and_then(|value| value.strip_suffix("/config.yaml"))
-                .map(str::to_string)
-        })
-        .collect::<Vec<_>>();
     let outbound_shared = entries
         .iter()
         .filter_map(|(path, _)| fs::read_to_string(root.join(path)).ok())
@@ -1231,23 +1141,11 @@ fn managed_agent_deletion_facts(
         .map(|value| impact(value.into(), "组织关系", value.into(), None))
         .collect::<Vec<_>>();
     let cleanup = &raw["cleanup"];
-    let automatic_cleanup = [
-        (
-            "department_memberships",
-            "部门成员索引",
-            cleanup["departmentMemberships"].as_u64().unwrap_or(0),
-        ),
-        (
-            "workspace_agent_indexes",
-            "Workspace Agent 索引",
-            cleanup["workspaceAgentIndexes"].as_u64().unwrap_or(0),
-        ),
-        (
-            "service_grants",
-            "ServiceGrant",
-            cleanup["serviceGrants"].as_u64().unwrap_or(0),
-        ),
-    ]
+    let automatic_cleanup = [(
+        "team_memberships",
+        "Team 成员索引",
+        cleanup["teamMemberships"].as_u64().unwrap_or(0),
+    )]
     .into_iter()
     .filter(|(_, _, count)| *count > 0)
     .map(|(id, label, count)| impact(id.into(), label, format!("将自动清理 {count} 项"), None))
@@ -1298,7 +1196,6 @@ fn managed_agent_deletion_facts(
         })
         .collect::<Vec<_>>();
     let impacts = serde_json::json!({
-        "workspaceBindings": workspace_bindings.into_iter().map(|id| impact(id.clone(), "WorkspaceBinding", id, None)).collect::<Vec<_>>(),
         "sharedAssetReferences": outbound_shared.into_iter().map(|id| impact(id.clone(), "共享资产引用", id, None)).collect::<Vec<_>>(),
         "organizationRelationships": organization_relationships,
         "reviewResponsibilities": review_responsibilities,
@@ -1726,11 +1623,8 @@ fn agent_record_for_manifest(
     const IDENTITY_FIELDS: &[&str] = &[
         "id",
         "name",
-        "roleId",
         "status",
-        "companyId",
-        "primaryDepartmentId",
-        "managerAgentId",
+        "teamId",
         "avatarPath",
         "mission",
         "responsibilities",
@@ -1985,7 +1879,6 @@ fn agent_package_diagnostic(source: &str, message: &str) -> local_service::Diagn
         "config/mcp.yaml",
         "config/permissions.yaml",
         "config/sop.yaml",
-        "config/orchestration.yaml",
         "config/hooks.yaml",
         "config/commands.yaml",
     ]
@@ -2278,24 +2171,6 @@ fn commit_managed_agent_deletion(
 }
 
 #[tauri::command]
-fn register_external_agent(
-    app: tauri::AppHandle,
-    request: agent_service::RegisterExternalAgentRequest,
-) -> Result<agent_service::ExternalAgentReferenceDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    agent_service::register_external_agent_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn remove_external_agent(
-    app: tauri::AppHandle,
-    request: agent_service::RemoveExternalAgentRequest,
-) -> Result<(), String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    agent_service::remove_external_agent_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
 fn list_agents(app: tauri::AppHandle) -> Result<AgentListResult, String> {
     let mut result = list_managed_agents_at(&managed_agents_root(&app)?)?;
     result.agents.extend(
@@ -2328,27 +2203,24 @@ fn list_agents(app: tauri::AppHandle) -> Result<AgentListResult, String> {
     Ok(result)
 }
 
-fn finish_agent_organization(
+fn finish_agent_team(
     database: &Path,
     agents_root: &Path,
     operation: &agent_service::AgentRecoveryOperation,
 ) -> Result<agent_service::AgentRecoveryOperation, String> {
-    let organization = operation.payload.get("organization").cloned();
-    match organization {
+    match operation.payload.get("team").cloned() {
         None | Some(serde_json::Value::Null) => {
             agent_service::complete_operation_at(database, &operation.id)
         }
         Some(value) => {
-            let organization: AgentOrganizationReconcileRequest = serde_json::from_value(value)
-                .map_err(|_| "Agent commit organization payload 已损坏".to_string())?;
-            domain_store::reconcile_agent_organization_at(
+            let team: AgentTeamReconcileRequest = serde_json::from_value(value)
+                .map_err(|_| "Agent commit team payload 已损坏".to_string())?;
+            domain_store::reconcile_agent_team_at(
                 database,
                 agents_root,
                 &operation.id,
                 &operation.agent_id,
-                &organization.company_id,
-                &organization.primary_department_id,
-                organization.grants,
+                &team.team_id,
             )?;
             agent_service::get_operation_at(database, &operation.id)
         }
@@ -2486,8 +2358,7 @@ fn commit_managed_agent_creation(
         .ok_or_else(|| "INVALID_AGENT_PACKAGE: 缺少 agent.yaml".to_string())?;
     let agent_id = request.create.agent_id.clone();
     let fixed_revision_id = local_service::stable_id("agent-create-revision", &request.request_id);
-    let payload =
-        serde_json::json!({ "create": request.create, "organization": request.organization });
+    let payload = serde_json::json!({ "create": request.create, "team": request.team });
     let mut operation = agent_service::prepare_operation_at(
         &database,
         &request.request_id,
@@ -2538,15 +2409,11 @@ fn commit_managed_agent_creation(
             &operation,
             "创建 AgentPackage",
         )?;
-        operation = agent_service::set_operation_status_at(
-            &database,
-            &operation.id,
-            "organization_pending",
-            None,
-        )?;
+        operation =
+            agent_service::set_operation_status_at(&database, &operation.id, "team_pending", None)?;
     }
-    if operation.status == "organization_pending" {
-        operation = finish_agent_organization(&database, &agents_root, &operation)?;
+    if operation.status == "team_pending" {
+        operation = finish_agent_team(&database, &agents_root, &operation)?;
     }
     if agent.is_none() && operation.status == "completed" {
         agent = Some(load_committed_agent(&agents_root, &agent_id)?);
@@ -2563,7 +2430,7 @@ fn commit_managed_agent_identity(
     let database = domain_database_path(&app)?;
     let agents_root = managed_agents_root(&app)?;
     let expected_hash = local_service::hash_bytes(request.save.manifest.as_bytes());
-    let payload = serde_json::json!({ "save": request.save, "organization": request.organization });
+    let payload = serde_json::json!({ "save": request.save, "team": request.team });
     let save: SaveManagedAgentIdentityRequest = serde_json::from_value(payload["save"].clone())
         .map_err(|_| "Agent identity payload 已损坏".to_string())?;
     let fixed_revision_id = local_service::stable_id("agent-identity-revision", &save.request_id);
@@ -2636,15 +2503,11 @@ fn commit_managed_agent_identity(
         }
     }
     if operation.status == "filesystem_committed" {
-        operation = agent_service::set_operation_status_at(
-            &database,
-            &operation.id,
-            "organization_pending",
-            None,
-        )?;
+        operation =
+            agent_service::set_operation_status_at(&database, &operation.id, "team_pending", None)?;
     }
-    if operation.status == "organization_pending" {
-        operation = finish_agent_organization(&database, &agents_root, &operation)?;
+    if operation.status == "team_pending" {
+        operation = finish_agent_team(&database, &agents_root, &operation)?;
     }
     Ok(AgentCommitResult::new(operation, agent))
 }
@@ -2700,20 +2563,20 @@ fn continue_agent_recovery(
                 let request_id = operation.request_id.clone();
                 let create = serde_json::from_value(operation.payload["create"].clone())
                     .map_err(|_| "Agent create recovery payload 已损坏".to_string())?;
-                let organization = serde_json::from_value(
+                let team = serde_json::from_value(
                     operation
                         .payload
-                        .get("organization")
+                        .get("team")
                         .cloned()
                         .unwrap_or(serde_json::Value::Null),
                 )
-                .map_err(|_| "Agent organization recovery payload 已损坏".to_string())?;
+                .map_err(|_| "Agent team recovery payload 已损坏".to_string())?;
                 commit_managed_agent_creation(
                     app,
                     CommitManagedAgentCreationRequest {
                         request_id,
                         create,
-                        organization,
+                        team,
                     },
                 )
             } else {
@@ -2736,12 +2599,12 @@ fn continue_agent_recovery(
                     current = agent_service::set_operation_status_at(
                         &database,
                         &current.id,
-                        "organization_pending",
+                        "team_pending",
                         None,
                     )?;
                 }
                 Ok(AgentCommitResult::new(
-                    finish_agent_organization(&database, &agents_root, &current)?,
+                    finish_agent_team(&database, &agents_root, &current)?,
                     None,
                 ))
             }
@@ -2779,41 +2642,38 @@ fn continue_agent_recovery(
                 let current = agent_service::set_operation_status_at(
                     &database,
                     &operation.id,
-                    "organization_pending",
+                    "team_pending",
                     None,
                 )?;
                 return Ok(AgentCommitResult::new(
-                    finish_agent_organization(&database, &agents_root, &current)?,
+                    finish_agent_team(&database, &agents_root, &current)?,
                     None,
                 ));
             }
             if operation.status == "prepared" {
                 let save = serde_json::from_value(operation.payload["save"].clone())
                     .map_err(|_| "Agent identity recovery payload 已损坏".to_string())?;
-                let organization = serde_json::from_value(
+                let team = serde_json::from_value(
                     operation
                         .payload
-                        .get("organization")
+                        .get("team")
                         .cloned()
                         .unwrap_or(serde_json::Value::Null),
                 )
-                .map_err(|_| "Agent organization recovery payload 已损坏".to_string())?;
-                commit_managed_agent_identity(
-                    app,
-                    CommitManagedAgentIdentityRequest { save, organization },
-                )
+                .map_err(|_| "Agent team recovery payload 已损坏".to_string())?;
+                commit_managed_agent_identity(app, CommitManagedAgentIdentityRequest { save, team })
             } else {
                 let mut current = operation;
                 if current.status == "filesystem_committed" {
                     current = agent_service::set_operation_status_at(
                         &database,
                         &current.id,
-                        "organization_pending",
+                        "team_pending",
                         None,
                     )?;
                 }
                 Ok(AgentCommitResult::new(
-                    finish_agent_organization(&database, &agents_root, &current)?,
+                    finish_agent_team(&database, &agents_root, &current)?,
                     None,
                 ))
             }
@@ -2823,44 +2683,39 @@ fn continue_agent_recovery(
 }
 
 #[tauri::command]
-fn discover_eligible_memory_spaces(
+fn discover_memory_spaces(
     app: tauri::AppHandle,
-    request: memory_service::DiscoverEligibleMemorySpacesRequest,
-) -> Result<memory_service::EligibleMemorySpacesResult, String> {
-    memory_service::discover_eligible_spaces_at(
+    request: memory_service::DiscoverMemorySpacesRequest,
+) -> Result<memory_service::DiscoverMemorySpacesResult, String> {
+    memory_service::discover_spaces_at(
         &domain_database_path(&app)?,
         &managed_agents_root(&app)?,
-        &workspace_registry_root(&app)?,
         request,
     )
 }
 
 #[tauri::command]
-fn create_memory_candidate(
+fn load_memory(
     app: tauri::AppHandle,
-    request: memory_service::CreateMemoryCandidateRequest,
-) -> Result<memory_service::MemoryReviewBundleDto, String> {
+    request: memory_service::LoadMemoryRequest,
+) -> Result<memory_service::LoadedMemoryDto, String> {
+    memory_service::load_memory_at(
+        &domain_database_path(&app)?,
+        &managed_agents_root(&app)?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn save_memory(
+    app: tauri::AppHandle,
+    request: memory_service::SaveMemoryRequest,
+) -> Result<memory_service::SaveMemoryResult, String> {
     let _mutation = factory_reset::mutation_guard()?;
-    memory_service::create_candidate_at(
+    memory_service::save_memory_at(
         &domain_database_path(&app)?,
         &managed_agents_root(&app)?,
-        &workspace_registry_root(&app)?,
         request,
-    )
-}
-
-#[tauri::command]
-fn list_memory_reviews(
-    app: tauri::AppHandle,
-    request_id: String,
-    agent_id: String,
-) -> Result<Vec<memory_service::MemoryReviewBundleDto>, String> {
-    memory_service::list_reviews_at(
-        &domain_database_path(&app)?,
-        &managed_agents_root(&app)?,
-        &workspace_registry_root(&app)?,
-        request_id,
-        agent_id,
     )
 }
 
@@ -2869,34 +2724,9 @@ fn list_memory_revisions(
     app: tauri::AppHandle,
     request: memory_service::ListMemoryRevisionsRequest,
 ) -> Result<Vec<memory_service::MemoryRevisionDto>, String> {
-    memory_service::list_revisions_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn load_memory_review(
-    app: tauri::AppHandle,
-    request_id: String,
-    candidate_id: String,
-) -> Result<memory_service::MemoryReviewBundleDto, String> {
-    memory_service::load_review_at(
+    memory_service::list_revisions_at(
         &domain_database_path(&app)?,
         &managed_agents_root(&app)?,
-        &workspace_registry_root(&app)?,
-        request_id,
-        candidate_id,
-    )
-}
-
-#[tauri::command]
-fn review_memory_candidate(
-    app: tauri::AppHandle,
-    request: memory_service::ReviewMemoryCandidateRequest,
-) -> Result<memory_service::ReviewMemoryCandidateResult, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    memory_service::review_candidate_at(
-        &domain_database_path(&app)?,
-        &managed_agents_root(&app)?,
-        &workspace_registry_root(&app)?,
         request,
     )
 }
@@ -2905,12 +2735,11 @@ fn review_memory_candidate(
 fn recover_memory_revision(
     app: tauri::AppHandle,
     request: memory_service::RecoverMemoryRevisionRequest,
-) -> Result<memory_service::ReviewMemoryCandidateResult, String> {
+) -> Result<memory_service::SaveMemoryResult, String> {
     let _mutation = factory_reset::mutation_guard()?;
     memory_service::recover_revision_at(
         &domain_database_path(&app)?,
         &managed_agents_root(&app)?,
-        &workspace_registry_root(&app)?,
         request,
     )
 }
@@ -2934,7 +2763,7 @@ const COMMAND_IDS: &[&str] = &[
     "navigation.home",
     "navigation.agents",
     "navigation.organization",
-    "navigation.workspaces",
+    "navigation.tasks",
     "navigation.assets",
     "navigation.settings",
     "theme.toggle",
@@ -2957,19 +2786,19 @@ pub fn run() {
                 &app.path().home_dir()?,
             )
             .map_err(std::io::Error::other)?;
+            remove_legacy_project_files(&managed_agents_root(&app.handle())?)
+                .map_err(std::io::Error::other)?;
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            create_workspace,
-            load_organization_snapshot,
-            save_company,
-            save_department,
-            save_role,
-            save_workspace,
-            remove_workspace,
-            save_service_grants,
+            load_long_term_domain_snapshot_v4,
+            save_team_v4,
+            remove_team_v4,
+            save_task_brief_v4,
+            remove_task_brief_v4,
             generate_entity_id,
+            allocate_agent_id,
             load_tool_configuration,
             save_tool_plan,
             create_tool_plan,
@@ -2978,12 +2807,10 @@ pub fn run() {
             select_tool_plan,
             save_custom_tool,
             delete_custom_tool,
-            discover_eligible_memory_spaces,
-            create_memory_candidate,
-            list_memory_reviews,
+            discover_memory_spaces,
+            load_memory,
+            save_memory,
             list_memory_revisions,
-            load_memory_review,
-            review_memory_candidate,
             recover_memory_revision,
             preview_factory_reset,
             commit_factory_reset,
@@ -2995,11 +2822,10 @@ pub fn run() {
             load_config_editor,
             list_config_revisions,
             read_config_revision_content,
-            create_workspace_binding,
             save_config,
             recover_config_revision,
             restore_config_revision,
-            request_client_handoff,
+            request_client_launch_v3,
             import_ui_asset,
             read_ui_asset,
             delete_ui_asset,
@@ -3012,8 +2838,6 @@ pub fn run() {
             list_managed_agents,
             preview_managed_agent_deletion,
             commit_managed_agent_deletion,
-            register_external_agent,
-            remove_external_agent,
             list_agents,
             commit_managed_agent_creation,
             commit_managed_agent_identity,
@@ -3048,10 +2872,10 @@ pub fn run() {
                 .select_all()
                 .build()?;
             let navigate = SubmenuBuilder::new(app, "导航")
-                .text("navigation.home", "首页")
+                .text("navigation.home", "配置状态")
                 .text("navigation.agents", "Agents")
                 .text("navigation.organization", "组织")
-                .text("navigation.workspaces", "Workspaces")
+                .text("navigation.tasks", "任务")
                 .text("navigation.assets", "资产")
                 .separator()
                 .text("theme.toggle", "切换主题")
@@ -3090,14 +2914,37 @@ mod tests {
     use super::{
         asset_name, create_managed_agent_at, image_mime, list_managed_agents_at,
         load_managed_agent_identity_at, preview_managed_agent_deletion_at,
-        recover_managed_agent_identity_at, restore_managed_agent_identity_at,
-        save_managed_agent_identity_at, validate_agent_id, validate_avatar, validate_identifier,
-        AgentPackageFile, AvatarChange, CreateManagedAgentRequest, DiagnosticDto,
+        recover_managed_agent_identity_at, remove_legacy_project_files,
+        restore_managed_agent_identity_at, save_managed_agent_identity_at, validate_agent_id,
+        validate_avatar, AgentPackageFile, AvatarChange, CreateManagedAgentRequest, DiagnosticDto,
         LocalServiceEventDto, PreviewManagedAgentDeletionRequest,
         RecoverManagedAgentIdentityRequest, RestoreManagedAgentIdentityRequest,
         SaveManagedAgentIdentityRequest, SaveManagedAgentIdentityResult, AGENT_AVATAR_LIMIT,
         COMMAND_IDS, REQUIRED_AGENT_PACKAGE_FILES,
     };
+
+    #[test]
+    fn legacy_project_cleanup_stays_inside_managed_packages_and_does_not_follow_links() {
+        let root = tempfile::tempdir().unwrap();
+        let agents = root.path().join("agents");
+        let package = agents.join("agt_alpha");
+        let external = root.path().join("external");
+        fs::create_dir_all(&package).unwrap();
+        fs::create_dir_all(&external).unwrap();
+        fs::write(external.join("sentinel.txt"), "keep").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&external, package.join("projects")).unwrap();
+        #[cfg(not(unix))]
+        fs::create_dir_all(package.join("projects")).unwrap();
+
+        remove_legacy_project_files(&agents).unwrap();
+
+        assert!(!package.join("projects").exists());
+        assert_eq!(
+            fs::read_to_string(external.join("sentinel.txt")).unwrap(),
+            "keep"
+        );
+    }
 
     #[test]
     fn menu_commands_are_whitelisted() {
@@ -3143,45 +2990,6 @@ mod tests {
                     .any(|permission| permission == &format!("allow-{}", command.replace('_', "-"))),
                 "{command} 未向主窗口显式授权"
             );
-        }
-    }
-
-    #[test]
-    fn client_handoff_rejects_unknown_fields() {
-        let valid = include_str!(
-            "../../../../packages/contracts/fixtures/client-handoff/request.valid.json"
-        );
-        assert!(serde_json::from_str::<crate::ai_adapters::ClientHandoffRequest>(valid).is_ok());
-        let extra = include_str!(
-            "../../../../packages/contracts/fixtures/client-handoff/request.unknown-field.json"
-        );
-        assert!(serde_json::from_str::<crate::ai_adapters::ClientHandoffRequest>(extra).is_err());
-        assert!(validate_identifier("workspace-1"));
-        assert!(!validate_identifier("workspace/../other"));
-    }
-
-    #[test]
-    fn client_handoff_results_match_shared_fixtures() {
-        for fixture in [
-            include_str!(
-                "../../../../packages/contracts/fixtures/client-handoff/result.supported.json"
-            ),
-            include_str!(
-                "../../../../packages/contracts/fixtures/client-handoff/result.not-checked.json"
-            ),
-            include_str!(
-                "../../../../packages/contracts/fixtures/client-handoff/result.degraded.json"
-            ),
-            include_str!(
-                "../../../../packages/contracts/fixtures/client-handoff/result.unavailable.json"
-            ),
-        ] {
-            let result: crate::ai_adapters::ClientHandoffResult =
-                serde_json::from_str(fixture).expect("共享结果 fixture 应可反序列化");
-            let encoded = serde_json::to_value(result).expect("共享结果 fixture 应可重新序列化");
-            let expected: serde_json::Value =
-                serde_json::from_str(fixture).expect("共享结果 fixture 应为 JSON");
-            assert_eq!(encoded, expected);
         }
     }
 
@@ -3268,13 +3076,6 @@ mod tests {
             serde_json::to_value(sop_request).unwrap(),
             fixture["sopSaveRequest"]
         );
-        let orchestration_request: crate::local_service::SaveConfigRequest =
-            serde_json::from_value(fixture["orchestrationSaveRequest"].clone())
-                .expect("Orchestration SaveConfig fixture 应可反序列化");
-        assert_eq!(
-            serde_json::to_value(orchestration_request).unwrap(),
-            fixture["orchestrationSaveRequest"]
-        );
         let hooks_request: crate::local_service::SaveConfigRequest =
             serde_json::from_value(fixture["hooksSaveRequest"].clone())
                 .expect("Hooks SaveConfig fixture 应可反序列化");
@@ -3295,20 +3096,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(permissions_request).unwrap(),
             fixture["permissionsSaveRequest"]
-        );
-        let workspace_binding_request: crate::local_service::SaveConfigRequest =
-            serde_json::from_value(fixture["workspaceBindingSaveRequest"].clone())
-                .expect("WorkspaceBinding SaveConfig fixture 应可反序列化");
-        assert_eq!(
-            serde_json::to_value(workspace_binding_request).unwrap(),
-            fixture["workspaceBindingSaveRequest"]
-        );
-        let create_workspace_binding_request: crate::local_service::CreateWorkspaceBindingRequest =
-            serde_json::from_value(fixture["createWorkspaceBindingRequest"].clone())
-                .expect("CreateWorkspaceBinding fixture 应可反序列化");
-        assert_eq!(
-            serde_json::to_value(create_workspace_binding_request).unwrap(),
-            fixture["createWorkspaceBindingRequest"]
         );
         let confirmation_result: crate::local_service::SaveConfigResult =
             serde_json::from_value(fixture["confirmationRequired"].clone())
@@ -3376,10 +3163,6 @@ mod tests {
                 "schemaVersion: 1\npermissions:\n  files: \"未授予\"\n  commands: \"未授予\"\n  network: \"未授予\"\n  delegation: \"未授予\"\n",
             ),
             ("config/sop.yaml", "schemaVersion: 1\nsop:\n  []\n"),
-            (
-                "config/orchestration.yaml",
-                "schemaVersion: 1\norchestration: { enabled: false, maxDelegationDepth: 0, allowedAgentIds: [], allowedRoleIds: [], allowedDepartmentIds: [], requireWorkspaceBinding: true, requireSopMatch: true, requireServiceGrantForCrossDepartment: true, escalationConditions: [], prohibitions: [] }\n",
-            ),
             ("config/hooks.yaml", "schemaVersion: 1\nhooks: []\n"),
             ("config/commands.yaml", "schemaVersion: 1\ncommands: []\n"),
         ]
@@ -3469,6 +3252,34 @@ mod tests {
     }
 
     #[test]
+    fn managed_agent_creation_rejects_removed_orchestration_file() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = "schemaVersion: 1\nid: test-agent\n";
+        let mut files = minimal_agent_package_files(manifest);
+        files.push(AgentPackageFile {
+            path: "config/orchestration.yaml".into(),
+            content: "schemaVersion: 1\n".into(),
+        });
+
+        let result = create_managed_agent_at(
+            root.path(),
+            CreateManagedAgentRequest {
+                agent_id: "test-agent".into(),
+                agent: serde_json::json!({ "id": "test-agent", "name": "测试 Agent", "avatarPath": null }),
+                files,
+                avatar_bytes: None,
+            },
+        );
+
+        assert!(result
+            .err()
+            .unwrap()
+            .contains("config/orchestration.yaml 已不再受支持"));
+        assert!(!root.path().join("agt_test-agent").exists());
+        assert!(!root.path().join(".agt_test-agent.staging").exists());
+    }
+
+    #[test]
     fn managed_agent_identity_saves_revision_and_checks_baseline() {
         let root = tempfile::tempdir().expect("应创建隔离目录");
         let manifest = "schemaVersion: 1\nid: test-agent\n";
@@ -3550,7 +3361,7 @@ mod tests {
 
     fn canonical_agent_fixture(root: &Path) -> PathBuf {
         let files = vec![
-            ("agent.yaml", "schemaVersion: 1\nid: alpha\nname: Canonical\nroleId: role-1\nstatus: active\nmission: canonical mission\nresponsibilities: []\ndeliverables: []\ndecisionBoundaries: []\nescalationConditions: []\nprohibitions: []\ncompletionDefinition: []\n"),
+            ("agent.yaml", "schemaVersion: 1\nid: alpha\nname: Canonical\nteamId: team-personal\nstatus: active\nmission: canonical mission\nresponsibilities: []\ndeliverables: []\ndecisionBoundaries: []\nescalationConditions: []\nprohibitions: []\ncompletionDefinition: []\n"),
             ("instructions.md", "# Canonical\n"),
             ("config/context.yaml", "schemaVersion: 1\ncontextPolicy:\n  enabled: true\n  triggerRatio: 0.8\n  targetRatio: 0.5\n  protectRecentTurns: 6\n  protectOpeningTurns: 2\ncontextWindowTokens: 200000\noutputProfileId: \"\"\noutputParameterBindings: []\n"),
             ("config/rules.yaml", "schemaVersion: 1\nrules:\n  []\n"),
@@ -3558,23 +3369,15 @@ mod tests {
             ("config/mcp.yaml", "schemaVersion: 1\nmcp:\n  []\n"),
             ("config/permissions.yaml", "schemaVersion: 1\npermissions:\n  files: \"仅当前工作区\"\n  commands: \"构建与测试\"\n  network: \"禁止\"\n  delegation: \"禁止\"\n"),
             ("config/sop.yaml", "schemaVersion: 1\nsop:\n  []\n"),
-            ("config/orchestration.yaml", "schemaVersion: 1\norchestration: { enabled: false, maxDelegationDepth: 0, allowedAgentIds: [], allowedRoleIds: [], allowedDepartmentIds: [], requireWorkspaceBinding: true, requireSopMatch: true, requireServiceGrantForCrossDepartment: true, escalationConditions: [], prohibitions: [] }\n"),
             ("config/hooks.yaml", "schemaVersion: 1\nhooks: []\n"),
             ("config/commands.yaml", "schemaVersion: 1\ncommands: []\n"),
-            ("workspaces/ws-1/config.yaml", "schemaVersion: 1\nworkspaceBinding: { workspaceId: ws-1, instructions: old binding, ruleIds: [], skillIds: [], mcpIds: [] }\n"),
+            ("projects/project-1/config.yaml", "schemaVersion: 1\nprojectBinding: { projectId: project-1, instructions: old binding, ruleIds: [], skillIds: [], mcpIds: [] }\n"),
         ];
         let stale = serde_json::json!({
-            "id": "alpha", "name": "Stale", "role": "legacy", "department": "legacy",
-            "status": "inactive", "roleId": "stale-role", "packageSchema": { "compatibility": "unverified" },
-            "workspaces": 99, "config": "配置完整", "updated": "旧值", "mission": "stale mission",
-            "serviceGrants": [], "packagePath": "~/.bandi/agents/agt_alpha/",
-            "packageSource": { "kind": "bandi-managed", "packageId": "agt_alpha", "strategy": "managed" },
-            "instructions": "stale instructions", "skillRefs": ["stale"], "ruleRefs": ["stale"],
-            "mcpRefs": ["stale"], "contextPolicy": {}, "contextWindowTokens": 1,
-            "outputParameterBindings": [], "orchestrationPolicy": {}, "hookRefs": [], "commandRefs": [],
-            "permissions": { "files": "stale", "commands": "stale", "network": "stale", "delegation": "stale" },
-            "workspaceBindings": [{ "workspaceId": "ws-1", "instructions": "stale", "ruleIds": [], "skillIds": [], "mcpIds": [], "memoryRevision": "r7" }],
-            "sopRefs": [], "files": []
+            "id": "alpha",
+            "name": "Stale",
+            "status": "inactive",
+            "packageSource": { "kind": "bandi-managed", "packageId": "agt_alpha", "strategy": "managed" }
         });
         create_managed_agent_at(
             root,
@@ -3619,7 +3422,6 @@ mod tests {
         assert!(first.can_commit);
         assert_eq!(first.confirmation_text, "永久删除 Canonical");
         assert_eq!(first.agent_id, "alpha");
-        assert_eq!(first.impacts["workspaceBindings"][0]["id"], "ws-1");
         let manifest = fs::read_to_string(package.join("agent.yaml"))
             .unwrap()
             .replace("name: Canonical", "name: Renamed");
@@ -3715,98 +3517,6 @@ mod tests {
                 .status,
             "database_committed"
         );
-    }
-
-    #[test]
-    fn managed_agent_list_reprojects_saved_canonical_config() {
-        let root = tempfile::tempdir().unwrap();
-        let package = canonical_agent_fixture(root.path());
-        let revisions = root.path().join("revisions");
-
-        for (kind, value) in [
-            ("instructions", "# Saved instructions\n"),
-            ("permissions", "schemaVersion: 1\npermissions:\n  files: \"未授予\"\n  commands: \"构建与测试\"\n  network: \"禁止\"\n  delegation: \"禁止\"\n"),
-            ("workspace_binding", "schemaVersion: 1\nworkspaceBinding: { workspaceId: ws-1, instructions: saved binding, ruleIds: [], skillIds: [], mcpIds: [] }\n"),
-        ] {
-            let asset_identity = if kind == "workspace_binding" {
-                "managed:alpha:workspace_binding:workspaces/ws-1/config.yaml".into()
-            } else {
-                format!("managed:alpha:{kind}")
-            };
-            let asset_id = crate::local_service::stable_id("asset", &asset_identity);
-            let loaded = crate::local_service::load_editor_at(
-                root.path(),
-                crate::local_service::LoadEditorRequest { request_id: format!("load-{kind}"), asset_id },
-            )
-            .unwrap();
-            let change = match kind {
-                "instructions" => crate::local_service::ConfigChangeDto::Instructions { value: value.into() },
-                "permissions" => crate::local_service::ConfigChangeDto::Permissions { value: value.into() },
-                "workspace_binding" => crate::local_service::ConfigChangeDto::WorkspaceBinding { value: value.into() },
-                _ => unreachable!(),
-            };
-            let saved = crate::local_service::save_config_at(
-                root.path(),
-                &revisions,
-                crate::local_service::SaveConfigRequest {
-                    request_id: format!("save-{kind}"),
-                    asset_id: loaded.asset.id,
-                    expected_owner: crate::local_service::SaveConfigOwnerDto {
-                        agent_id: "alpha".into(),
-                        workspace_id: (kind == "workspace_binding").then(|| "ws-1".into()),
-                    },
-                    change,
-                    expected_baseline: loaded.baseline_ref,
-                    base_content: loaded.canonical_content,
-                    confirmation_ref: None,
-                },
-            );
-            assert!(matches!(saved, crate::local_service::SaveConfigResult::Saved { .. }));
-        }
-
-        let listed = list_managed_agents_at(root.path()).unwrap();
-        let agent = &listed.agents[0];
-        assert_eq!(agent["name"], "Canonical");
-        assert_eq!(agent["instructions"], "# Saved instructions\n");
-        assert_eq!(agent["permissions"]["files"], "未授予");
-        assert_eq!(
-            agent["workspaceBindings"][0]["instructions"],
-            "saved binding"
-        );
-        assert_eq!(agent["workspaceBindings"][0]["memoryRevision"], "r7");
-        assert_eq!(agent["workspaces"], 1);
-        assert_eq!(agent["role"], "legacy");
-        let files = agent["files"].as_array().unwrap();
-        let paths = files
-            .iter()
-            .filter_map(|file| file["path"].as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            paths,
-            vec![
-                "agent.yaml",
-                "config/commands.yaml",
-                "config/context.yaml",
-                "config/hooks.yaml",
-                "config/mcp.yaml",
-                "config/orchestration.yaml",
-                "config/permissions.yaml",
-                "config/rules.yaml",
-                "config/skills.yaml",
-                "config/sop.yaml",
-                "instructions.md",
-                "workspaces/ws-1/config.yaml",
-            ]
-        );
-        assert_eq!(
-            files[0]["scope"],
-            serde_json::json!({ "kind": "agent-root" })
-        );
-        assert_eq!(
-            files.last().unwrap()["scope"],
-            serde_json::json!({ "kind": "workspace", "workspaceId": "ws-1" })
-        );
-        assert_eq!(package.file_name().unwrap(), "agt_alpha");
     }
 
     #[test]

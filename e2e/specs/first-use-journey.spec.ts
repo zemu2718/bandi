@@ -4,23 +4,19 @@ import { expect } from '@wdio/globals'
 import {
   agentFiles,
   appDataPath,
-  company,
-  companyId,
-  companyName,
   department,
   departmentId,
-  departmentName,
   managedAgent,
   managedAgentsPath,
   managerAgentId,
   managerAgentName,
   role,
+  taskBriefId,
+  team,
+  teamId,
+  teamName,
   workerAgentId,
   workerAgentName,
-  workspace,
-  workspaceId,
-  workspaceName,
-  workspacePath,
 } from '../helpers/first-use-fixtures.js'
 
 type JsonRecord = Record<string, unknown>
@@ -31,10 +27,10 @@ type Discovery = {
   diagnostics: Array<{ severity: string; message: string }>
 }
 type Editor = { canonicalContent: string; baselineRef: JsonRecord }
-type SaveResult = { kind: string; revision?: { id: string } }
+type SaveResult = { kind: string; revision?: { id: string }; challenge?: { id: string } }
 type ReviewPrincipal =
   | { kind: 'agent'; agentId: string }
-  | { kind: 'chairman_user'; companyId: string }
+  | { kind: 'chairman_user'; teamId: string }
 type MemorySpace = { id: string; reviewPrincipal: ReviewPrincipal }
 type EligibleSpaces = { spaces: MemorySpace[]; diagnostics: Array<{ severity: string; message: string }> }
 type MemoryBundle = {
@@ -47,17 +43,25 @@ type MemoryBundle = {
 }
 type MemoryResult = { kind: string; revision?: { id: string } }
 type Backup = { id: string; entryCount: number; entries: Array<{ assetId: string }> }
-type OrganizationSnapshot = {
-  companies: Array<{ id: string }>
+type LongTermDomainSnapshot = {
+  schemaVersion: number
+  teams: Array<{ id: string }>
   departments: Array<{ id: string; managerAgentId?: string }>
   roles: Array<{ id: string }>
-  workspaces: Array<{ id: string }>
+  taskBriefs: Array<{ id: string; teamId: string }>
 }
-type ProjectedAgent = {
+type ManagedAgentView = {
   id: string
   instructions: string
   permissions: { files: string; commands: string; network: string; delegation: string }
-  workspaceBindings: Array<{ workspaceId: string }>
+}
+type ClientLaunchResult = {
+  teamId: string
+  agentId: string
+  taskId?: string
+  outcome: string
+  acceptedAt?: string
+  capability: { evidence: string[] }
 }
 
 const invoke = <T>(session: WebdriverIO.Browser, command: string, args: JsonRecord = {}) => session.tauri.execute(
@@ -83,7 +87,7 @@ async function createAgent(session: WebdriverIO.Browser, id: string, name: strin
 
 async function assetEditor(session: WebdriverIO.Browser, kind: string) {
   const discovery = await invoke<Discovery>(session, 'discover_config', {
-    request: { requestId: `discover-${kind}`, workspaceIds: [workspaceId], includeClaudeUserRoot: false },
+    request: { requestId: `discover-${kind}`, includeClaudeUserRoot: false },
   })
   expect(discovery.diagnostics.filter((item) => item.severity === 'error')).toHaveLength(0)
   const relativePath = kind === 'instructions' ? 'instructions.md' : `config/${kind}.yaml`
@@ -102,35 +106,41 @@ async function assetEditor(session: WebdriverIO.Browser, kind: string) {
 
 async function saveConfig(session: WebdriverIO.Browser, kind: 'instructions' | 'permissions', value: string) {
   const { asset, editor } = await assetEditor(session, kind)
-  const result = await invoke<SaveResult>(session, 'save_config', {
-    request: {
-      requestId: `save-${kind}`,
-      assetId: asset.id,
-      expectedOwner: { agentId: workerAgentId },
-      change: { kind, value },
-      expectedBaseline: editor.baselineRef,
-      baseContent: editor.canonicalContent,
-    },
-  })
+  const request = {
+    requestId: `save-${kind}`,
+    assetId: asset.id,
+    expectedOwner: { agentId: workerAgentId },
+    change: { kind, value },
+    expectedBaseline: editor.baselineRef,
+    baseContent: editor.canonicalContent,
+  }
+  let result = await invoke<SaveResult>(session, 'save_config', { request })
+  if (result.kind === 'confirmation_required') {
+    expect(kind).toBe('permissions')
+    expect(result.challenge?.id).toBeTruthy()
+    result = await invoke<SaveResult>(session, 'save_config', {
+      request: { ...request, confirmationRef: result.challenge?.id },
+    })
+  }
   expect(result.kind).toBe('saved')
   expect(result.revision?.id).toBeTruthy()
   return asset.id
 }
 
 async function assertPersistedFacts(session: WebdriverIO.Browser) {
-  const snapshot = await invoke<OrganizationSnapshot>(session, 'load_organization_snapshot')
-  expect(snapshot.companies.map((item) => item.id)).toContain(companyId)
+  const snapshot = await invoke<LongTermDomainSnapshot>(session, 'load_long_term_domain_snapshot_v3')
+  expect(snapshot.schemaVersion).toBe(3)
+  expect(snapshot.teams.map((item) => item.id)).toContain(teamId)
   expect(snapshot.departments).toContainEqual(expect.objectContaining({ id: departmentId, managerAgentId }))
   expect(snapshot.roles.map((item) => item.id)).toContain(role.id)
-  expect(snapshot.workspaces.map((item) => item.id)).toContain(workspaceId)
+  expect(snapshot.taskBriefs).toContainEqual(expect.objectContaining({ id: taskBriefId, teamId }))
 
-  const result = await invoke<{ agents: ProjectedAgent[]; diagnostics: unknown[] }>(session, 'list_managed_agents')
+  const result = await invoke<{ agents: ManagedAgentView[]; diagnostics: unknown[] }>(session, 'list_managed_agents')
   expect(result.diagnostics).toHaveLength(0)
   expect(result.agents).toHaveLength(2)
   const worker = result.agents.find((item) => item.id === workerAgentId)
   expect(worker?.instructions).toBe('首次旅程已保存的 Instructions')
   expect(worker?.permissions).toEqual({ files: '未授予', commands: '构建与测试', network: '禁止', delegation: '禁止' })
-  expect(worker?.workspaceBindings.map((item) => item.workspaceId)).toContain(workspaceId)
 
   const revisions = await invoke<Array<{ id: string }>>(session, 'list_memory_revisions', {
     request: { requestId: 'list-memory-revisions', spaceId: `memory-agent-${workerAgentId}` },
@@ -141,33 +151,34 @@ async function assertPersistedFacts(session: WebdriverIO.Browser) {
   expect(backups).toHaveLength(1)
   expect(backups[0].entryCount).toBe(1)
 
-  await session.execute(() => { window.location.hash = '#/workspaces' })
-  await expect(session.$('h1=工作区')).toBeDisplayed()
-  await session.waitUntil(
-    async () => (await session.$('body').getText()).includes(workspaceName),
-    {
-      timeoutMsg: `重启后的工作区页面未恢复 ${workspaceName}：${await session.$('body').getText()}`,
+  const launch = await invoke<ClientLaunchResult>(session, 'request_client_launch_v3', {
+    request: {
+      clientId: 'claude-code',
+      adapterId: 'claude-code-terminal-v1',
+      terminalId: 'terminal',
+      intent: 'start_with_context',
+      teamId,
+      agentId: workerAgentId,
+      taskId: taskBriefId,
     },
-  )
-  await expect(session.$(`//a[normalize-space()="${workspaceName}"]`)).toBeDisplayed()
-  await expect(session.$(`//*[contains(normalize-space(), "${companyName}")]`)).toBeDisplayed()
-  await expect(session.$(`//small[normalize-space()="${departmentName}"]`)).toBeDisplayed()
-  await expect(session.$('h1=先导入或创建一个长期 Agent')).not.toExist()
-  expect(await session.$('body').getText()).not.toContain('知衡')
+  })
+  expect(launch).toMatchObject({ teamId, agentId: workerAgentId, taskId: taskBriefId, outcome: 'context_prepared' })
+  expect(launch.acceptedAt).toBeUndefined()
+  expect(launch.capability.evidence).toContain('仅复核 Team、Agent 与可选 TaskBrief，未访问目录或调用外部进程')
 
+  await session.execute((id: string) => { window.location.hash = `#/agents/${id}` }, workerAgentId)
+  await expect(session.$(`button[aria-label="切换 Team，当前为${teamName}"]`)).toBeDisplayed()
   await session.execute(() => { window.location.hash = '#/agents' })
+  await expect(session.$('h1=先新建或导入一个长期 Agent')).not.toExist()
+  expect(await session.$('body').getText()).not.toContain('知衡')
   await expect(session.$('h1=Agent')).toBeDisplayed()
   await session.waitUntil(
     async () => {
       const text = await session.$('body').getText()
       return text.includes(managerAgentName) && text.includes(workerAgentName)
     },
-    {
-      timeoutMsg: `重启后的 Agent 页面未恢复两个 Agent：${await session.$('body').getText()}`,
-    },
+    { timeoutMsg: `重启后的 Agent 页面未恢复两个 Agent：${await session.$('body').getText()}` },
   )
-  await expect(session.$(`//*[normalize-space()="${managerAgentName}"]`)).toBeDisplayed()
-  await expect(session.$(`//*[normalize-space()="${workerAgentName}"]`)).toBeDisplayed()
 }
 
 describe('Desktop 首次使用真实闭环', () => {
@@ -179,50 +190,31 @@ describe('Desktop 首次使用真实闭环', () => {
       return
     }
 
-    await expect(browser.$('h1=先导入或创建一个长期 Agent')).toBeDisplayed()
+    await expect(browser.$('h1=先新建或导入一个长期 Agent')).toBeDisplayed()
 
-    const persistedWorkspace = await invoke<typeof workspace>(browser, 'create_workspace', {
-      request: { requestId: 'create-workspace', selectedPath: workspacePath, workspace },
-    })
-    expect(persistedWorkspace.path).toBe(workspacePath)
-
-    await invoke(browser, 'save_company', { request: { company } })
-    await invoke(browser, 'save_department', { request: { department } })
-    await invoke(browser, 'save_role', { request: { role } })
+    await invoke(browser, 'save_team_v2', { team })
     await createAgent(browser, managerAgentId, managerAgentName)
     await createAgent(browser, workerAgentId, workerAgentName, managerAgentId)
-
-    const governedDepartment = {
-      ...department,
-      managerAgentId,
-      manager: managerAgentName,
-      members: 2,
-      memberAgentIds: [managerAgentId, workerAgentId],
-    }
-    await invoke(browser, 'save_department', { request: { department: governedDepartment } })
-    await invoke(browser, 'save_company', {
-      request: { company: { ...company, assistantAgentId: managerAgentId, departmentIds: [departmentId] } },
+    await invoke(browser, 'save_department_v2', {
+      department: { ...department, managerAgentId },
     })
-    await invoke(browser, 'save_workspace', {
-      request: {
-        workspace: {
-          ...workspace,
-          company: companyName,
-          department: departmentName,
-          companyId,
-          primaryDepartmentId: departmentId,
-          projectLeadAgentId: managerAgentId,
-          agentIds: [managerAgentId, workerAgentId],
-          departmentMemorySpaceIds: [`mem-${departmentId}-${workspaceId}`],
-        },
+    await invoke(browser, 'save_role_v2', { role })
+    await invoke(browser, 'save_team_v2', {
+      team: {
+        ...team,
+        memberAgentIds: [managerAgentId, workerAgentId],
+        departmentIds: [departmentId],
       },
     })
 
-    const bindingValue = `schemaVersion: 1\nworkspaceBinding: ${JSON.stringify({ workspaceId, instructions: '首次工作区专属配置', ruleIds: [], skillIds: [], mcpIds: [] })}`
-    const binding = await invoke<SaveResult>(browser, 'create_workspace_binding', {
-      request: { requestId: 'create-binding', agentId: workerAgentId, workspaceId, value: bindingValue },
+    await invoke(browser, 'save_task_brief_v2', {
+      taskBrief: {
+        id: taskBriefId,
+        teamId,
+        title: '完成首次长期配置闭环',
+        brief: '验证 Team、Agent 与上下文准备。',
+      },
     })
-    expect(binding.kind).toBe('saved')
 
     const instructionsAssetId = await saveConfig(browser, 'instructions', '首次旅程已保存的 Instructions')
     await saveConfig(browser, 'permissions', 'schemaVersion: 1\npermissions:\n  files: "未授予"\n  commands: "构建与测试"\n  network: "禁止"\n  delegation: "禁止"')
@@ -267,10 +259,8 @@ describe('Desktop 首次使用真实闭环', () => {
 
     expect(await fs.readFile(path.join(managedAgentsPath, `agt_${workerAgentId}`, 'instructions.md'), 'utf8')).toBe('首次旅程已保存的 Instructions')
     expect(await fs.readFile(path.join(managedAgentsPath, `agt_${workerAgentId}`, 'memory', 'long-term.md'), 'utf8')).toBe('首次旅程正式长期记忆')
-    expect(JSON.parse(await fs.readFile(path.join(appDataPath, 'workspaces', `${workspaceId}.json`), 'utf8'))).toMatchObject({ workspaceId, canonicalPath: workspacePath })
     await expect(fs.stat(path.join(appDataPath, 'bandi.db'))).resolves.toBeDefined()
     await expect(fs.stat(path.join(appDataPath, 'revisions'))).resolves.toBeDefined()
     await expect(fs.stat(path.join(appDataPath, 'backups', backup.id))).resolves.toBeDefined()
-
   })
 })

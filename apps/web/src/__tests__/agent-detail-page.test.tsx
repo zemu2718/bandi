@@ -185,9 +185,9 @@ describe('Agent 双模式配置工作台', () => {
     await waitFor(() => expect(screen.queryByDisplayValue('周策更新')).not.toBeInTheDocument())
   })
 
-  it('Desktop 受管身份同步部门成员与服务授权', async () => {
+  it('Desktop 受管身份同步部门成员与跨部门服务', async () => {
     const source = initialState.agents.find((item) => item.id === 'zhouce')!
-    const targetDepartment = initialState.departments.find((item) => item.id !== source.primaryDepartmentId && item.companyId === source.companyId)!
+    const targetDepartment = initialState.departments.find((item) => item.id !== source.primaryDepartmentId && item.teamId === source.teamId)!
     const state: State = {
       ...initialState,
       agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item),
@@ -204,10 +204,11 @@ describe('Agent 双模式配置工作台', () => {
     renderAgent('/agents/zhouce?tab=identity', state)
     fireEvent.click(screen.getByRole('button', { name: '编辑' }))
     await screen.findByDisplayValue('周策')
-    fireEvent.change(screen.getByLabelText('所属部门'), { target: { value: targetDepartment.id } })
-    fireEvent.click(screen.getByRole('button', { name: '添加授权' }))
-    const capabilityInputs = screen.getAllByLabelText('允许能力')
+    fireEvent.change(screen.getByDisplayValue('研发部'), { target: { value: targetDepartment.id } })
+    fireEvent.click(screen.getByRole('button', { name: '添加服务' }))
+    const capabilityInputs = screen.getAllByLabelText('服务能力')
     fireEvent.change(capabilityInputs.at(-1)!, { target: { value: '配置审查、发布复核' } })
+    fireEvent.change(screen.getAllByRole('textbox', { name: '禁止事项（每行一项）' }).at(-1)!, { target: { value: '不得扩大权限\n  不得绕过审批  ' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(commit).toHaveBeenCalledTimes(1))
@@ -217,7 +218,11 @@ describe('Agent 双模式配置工作台', () => {
       expect.any(String),
       baselineRef,
       expect.any(String),
-      expect.arrayContaining([expect.objectContaining({ capabilities: ['配置审查', '发布复核'] })]),
+      expect.arrayContaining([expect.objectContaining({
+        capabilities: ['配置审查', '发布复核'],
+        prohibitions: ['不得扩大权限', '不得绕过审批'],
+        status: 'active',
+      })]),
       { kind: 'keep' },
     )
     await waitFor(() => expect(screen.getByText(/发布复核/)).toBeInTheDocument())
@@ -246,7 +251,7 @@ describe('Agent 双模式配置工作台', () => {
     fireEvent.change(name, { target: { value: '周策更新' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('首页待处理项继续修复')
+    expect(await screen.findByRole('alert')).toHaveTextContent('配置状态中的待处理项继续修复')
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(commit).toHaveBeenCalledTimes(2))
@@ -309,11 +314,11 @@ describe('Agent 双模式配置工作台', () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'a'.repeat(64)}` as const
     const baseline = { id: 'memory-base', assetId: 'memory-agent-zhouce', containerId: 'memory-agent-zhouce', assetContentHash: hash, containerContentHash: hash }
-    vi.spyOn(desktopBridge, 'discoverEligibleMemorySpaces').mockResolvedValue({ requestId: 'discover-memory-zhouce', spaces: [{ id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term', agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v1', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' }], diagnostics: [] })
+    vi.spyOn(desktopBridge, 'discoverEligibleMemorySpaces').mockResolvedValue({ requestId: 'discover-memory-zhouce', spaces: [{ id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term', agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v3', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' }], diagnostics: [] })
     vi.spyOn(desktopBridge, 'listMemoryReviews').mockResolvedValue([])
     const create = vi.spyOn(desktopBridge, 'createMemoryCandidate').mockImplementation(async (request) => ({
       requestId: request.requestId,
-      space: { id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term' as const, agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v1', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' },
+      space: { id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term' as const, agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v3', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' },
       candidate: { id: request.candidateId, spaceId: 'memory-agent-zhouce', proposerAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, source: request.source, summary: request.summary, proposedContent: request.proposedContent, proposedContentHash: hash, submittedBaseline: baseline, status: 'pending_review', version: 1, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
       currentContent: '当前正式内容',
     }))
@@ -346,10 +351,10 @@ describe('Agent 双模式配置工作台', () => {
     }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'c'.repeat(64)}` as const
-    vi.spyOn(desktopBridge, 'discoverEligibleMemorySpaces').mockResolvedValue({ requestId: 'discover-memory-zhouce', spaces: [{ id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term', agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v1', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' }], diagnostics: [] })
+    vi.spyOn(desktopBridge, 'discoverEligibleMemorySpaces').mockResolvedValue({ requestId: 'discover-memory-zhouce', spaces: [{ id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term', agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v3', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' }], diagnostics: [] })
     vi.spyOn(desktopBridge, 'listMemoryReviews').mockResolvedValue([{
       requestId: 'list-memory-zhouce',
-      space: { id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term' as const, agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v1', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, currentRevisionId: 'memory-revision-1', contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' },
+      space: { id: 'memory-agent-zhouce', scopeType: 'agent_long_term', scopeKey: { kind: 'agent_long_term' as const, agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer', visibilityPolicy: 'agent_private', storageProfileVersion: 'memory-v3', state: 'active', storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, currentRevisionId: 'memory-revision-1', contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' },
       candidate: { id: 'candidate-hydrated', spaceId: 'memory-agent-zhouce', proposerAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, source: { kind: 'manual', label: 'test' }, summary: '重启恢复候选', proposedContent: '正式内容', proposedContentHash: hash, submittedBaseline: { id: 'base', assetId: 'memory-agent-zhouce', containerId: 'memory-agent-zhouce', assetContentHash: hash, containerContentHash: hash }, status: 'written', version: 3, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:01:00Z' },
       currentContent: '正式内容',
     }])
@@ -359,39 +364,6 @@ describe('Agent 双模式配置工作台', () => {
     expect(await screen.findByText('candidate-hydrated')).toBeInTheDocument()
     expect(screen.getByText('已保存为正式版本')).toBeInTheDocument()
     expect(screen.queryByText('正式记忆候选已创建')).not.toBeInTheDocument()
-  })
-
-  it('Desktop 四类正式空间显示各自历史入口并阻止只读空间提交', async () => {
-    const source = initialState.agents.find((item) => item.id === 'zhouce')!
-    const state: State = {
-      ...initialState,
-      agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item),
-    }
-    vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
-    const hash = `sha256:${'d'.repeat(64)}` as const
-    const timestamp = '2026-09-01T00:00:00Z'
-    const scopes = [
-      { id: 'mem-agent-zhouce', scopeType: 'agent_long_term' as const, scopeKey: { kind: 'agent_long_term' as const, agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, visibilityPolicy: 'agent_private' as const, rootKind: 'managed' as const, relativePath: 'memory/long-term.md', state: 'active' as const },
-      { id: 'mem-agent-ws-zhouce-bandi', scopeType: 'agent_workspace' as const, scopeKey: { kind: 'agent_workspace' as const, agentId: 'zhouce', workspaceId: 'bandi' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, visibilityPolicy: 'agent_private' as const, rootKind: 'managed' as const, relativePath: 'workspaces/bandi/memory.md', state: 'active' as const },
-      { id: 'mem-ws-bandi', scopeType: 'workspace_shared' as const, scopeKey: { kind: 'workspace_shared' as const, workspaceId: 'bandi' }, owner: { kind: 'workspace' as const, workspaceId: 'bandi' }, visibilityPolicy: 'workspace_shared' as const, rootKind: 'workspace' as const, relativePath: '.bandi/memory/public.md', state: 'active' as const },
-      { id: 'mem-dev-bandi', scopeType: 'department_workspace' as const, scopeKey: { kind: 'department_workspace' as const, departmentId: 'dev', workspaceId: 'bandi' }, owner: { kind: 'department_workspace' as const, departmentId: 'dev', workspaceId: 'bandi' }, visibilityPolicy: 'department_workspace' as const, rootKind: 'workspace' as const, relativePath: '.bandi/memory/departments/dev.md', state: 'read_only_history' as const },
-    ]
-    vi.spyOn(desktopBridge, 'discoverEligibleMemorySpaces').mockResolvedValue({ requestId: 'discover-memory-zhouce', spaces: scopes.map((scope) => ({ ...scope, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer' as const, storageProfileVersion: 'memory-v1' as const, storageLocator: { rootKind: scope.rootKind, displayPath: scope.relativePath, relativePath: scope.relativePath }, contentHash: hash, updatedAt: timestamp })), diagnostics: [] })
-    vi.spyOn(desktopBridge, 'listMemoryReviews').mockResolvedValue(scopes.map((scope, index) => ({
-      requestId: 'list-memory-zhouce',
-      space: { ...scope, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer' as const, storageProfileVersion: 'memory-v1' as const, storageLocator: { rootKind: scope.rootKind, displayPath: scope.relativePath, relativePath: scope.relativePath }, currentRevisionId: `revision-${index}`, contentHash: hash, updatedAt: timestamp },
-      candidate: { id: `candidate-${index}`, spaceId: scope.id, proposerAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, source: { kind: 'manual' as const, label: 'test' }, summary: `候选 ${index}`, proposedContent: '内容', proposedContentHash: hash, submittedBaseline: { id: `base-${index}`, assetId: scope.id, containerId: scope.id, assetContentHash: hash, containerContentHash: hash }, status: 'written' as const, version: 1, createdAt: timestamp, updatedAt: timestamp },
-      currentContent: '内容',
-    })))
-
-    renderAgent('/agents/zhouce?tab=memory', state)
-
-    expect((await screen.findAllByRole('button', { name: '正式版本历史' }))).toHaveLength(4)
-    expect(screen.getByText('只读历史')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('目标记忆范围'), { target: { value: 'mem-dev-bandi' } })
-    expect(screen.getByLabelText('建议写回的完整内容')).toBeDisabled()
-    expect(screen.getByRole('button', { name: '提交修改建议' })).toBeDisabled()
-    expect(screen.getByText(/关系已失效/)).toBeInTheDocument()
   })
 
   it('Desktop 正式 Memory revision pending 可补记且不重复批准', async () => {
@@ -405,7 +377,7 @@ describe('Agent 双模式配置工作台', () => {
     const hash = `sha256:${'b'.repeat(64)}` as const
     const baseline = { id: 'memory-base', assetId: 'memory-agent-zhouce', containerId: 'memory-agent-zhouce', assetContentHash: hash, containerContentHash: hash }
     const candidate = { id: 'memory-candidate-recovery', spaceId: 'memory-agent-zhouce', proposerAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, source: { kind: 'manual' as const, label: 'test' }, summary: '正式记忆修改', proposedContent: '新内容', proposedContentHash: hash, submittedBaseline: baseline, status: 'pending_review' as const, version: 1, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' }
-    const bundle = { requestId: 'load', space: { id: 'memory-agent-zhouce', scopeType: 'agent_long_term' as const, scopeKey: { kind: 'agent_long_term' as const, agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer' as const, visibilityPolicy: 'agent_private' as const, storageProfileVersion: 'memory-v1' as const, state: 'active' as const, storageLocator: { rootKind: 'managed' as const, displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' }, candidate, currentContent: '旧内容' }
+    const bundle = { requestId: 'load', space: { id: 'memory-agent-zhouce', scopeType: 'agent_long_term' as const, scopeKey: { kind: 'agent_long_term' as const, agentId: 'zhouce' }, owner: { kind: 'agent' as const, agentId: 'zhouce' }, stewardAgentId: 'zhouce', reviewPrincipal: { kind: 'agent' as const, agentId: 'zhiheng' }, reviewPolicy: 'independent_reviewer' as const, visibilityPolicy: 'agent_private' as const, storageProfileVersion: 'memory-v3' as const, state: 'active' as const, storageLocator: { rootKind: 'managed' as const, displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' }, contentHash: hash, updatedAt: '2026-09-01T00:00:00Z' }, candidate, currentContent: '旧内容' }
     vi.spyOn(desktopBridge, 'discoverEligibleMemorySpaces').mockResolvedValue({ requestId: 'discover-memory-zhouce', spaces: [bundle.space], diagnostics: [] })
     vi.spyOn(desktopBridge, 'listMemoryReviews').mockResolvedValue([])
     vi.spyOn(desktopBridge, 'loadMemoryReview').mockResolvedValue(bundle)
@@ -430,7 +402,10 @@ describe('Agent 双模式配置工作台', () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(false)
     const review = vi.spyOn(desktopBridge, 'reviewMemoryCandidate')
     const load = vi.spyOn(desktopBridge, 'loadMemoryReview')
-    renderAgent('/agents/zhouce?tab=memory')
+    renderAgent('/agents/zhouce?tab=memory', {
+      ...initialState,
+      memoryCandidates: [{ id: 'memory-candidate-web', spaceId: 'mem-agent-zhouce', proposerAgentId: 'zhouce', reviewPrincipal: { kind: 'agent', agentId: 'zhiheng' }, summary: '记录已确认的 API 方案', current: '旧内容', proposed: '新内容', status: '待审核' }],
+    })
     fireEvent.click(screen.getByRole('button', { name: /记录已确认的 API 方案/ }))
     expect(await screen.findByText(/浏览器演示/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '要求修改' }))
@@ -467,7 +442,7 @@ describe('Agent 双模式配置工作台', () => {
     const trigger = screen.getByRole('button', { name: '选择文件' })
     trigger.focus()
     fireEvent.click(trigger)
-    await waitFor(() => expect(screen.getByRole('dialog', { name: '选择 AgentPackage 文件' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('dialog', { name: '选择配置文件' })).toBeInTheDocument())
 
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(trigger).toHaveFocus())
@@ -487,7 +462,7 @@ describe('Agent 双模式配置工作台', () => {
 
     renderAgent('/agents/zhouce?tab=package', state)
 
-    expect(screen.getByText('尚未读取到 AgentPackage 文件')).toBeInTheDocument()
+    expect(screen.getByText('尚未读取到配置文件')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重新读取' })).toBeInTheDocument()
     expect(screen.queryByRole('tree')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '选择文件' })).not.toBeInTheDocument()
@@ -495,8 +470,8 @@ describe('Agent 双模式配置工作台', () => {
   })
 
   it.each([
-    ['外部引用', { kind: 'external-reference' as const, externalPath: '/tmp/external', strategy: 'reference-only' as const }, { compatibility: 'unverified' as const }, '外部目录未被读取'],
-    ['Web 演示', { kind: 'bandi-demo' as const, strategy: 'create-demo' as const }, { schemaVersion: 1, compatibility: 'current' as const }, '当前演示没有已登记文件'],
+    ['历史外部引用', { kind: 'external-reference' as const, externalPath: '/tmp/external', strategy: 'reference-only' as const }, { compatibility: 'unverified' as const }, '历史外部目录未被读取'],
+    ['Web 演示', { kind: 'bandi-demo' as const, strategy: 'create-demo' as const }, { schemaVersion: 1, compatibility: 'current' as const }, '当前演示没有文件记录'],
   ])('%s 的空 AgentPackage 不提供系统读取操作', (_label, packageSource, packageSchema, title) => {
     const source = initialState.agents.find((item) => item.id === 'zhouce')!
     const state: State = {
@@ -515,7 +490,7 @@ describe('Agent 双模式配置工作台', () => {
     renderAgent('/agents/zhouce?tab=package&path=agent.yaml&view=preview')
 
     expect(screen.getByRole('tab', { name: '原始文件' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tree', { name: '周策 AgentPackage 目录' })).toBeInTheDocument()
+    expect(screen.getByRole('tree', { name: '周策 Agent 配置目录' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'agent.yaml' })).toBeInTheDocument()
     expect(screen.queryByText('关联文件')).not.toBeInTheDocument()
   })
@@ -549,7 +524,7 @@ describe('Agent 双模式配置工作台', () => {
 
   it('文件树使用 roving tabindex 并声明完整树语义', () => {
     renderAgent('/agents/zhouce?tab=package&path=agent.yaml&view=preview')
-    const tree = screen.getByRole('tree', { name: '周策 AgentPackage 目录' })
+    const tree = screen.getByRole('tree', { name: '周策 Agent 配置目录' })
     const items = within(tree).getAllByRole('treeitem')
     expect(items.filter((item) => item.tabIndex === 0)).toHaveLength(1)
     expect(within(tree).getByRole('treeitem', { name: /agent.yaml/ })).toHaveAttribute('aria-selected', 'true')
@@ -749,6 +724,23 @@ describe('Agent 双模式配置工作台', () => {
     expect(screen.getByRole('button', { name: '保存到当前页面' })).toBeEnabled()
   })
 
+  it('Desktop 没有共享 Skill 时显示明确空状态', () => {
+    const source = initialState.agents.find((item) => item.id === 'zhouce')!
+    const state: State = {
+      ...initialState,
+      runtime: 'desktop',
+      hydration: { ...initialState.hydration, sharedAssets: 'succeeded' },
+      assets: [],
+      agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item),
+    }
+    vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
+
+    renderAgent('/agents/zhouce?tab=skills', state)
+
+    expect(screen.getByText('暂无可引用的技能')).toBeInTheDocument()
+    expect(screen.getByText(/当前没有可引用的共享.*Desktop 暂不支持创建或导入/)).toBeInTheDocument()
+  })
+
   it('Desktop 受管 Skills 通过发现、加载与真实保存闭环', async () => {
     const source = initialState.agents.find((item) => item.id === 'zhouce')!
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' }, skillRefs: ['skill-review'] } : item) }
@@ -807,6 +799,23 @@ describe('Agent 双模式配置工作台', () => {
     fireEvent.click(screen.getByRole('button', { name: '编辑' }))
     expect(screen.getByRole('button', { name: '保存到当前页面' })).toBeEnabled()
     expect(save).not.toHaveBeenCalled()
+  })
+
+  it('Desktop 没有共享 SOP 时显示明确空状态', () => {
+    const source = initialState.agents.find((item) => item.id === 'zhouce')!
+    const state: State = {
+      ...initialState,
+      runtime: 'desktop',
+      hydration: { ...initialState.hydration, sharedAssets: 'succeeded' },
+      assets: [],
+      agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' }, files: item.files.some((file) => file.path === 'config/sop.yaml') ? item.files : [...item.files, { path: 'config/sop.yaml', type: 'SOP', status: '已保存', scope: { kind: 'agent-root' } }] } : item),
+    }
+    vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
+
+    renderAgent('/agents/zhouce?tab=sop', state)
+
+    expect(screen.getByText('暂无可引用的SOP')).toBeInTheDocument()
+    expect(screen.getByText(/当前没有可引用的共享.*Desktop 暂不支持创建或导入/)).toBeInTheDocument()
   })
 
   it('Desktop 受管 SOP 通过发现、加载与真实保存闭环', async () => {
@@ -902,93 +911,21 @@ describe('Agent 双模式配置工作台', () => {
     const command = await within(commandPanel).findByRole('checkbox', { name: '配置审计命令' })
     fireEvent.click(command)
     fireEvent.click(within(commandPanel).getByRole('checkbox', { name: /覆盖检查范围/ }))
-    fireEvent.change(within(commandPanel).getByRole('combobox', { name: '检查范围' }), { target: { value: 'workspace' } })
+    fireEvent.change(within(commandPanel).getByRole('combobox', { name: '检查范围' }), { target: { value: 'project' } })
     fireEvent.click(within(commandPanel).getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ assetId: asset.id, baseContent: base, change: expect.objectContaining({ kind: 'commands', value: expect.stringContaining('"parameterId":"scope"') }) })))
   })
 
-  it('纯 Web WorkspaceBinding 保持页面内存保存到当前页面边界', async () => {
+  it('权限页说明长期边界与终端执行期授权的区别', () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(false)
-    const save = vi.spyOn(desktopBridge, 'saveConfig')
-    const create = vi.spyOn(desktopBridge, 'createWorkspaceBinding')
 
-    renderAgent('/agents/zhouce?tab=workspaces')
-    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0])
-    const instructions = screen.getByLabelText('专属主指令')
-    fireEvent.change(instructions, { target: { value: '页面内存更新' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存到当前页面' }))
+    renderAgent('/agents/zhouce?tab=permissions')
 
-    expect(save).not.toHaveBeenCalled()
-    expect(create).not.toHaveBeenCalled()
-    expect(await screen.findByText('页面内存更新')).toBeInTheDocument()
-  })
-
-  it('Desktop 受管 WorkspaceBinding 通过发现、加载与真实保存闭环', async () => {
-    const source = initialState.agents.find((item) => item.id === 'zhouce')!
-    const binding = source.workspaceBindings[0]
-    const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item) }
-    vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
-    const hash = `sha256:${'7'.repeat(64)}` as const
-    const asset = { id: 'workspace-binding-asset', containerId: 'workspace-binding-container', kind: 'workspace_binding', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
-    const base = `schemaVersion: 1\nworkspaceBinding: ${JSON.stringify({ workspaceId: binding.workspaceId, instructions: binding.instructions, ruleIds: binding.ruleIds, skillIds: binding.skillIds, mcpIds: binding.mcpIds })}`
-    const baselineRef = { id: 'workspace-binding-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }
-    vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-workspace-binding', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/config.yaml', relativePath: `agt_zhouce/workspaces/${binding.workspaceId}/config.yaml` }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
-    vi.spyOn(desktopBridge, 'loadConfigEditor').mockResolvedValue({ requestId: 'load-workspace-binding', asset, canonicalContent: base, redacted: false, baselineRef, diagnostics: [] })
-    const save = vi.spyOn(desktopBridge, 'saveConfig').mockResolvedValue({ kind: 'unchanged', requestId: 'save-workspace-binding', asset })
-
-    renderAgent('/agents/zhouce?tab=workspaces', state)
-    fireEvent.click(screen.getAllByRole('button', { name: '编辑' })[0])
-    const instructions = await screen.findByLabelText('专属主指令')
-    fireEvent.change(instructions, { target: { value: '真实 WorkspaceBinding 更新' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
-
-    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ assetId: asset.id, expectedBaseline: baselineRef, baseContent: base, change: expect.objectContaining({ kind: 'workspace_binding', value: expect.stringContaining('真实 WorkspaceBinding 更新') }) })))
-    expect(save.mock.calls[0][0].change.value).not.toContain('memoryRevision')
-  })
-
-  it('Desktop 添加工作区配置 只提交稳定身份与规范正文', async () => {
-    const source = initialState.agents.find((item) => item.id === 'zhouce')!
-    const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item) }
-    vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
-    const hash = `sha256:${'6'.repeat(64)}` as const
-    const asset = { id: 'workspace-binding-created', containerId: 'workspace-binding-created-container', kind: 'workspace_binding', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
-    const create = vi.spyOn(desktopBridge, 'createWorkspaceBinding').mockResolvedValue({ kind: 'unchanged', requestId: 'create-workspace-binding-zhouce-lab', asset })
-
-    renderAgent('/agents/zhouce?tab=workspaces', state)
-    fireEvent.click(screen.getByRole('button', { name: '添加工作区配置' }))
-    const dialog = screen.getByRole('dialog', { name: '添加工作区配置' })
-    fireEvent.change(within(dialog).getByLabelText('工作区'), { target: { value: 'lab' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: '确认选择' }))
-    expect(screen.getByText('lab', { selector: 'b' })).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('专属主指令'), { target: { value: '独立研究专属配置' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
-
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
-    const request = create.mock.calls[0][0]
-    expect(request).toEqual(expect.objectContaining({ agentId: 'zhouce', workspaceId: 'lab', value: expect.stringContaining('独立研究专属配置') }))
-    expect(Object.keys(request).sort()).toEqual(['agentId', 'requestId', 'value', 'workspaceId'])
-    expect(request.value).not.toContain('memoryRevision')
-  })
-
-  it('添加工作区配置 必须明确选择，取消保持零写入', async () => {
-    const source = initialState.agents.find((item) => item.id === 'zhouce')!
-    const extraWorkspace = { ...initialState.workspaces[0], id: 'sandbox', name: '沙盒工作区', path: '/tmp/sandbox' }
-    const state: State = { ...initialState, workspaces: [...initialState.workspaces, extraWorkspace] }
-    const create = vi.spyOn(desktopBridge, 'createWorkspaceBinding')
-
-    renderAgent('/agents/zhouce?tab=workspaces', state)
-    fireEvent.click(screen.getByRole('button', { name: '添加工作区配置' }))
-    const dialog = screen.getByRole('dialog', { name: '添加工作区配置' })
-    const select = within(dialog).getByLabelText('工作区')
-    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(expect.arrayContaining(['独立研究（lab）', '沙盒工作区（sandbox）']))
-    expect(within(dialog).getByRole('button', { name: '确认选择' })).toBeDisabled()
-    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
-
-    expect(screen.queryByRole('dialog', { name: '添加工作区配置' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('专属主指令')).not.toBeInTheDocument()
-    expect(create).not.toHaveBeenCalled()
-    expect(source.workspaceBindings).toHaveLength(initialState.agents.find((item) => item.id === source.id)!.workspaceBindings.length)
+    expect(screen.getByText('长期权限边界')).toBeInTheDocument()
+    expect(screen.getByText(/实际工具调用仍由 Claude Code 在终端中按当前任务请求授权/)).toBeInTheDocument()
+    expect(screen.getByText(/不会写入真实配置或授权终端操作/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '调整长期边界' })).toBeInTheDocument()
   })
 
   it('Desktop Permissions 在双 Agent 发现结果中只加载当前 Agent 容器', async () => {
@@ -1006,7 +943,7 @@ describe('Agent 双模式配置工作台', () => {
     const load = vi.spyOn(desktopBridge, 'loadConfigEditor').mockResolvedValue({ requestId: 'load-current', asset: currentAsset, canonicalContent: 'schemaVersion: 1\npermissions:\n  files: "仅当前工作区"\n  commands: "构建、测试与版本控制"\n  network: "仅已配置 MCP"\n  delegation: "仅明确服务授权范围"', redacted: false, baselineRef: { id: 'base-current', assetId: currentAsset.id, containerId: currentAsset.containerId, assetContentHash: hash, containerContentHash: hash }, diagnostics: [] })
 
     renderAgent('/agents/zhouce?tab=permissions', state)
-    fireEvent.click(screen.getByRole('button', { name: '调整权限' }))
+    fireEvent.click(screen.getByRole('button', { name: '调整长期边界' }))
 
     await waitFor(() => expect(load).toHaveBeenCalledWith({ requestId: 'load-permissions-zhouce', assetId: currentAsset.id }))
   })
@@ -1023,7 +960,7 @@ describe('Agent 双模式配置工作台', () => {
     const load = vi.spyOn(desktopBridge, 'loadConfigEditor')
 
     renderAgent('/agents/zhouce?tab=permissions', state)
-    fireEvent.click(screen.getByRole('button', { name: '调整权限' }))
+    fireEvent.click(screen.getByRole('button', { name: '调整长期边界' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
     expect(screen.queryByLabelText('文件写入')).not.toBeInTheDocument()
@@ -1035,7 +972,7 @@ describe('Agent 双模式配置工作台', () => {
     const save = vi.spyOn(desktopBridge, 'saveConfig')
 
     renderAgent('/agents/zhouce?tab=permissions')
-    fireEvent.click(screen.getByRole('button', { name: '调整权限' }))
+    fireEvent.click(screen.getByRole('button', { name: '调整长期边界' }))
     fireEvent.change(screen.getByLabelText('文件写入'), { target: { value: '任意目录' } })
     fireEvent.click(screen.getByRole('button', { name: '保存到当前页面' }))
 
@@ -1043,7 +980,7 @@ describe('Agent 双模式配置工作台', () => {
     expect(within(dialog).getByText(/仅在当前页面更新/)).toBeInTheDocument()
     fireEvent.change(within(dialog).getByLabelText(/输入 Agent 名称/), { target: { value: '周策' } })
     fireEvent.click(within(dialog).getByRole('checkbox'))
-    fireEvent.click(within(dialog).getByRole('button', { name: '确认扩大权限' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认扩大长期边界' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '确认扩大 Agent 长期权限' })).not.toBeInTheDocument())
     expect(save).not.toHaveBeenCalled()
@@ -1066,14 +1003,14 @@ describe('Agent 双模式配置工作台', () => {
       .mockResolvedValueOnce({ kind: 'saved', requestId: 'save-permissions-zhouce', asset, revision: { id: 'revision-permissions', assetId: asset.id, containerId: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/permissions.yaml' }, assetContentHash: proposedHash, containerContentHash: proposedHash, sourceAssetBaselineHash: hash, sourceContainerBaselineHash: hash, redacted: false, writeReceiptId: 'receipt-permissions', savedAt: '2026-08-31T12:00:00Z', summary: '保存长期权限边界', confirmationRefs: ['confirmation-permissions'] }, writeReceipt: { id: 'receipt-permissions', containerId: asset.containerId, previousContainerHash: hash, writtenContainerHash: proposedHash, verifiedAt: '2026-08-31T12:00:00Z', atomicReplace: true } })
 
     renderAgent('/agents/zhouce?tab=permissions', state)
-    fireEvent.click(screen.getByRole('button', { name: '调整权限' }))
+    fireEvent.click(screen.getByRole('button', { name: '调整长期边界' }))
     fireEvent.change(await screen.findByLabelText('文件写入'), { target: { value: '任意目录' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存边界' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存长期边界' }))
 
     const dialog = await screen.findByRole('dialog', { name: '确认扩大 Agent 长期权限' })
     fireEvent.change(within(dialog).getByLabelText(/输入 Agent 名称/), { target: { value: '周策' } })
     fireEvent.click(within(dialog).getByRole('checkbox'))
-    fireEvent.click(within(dialog).getByRole('button', { name: '确认扩大权限' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认扩大长期边界' }))
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
     expect(save).toHaveBeenNthCalledWith(1, expect.objectContaining({ assetId: asset.id, confirmationRef: undefined, change: expect.objectContaining({ kind: 'permissions', value: expect.stringContaining('files: "任意目录"') }) }))
@@ -1110,7 +1047,7 @@ describe('Agent 双模式配置工作台', () => {
     const confirmation = await screen.findByRole('dialog', { name: '确认扩大 Agent 长期权限' })
     fireEvent.change(within(confirmation).getByLabelText(/输入 Agent 名称/), { target: { value: '周策' } })
     fireEvent.click(within(confirmation).getByRole('checkbox'))
-    fireEvent.click(within(confirmation).getByRole('button', { name: '确认扩大权限' }))
+    fireEvent.click(within(confirmation).getByRole('button', { name: '确认扩大长期边界' }))
 
     await waitFor(() => expect(restore).toHaveBeenCalledTimes(2))
     expect(restore).toHaveBeenNthCalledWith(1, expect.objectContaining({ revisionId: revision.id, confirmationRef: undefined }))
@@ -1135,10 +1072,9 @@ describe('Agent 双模式配置工作台', () => {
       agentId: 'zhouce',
       previewRef: 'preview-delete-zhouce',
       confirmationText: '永久删除 周策',
-      expiresAt: '2026-09-03T12:00:00Z',
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       packageFingerprint: 'sha256:package',
       impacts: {
-        workspaceBindings: [{ id: 'bandi', label: 'WorkspaceBinding', detail: '研发 Workspace' }],
         sharedAssetReferences: [],
         organizationRelationships: [],
         reviewResponsibilities: [],
@@ -1155,10 +1091,8 @@ describe('Agent 双模式配置工作台', () => {
     fireEvent.click(screen.getByRole('button', { name: '预览永久删除影响' }))
     const dialog = await screen.findByRole('dialog', { name: '永久删除 周策' })
     await waitFor(() => expect(preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'zhouce' })))
-    expect(within(dialog).getByText('研发 Workspace')).toBeInTheDocument()
-    expect(within(dialog).getAllByText('工作区专属配置')).toHaveLength(2)
     expect(within(dialog).getByText(/独立 备份 不变/)).toBeInTheDocument()
-    expect(within(dialog).queryByText(/WorkspaceBinding|ConfigRevision|Backup|2026-09-03T12:00:00Z/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/ConfigRevision|Backup|2026-09-03T12:00:00Z/)).not.toBeInTheDocument()
     const confirmation = within(dialog).getByLabelText(/输入“永久删除 周策”确认/)
     const deleteButton = within(dialog).getByRole('button', { name: '永久删除' })
     fireEvent.change(confirmation, { target: { value: '永久删除 周策 ' } })
@@ -1185,7 +1119,7 @@ describe('Agent 双模式配置工作台', () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     vi.spyOn(desktopBridge, 'previewManagedAgentDeletion').mockResolvedValue({
       requestId: 'delete-cleanup-pending', agentId: 'zhouce', previewRef: 'cleanup-preview', confirmationText: '永久删除 周策', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), packageFingerprint: 'sha256:package', canCommit: true,
-      impacts: { workspaceBindings: [], sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] },
+      impacts: { sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] },
     })
     vi.spyOn(desktopBridge, 'commitManagedAgentDeletion').mockResolvedValue({
       requestId: 'delete-cleanup-pending',
@@ -1221,7 +1155,7 @@ describe('Agent 双模式配置工作台', () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     vi.spyOn(desktopBridge, 'previewManagedAgentDeletion').mockResolvedValue({
       requestId: 'delete-blocked', agentId: 'zhouce', previewRef: 'blocked-preview', confirmationText: '永久删除 周策', expiresAt: '2026-09-03T12:00:00Z', packageFingerprint: 'sha256:package', canCommit: false,
-      impacts: { workspaceBindings: [], sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [{ id: 'agent_static_reference:other-agent', label: '删除阻止项', detail: 'agent_static_reference:other-agent', remediation: '先移除其他 AgentPackage 中的静态引用。' }] },
+      impacts: { sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [{ id: 'agent_static_reference:other-agent', label: '删除阻止项', detail: 'agent_static_reference:other-agent', remediation: '先移除其他 AgentPackage 中的静态引用。' }] },
     })
     const commit = vi.spyOn(desktopBridge, 'commitManagedAgentDeletion')
 
@@ -1241,8 +1175,8 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed' as const, packageId: 'agt_zhouce', strategy: 'managed' as const }, packageSchema: { schemaVersion: 1, compatibility: 'current' as const } } : item) }
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString()
     const preview = vi.spyOn(desktopBridge, 'previewManagedAgentDeletion')
-      .mockResolvedValueOnce({ requestId: 'blocked', agentId: 'zhouce', previewRef: 'blocked', confirmationText: '永久删除 周策', expiresAt, packageFingerprint: 'sha256:package', canCommit: false, impacts: { workspaceBindings: [], sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [{ id: 'blocker', label: '阻塞项', detail: '仍被引用' }] } })
-      .mockImplementationOnce(async (request) => ({ requestId: request.requestId, agentId: 'zhouce', previewRef: 'ready', confirmationText: '永久删除 周策', expiresAt, packageFingerprint: 'sha256:package', canCommit: true, impacts: { workspaceBindings: [], sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] } }))
+      .mockResolvedValueOnce({ requestId: 'blocked', agentId: 'zhouce', previewRef: 'blocked', confirmationText: '永久删除 周策', expiresAt, packageFingerprint: 'sha256:package', canCommit: false, impacts: { sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [{ id: 'blocker', label: '阻塞项', detail: '仍被引用' }] } })
+      .mockImplementationOnce(async (request) => ({ requestId: request.requestId, agentId: 'zhouce', previewRef: 'ready', confirmationText: '永久删除 周策', expiresAt, packageFingerprint: 'sha256:package', canCommit: true, impacts: { sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] } }))
 
     renderAgent('/agents/zhouce', state)
     fireEvent.click(screen.getByRole('button', { name: '预览永久删除影响' }))
@@ -1258,7 +1192,7 @@ describe('Agent 双模式配置工作台', () => {
   it('删除目标变化后清除旧确认并只提供重新检查', async () => {
     const source = initialState.agents.find((item) => item.id === 'zhouce')!
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed' as const, packageId: 'agt_zhouce', strategy: 'managed' as const }, packageSchema: { schemaVersion: 1, compatibility: 'current' as const } } : item) }
-    vi.spyOn(desktopBridge, 'previewManagedAgentDeletion').mockResolvedValue({ requestId: 'changed', agentId: 'zhouce', previewRef: 'changed', confirmationText: '永久删除 周策', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), packageFingerprint: 'sha256:package', canCommit: true, impacts: { workspaceBindings: [], sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] } })
+    vi.spyOn(desktopBridge, 'previewManagedAgentDeletion').mockResolvedValue({ requestId: 'changed', agentId: 'zhouce', previewRef: 'changed', confirmationText: '永久删除 周策', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), packageFingerprint: 'sha256:package', canCommit: true, impacts: { sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] } })
     vi.spyOn(desktopBridge, 'commitManagedAgentDeletion').mockRejectedValue(new Error('AGENT_DELETE_TARGET_CHANGED: 删除目标或影响已变化，请重新预览'))
 
     renderAgent('/agents/zhouce', state)
@@ -1279,7 +1213,7 @@ describe('Agent 双模式配置工作台', () => {
     const source = initialState.agents.find((item) => item.id === 'zhouce')!
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, status: 'archived' as const, packageSource: { kind: 'bandi-managed' as const, packageId: 'agt_zhouce', strategy: 'managed' as const }, packageSchema: { schemaVersion: 1, compatibility: 'current' as const } } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
-    vi.spyOn(desktopBridge, 'previewManagedAgentDeletion').mockResolvedValue({ requestId: 'delete-fails', agentId: 'zhouce', previewRef: 'fails-preview', confirmationText: '永久删除 周策', expiresAt: '2026-09-03T12:00:00Z', packageFingerprint: 'sha256:package', canCommit: true, impacts: { workspaceBindings: [], sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] } })
+    vi.spyOn(desktopBridge, 'previewManagedAgentDeletion').mockResolvedValue({ requestId: 'delete-fails', agentId: 'zhouce', previewRef: 'fails-preview', confirmationText: '永久删除 周策', expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), packageFingerprint: 'sha256:package', canCommit: true, impacts: { sharedAssetReferences: [], organizationRelationships: [], reviewResponsibilities: [], formalMemory: [], automaticCleanup: [], historyAndBackups: [], blockers: [] } })
     vi.spyOn(desktopBridge, 'commitManagedAgentDeletion').mockRejectedValue(new Error('AgentPackage 已变化，请重新预览'))
 
     const { router } = renderAgent('/agents/zhouce', state)

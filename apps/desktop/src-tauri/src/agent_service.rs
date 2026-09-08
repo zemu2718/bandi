@@ -1,27 +1,13 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::domain_store;
 
 const AGENT_RECOVERY_PAYLOAD_LIMIT: usize = 25 * 1024 * 1024;
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RegisterExternalAgentRequest {
-    pub(crate) agent_id: String,
-    pub(crate) selected_root: String,
-    pub(crate) metadata: Value,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RemoveExternalAgentRequest {
-    pub(crate) agent_id: String,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,82 +98,6 @@ pub(crate) fn validate_agent_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_metadata(agent_id: &str, metadata: &Value) -> Result<(), String> {
-    let object = metadata
-        .as_object()
-        .ok_or_else(|| "外部 Agent metadata 必须是对象".to_string())?;
-    if object.get("id").and_then(Value::as_str) != Some(agent_id) {
-        return Err("外部 Agent metadata 的稳定 ID 与请求不一致".into());
-    }
-    let name = object
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "外部 Agent metadata 缺少有效名称".to_string())?;
-    validate_agent_name(name)?;
-    if serde_json::to_vec(metadata)
-        .map_err(|_| "外部 Agent metadata 无法序列化".to_string())?
-        .len()
-        > 1024 * 1024
-    {
-        return Err("外部 Agent metadata 超过 1 MiB".into());
-    }
-    Ok(())
-}
-
-pub(crate) fn register_external_agent_at(
-    database: &Path,
-    request: RegisterExternalAgentRequest,
-) -> Result<ExternalAgentReferenceDto, String> {
-    if !valid_id(&request.agent_id) || !Path::new(&request.selected_root).is_absolute() {
-        return Err("外部 Agent 标识或目录无效".into());
-    }
-    validate_metadata(&request.agent_id, &request.metadata)?;
-    let root = Path::new(&request.selected_root);
-    let metadata =
-        fs::symlink_metadata(root).map_err(|_| "外部 Agent 目录不存在或不可访问".to_string())?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err("外部 Agent 根必须是普通目录且不能是符号链接".into());
-    }
-    let canonical_root = fs::canonicalize(root)
-        .map_err(|_| "外部 Agent 目录无法规范化".to_string())?
-        .to_string_lossy()
-        .into_owned();
-    let encoded = serde_json::to_string(&request.metadata)
-        .map_err(|_| "外部 Agent metadata 无法序列化".to_string())?;
-    let mut connection = domain_store::open_at(database)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|_| "无法开始外部 Agent 登记事务".to_string())?;
-    let created_at = transaction
-        .query_row(
-            "SELECT created_at FROM external_agent_references WHERE agent_id = ?1",
-            [&request.agent_id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|_| "无法读取外部 Agent 引用".to_string())?
-        .unwrap_or_else(|| Utc::now().to_rfc3339());
-    let updated_at = Utc::now().to_rfc3339();
-    transaction
-        .execute(
-            "INSERT INTO external_agent_references (agent_id, canonical_root, metadata_json, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(agent_id) DO UPDATE SET canonical_root=excluded.canonical_root, metadata_json=excluded.metadata_json, updated_at=excluded.updated_at",
-            params![request.agent_id, canonical_root, encoded, created_at, updated_at],
-        )
-        .map_err(|error| if error.to_string().contains("canonical_root") { "该外部目录已由其他 Agent 登记".to_string() } else { "无法登记外部 Agent 引用".to_string() })?;
-    transaction
-        .commit()
-        .map_err(|_| "无法提交外部 Agent 登记事务".to_string())?;
-    Ok(ExternalAgentReferenceDto {
-        agent_id: request.agent_id,
-        canonical_root,
-        metadata: request.metadata,
-        created_at,
-        updated_at,
-    })
-}
-
 pub(crate) fn list_external_agents_at(
     database: &Path,
 ) -> Result<Vec<ExternalAgentReferenceDto>, String> {
@@ -214,27 +124,6 @@ pub(crate) fn list_external_agents_at(
         .map_err(|_| "无法查询外部 Agent 引用".to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|_| "外部 Agent 引用记录损坏".to_string())
-}
-
-pub(crate) fn remove_external_agent_at(
-    database: &Path,
-    request: RemoveExternalAgentRequest,
-) -> Result<(), String> {
-    if !valid_id(&request.agent_id) {
-        return Err("外部 Agent 标识无效".into());
-    }
-    let connection = domain_store::open_at(database)?;
-    if connection
-        .execute(
-            "DELETE FROM external_agent_references WHERE agent_id = ?1",
-            [&request.agent_id],
-        )
-        .map_err(|_| "无法移除外部 Agent 引用".to_string())?
-        == 0
-    {
-        return Err("外部 Agent 引用不存在".into());
-    }
-    Ok(())
 }
 
 pub(crate) fn prepare_operation_at(
@@ -396,7 +285,7 @@ pub(crate) fn complete_operation_at(
     let connection = domain_store::open_at(database)?;
     if connection
         .execute(
-            "UPDATE agent_recovery_operations SET status = 'completed', payload_json = '{}', expected_manifest_hash = '', fixed_revision_id = NULL, completed_at = ?1 WHERE id = ?2 AND status = 'organization_pending'",
+            "UPDATE agent_recovery_operations SET status = 'completed', payload_json = '{}', expected_manifest_hash = '', fixed_revision_id = NULL, completed_at = ?1 WHERE id = ?2 AND status = 'team_pending'",
             params![Utc::now().to_rfc3339(), operation_id],
         )
         .map_err(|_| "无法完成 Agent commit operation".to_string())?
@@ -418,7 +307,7 @@ pub(crate) fn set_operation_status_at(
             status,
             "filesystem_committed"
                 | "revision_pending"
-                | "organization_pending"
+                | "team_pending"
                 | "database_committed"
                 | "blocked"
         )
@@ -442,9 +331,9 @@ pub(crate) fn set_operation_status_at(
             "filesystem_committed" | "revision_pending" | "blocked"
         ) | (
             Some("filesystem_committed"),
-            "revision_pending" | "organization_pending" | "database_committed" | "blocked"
-        ) | (Some("revision_pending"), "organization_pending" | "blocked")
-            | (Some("organization_pending"), "blocked")
+            "revision_pending" | "team_pending" | "database_committed" | "blocked"
+        ) | (Some("revision_pending"), "team_pending" | "blocked")
+            | (Some("team_pending"), "blocked")
             | (Some("database_committed"), "blocked")
     );
     if !allowed {
@@ -485,22 +374,27 @@ mod tests {
     }
 
     #[test]
-    fn external_reference_never_requires_agent_files() {
+    fn legacy_external_reference_remains_readable() {
         let root = tempfile::tempdir().unwrap();
-        let external = root.path().join("external");
-        fs::create_dir(&external).unwrap();
         let database = root.path().join("bandi.db");
-        register_external_agent_at(
-            &database,
-            RegisterExternalAgentRequest {
-                agent_id: "external-1".into(),
-                selected_root: external.to_string_lossy().into_owned(),
-                metadata: serde_json::json!({"id": "external-1", "name": "外部 Agent", "status": "active"}),
-            },
-        )
-        .unwrap();
-        assert!(!external.join("agent.yaml").exists());
-        assert_eq!(list_external_agents_at(&database).unwrap().len(), 1);
+        let connection = domain_store::open_at(&database).unwrap();
+        connection
+            .execute(
+                "INSERT INTO external_agent_references (agent_id, canonical_root, metadata_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    "external-1",
+                    "/tmp/external-agent",
+                    serde_json::json!({"id": "external-1", "name": "外部 Agent", "teamId": "team-personal", "status": "active"}).to_string(),
+                    "2026-01-01T00:00:00Z",
+                    "2026-01-01T00:00:00Z",
+                ],
+            )
+            .unwrap();
+
+        let references = list_external_agents_at(&database).unwrap();
+        assert_eq!(references.len(), 1);
+        assert_eq!(references[0].agent_id, "external-1");
+        assert_eq!(references[0].metadata["teamId"], "team-personal");
     }
 
     #[test]
@@ -578,7 +472,7 @@ mod tests {
         avatar[..8].copy_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
         let payload = serde_json::json!({
             "create": { "avatarBytes": avatar },
-            "organization": null,
+            "team": null,
         });
 
         let operation = prepare_operation_at(

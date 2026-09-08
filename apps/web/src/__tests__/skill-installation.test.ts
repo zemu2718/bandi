@@ -24,7 +24,7 @@ describe('Skill 安装生命周期', () => {
     })
   })
 
-  it('只读取显式引用而不修改 Agent 或 WorkspaceBinding', () => {
+  it('只读取显式引用而不修改 Agent', () => {
     const before = structuredClone(initialAgents)
     expect(getSkillReferences(initialAgents, 'skill-review').length).toBeGreaterThan(0)
     expect(initialAgents).toEqual(before)

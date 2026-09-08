@@ -143,25 +143,6 @@
       "agentId": "alpha"
     }
   },
-  "orchestrationSaveRequest": {
-    "requestId": "request-orchestration-1",
-    "assetId": "asset-orchestration-1",
-    "change": {
-      "kind": "orchestration",
-      "value": "schemaVersion: 1\norchestration: {\"enabled\":true,\"maxDelegationDepth\":2,\"allowedAgentIds\":[\"agent-review\"],\"allowedRoleIds\":[\"role-review\"],\"allowedDepartmentIds\":[\"department-engineering\"],\"requireWorkspaceBinding\":true,\"requireSopMatch\":true,\"requireServiceGrantForCrossDepartment\":true,\"escalationAgentId\":\"agent-lead\",\"escalationConditions\":[\"没有合法候选\"],\"prohibitions\":[\"禁止跨公司\"]}"
-    },
-    "expectedBaseline": {
-      "id": "base-orchestration-1",
-      "assetId": "asset-orchestration-1",
-      "containerId": "container-orchestration-1",
-      "assetContentHash": "sha256:acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
-      "containerContentHash": "sha256:acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac"
-    },
-    "baseContent": "schemaVersion: 1\norchestration: {\"enabled\":false,\"maxDelegationDepth\":0,\"allowedAgentIds\":[],\"allowedRoleIds\":[],\"allowedDepartmentIds\":[],\"requireWorkspaceBinding\":true,\"requireSopMatch\":true,\"requireServiceGrantForCrossDepartment\":true,\"escalationConditions\":[],\"prohibitions\":[]}",
-    "expectedOwner": {
-      "agentId": "alpha"
-    }
-  },
   "hooksSaveRequest": {
     "requestId": "request-hooks-1",
     "assetId": "asset-hooks-1",
@@ -268,31 +249,5 @@
     },
     "baseContent": "schemaVersion: 1\nid: agent-1\n",
     "confirmed": true
-  },
-  "workspaceBindingSaveRequest": {
-    "requestId": "request-workspace-binding-1",
-    "assetId": "asset-workspace-binding-1",
-    "change": {
-      "kind": "workspace_binding",
-      "value": "schemaVersion: 1\nworkspaceBinding: {\"workspaceId\":\"ws-1\",\"instructions\":\"专属配置\",\"ruleIds\":[\"rule-common\"],\"skillIds\":[],\"mcpIds\":[],\"contextPolicy\":{\"triggerRatio\":0.7},\"orchestrationPolicy\":{\"maxDelegationDepth\":1}}"
-    },
-    "expectedBaseline": {
-      "id": "base-workspace-binding-1",
-      "assetId": "asset-workspace-binding-1",
-      "containerId": "container-workspace-binding-1",
-      "assetContentHash": "sha256:afafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafaf",
-      "containerContentHash": "sha256:afafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafaf"
-    },
-    "baseContent": "schemaVersion: 1\nworkspaceBinding: {\"workspaceId\":\"ws-1\",\"instructions\":\"旧专属配置\",\"ruleIds\":[\"rule-common\"],\"skillIds\":[],\"mcpIds\":[],\"contextPolicy\":{\"triggerRatio\":0.7},\"orchestrationPolicy\":{\"maxDelegationDepth\":1}}",
-    "expectedOwner": {
-      "agentId": "alpha",
-      "workspaceId": "ws-1"
-    }
-  },
-  "createWorkspaceBindingRequest": {
-    "requestId": "create-workspace-binding-1",
-    "agentId": "agent-1",
-    "workspaceId": "ws-1",
-    "value": "schemaVersion: 1\nworkspaceBinding: {\"workspaceId\":\"ws-1\",\"instructions\":\"专属配置\",\"ruleIds\":[\"rule-common\"],\"skillIds\":[],\"mcpIds\":[],\"contextPolicy\":{\"triggerRatio\":0.7},\"orchestrationPolicy\":{\"maxDelegationDepth\":1}}"
   }
 }

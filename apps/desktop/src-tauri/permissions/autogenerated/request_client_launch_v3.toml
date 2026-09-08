@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-request-client-launch-v3"
+description = "Enables the request_client_launch_v3 command without any pre-configured scope."
+commands.allow = ["request_client_launch_v3"]
+
+[[permission]]
+identifier = "deny-request-client-launch-v3"
+description = "Denies the request_client_launch_v3 command without any pre-configured scope."
+commands.deny = ["request_client_launch_v3"]

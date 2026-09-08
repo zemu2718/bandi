@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 4,
+  "teams": [
+    {
+      "id": "team-acme",
+      "name": "示例团队",
+      "memberAgentIds": ["agent-owner"],
+      "departmentIds": ["department-product"],
+      "sharedAssetIds": []
+    }
+  ],
+  "taskBriefs": [],
+  "departments": [],
+  "roles": [],
+  "serviceGrants": []
+}

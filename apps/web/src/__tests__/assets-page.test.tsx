@@ -45,7 +45,7 @@ describe('资产索引', () => {
     expect(screen.getAllByText('Bandi 可在受控范围内写入')).toHaveLength(2)
     expect(screen.getAllByText('Bandi 可在受控范围内写入')[0]).not.toBeVisible()
     expect(discover).toHaveBeenCalledWith(expect.objectContaining({ includeClaudeUserRoot: false }))
-    expect(screen.getByText('共享资产尚未启用，不影响受管 AgentPackage 查看')).toBeInTheDocument()
+    expect(screen.getByText('共享资产尚未启用，不影响查看受管 Agent 配置')).toBeInTheDocument()
     expect(screen.getByText('共享资产根未初始化')).toBeInTheDocument()
     expect(screen.getByText('处理建议：在设置中启用共享资产')).toBeInTheDocument()
     expect(screen.getAllByText(/代码：shared_asset_root_not_initialized/).length).toBeGreaterThan(0)

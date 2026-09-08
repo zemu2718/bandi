@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-import { workspacePath } from './first-use-fixtures.js'
+import { externalSentinelDirectory } from './first-use-fixtures.js'
 import { sandboxHome, sandboxLocalData, sandboxRoamingData } from './paths.js'
 
 export async function resetSandbox() {
@@ -7,7 +7,7 @@ export async function resetSandbox() {
   await fs.mkdir(sandboxHome, { recursive: true })
   await fs.mkdir(sandboxRoamingData, { recursive: true })
   await fs.mkdir(sandboxLocalData, { recursive: true })
-  await fs.mkdir(workspacePath, { recursive: true })
+  await fs.mkdir(externalSentinelDirectory, { recursive: true })
 }
 
 export function sandboxEnv(): NodeJS.ProcessEnv {

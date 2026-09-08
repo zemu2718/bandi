@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-allocate-agent-id"
+description = "Enables the allocate_agent_id command without any pre-configured scope."
+commands.allow = ["allocate_agent_id"]
+
+[[permission]]
+identifier = "deny-allocate-agent-id"
+description = "Denies the allocate_agent_id command without any pre-configured scope."
+commands.deny = ["allocate_agent_id"]

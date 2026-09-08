@@ -54,7 +54,7 @@ describe('演示状态', () => {
         reviewPrincipal: { kind: 'agent' as const, agentId: 'manager' },
         reviewPolicy: 'independent_reviewer' as const,
         visibilityPolicy: 'agent_private' as const,
-        storageProfileVersion: 'memory-v1' as const,
+        storageProfileVersion: 'memory-v3' as const,
         state: 'active' as const,
         storageLocator: { rootKind: 'managed' as const, displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' },
         currentRevisionId: 'memory-revision-1',
@@ -109,11 +109,6 @@ describe('演示状态', () => {
 
   it('使用官方 Claude Code 配置位置作为演示事实', () => {
     expect(initialState.assets.find((asset) => asset.id === 'mcp-bandi')?.path).toBe('.claude.json')
-    expect(initialState.workspaces.find((workspace) => workspace.id === 'bandi')?.files.map((file) => file.path)).toEqual(expect.arrayContaining([
-      '.claude/settings.json',
-      '.claude/settings.local.json',
-      '.mcp.json',
-    ]))
   })
 
   it('主菜单布局只更新顶层界面偏好', () => {
@@ -125,12 +120,70 @@ describe('演示状态', () => {
     expect(result.mainMenuLayoutPreference).toBe('compact')
     expect(result.settings).toBe(initialState.settings)
     expect(result.agents).toBe(initialState.agents)
-    expect(result.workspaces).toBe(initialState.workspaces)
     expect(result.assets).toBe(initialState.assets)
     expect(reducer(result, {
       type: 'SET_MAIN_MENU_LAYOUT',
       preference: 'compact',
     })).toBe(result)
+  })
+
+  it('只切换到已存在的 Team，并跳过重复选择', () => {
+    const target = initialState.teams.find((team) => team.id !== initialState.currentTeamId)!
+    const selected = reducer(initialState, { type: 'SELECT_TEAM', teamId: target.id })
+
+    expect(selected.currentTeamId).toBe(target.id)
+    expect(reducer(selected, { type: 'SELECT_TEAM', teamId: target.id })).toBe(selected)
+    expect(reducer(selected, { type: 'SELECT_TEAM', teamId: 'missing-team' })).toBe(selected)
+  })
+
+  it('组织 hydration 保留合法选择，失效后优先回退个人 Team', () => {
+    const personal = initialState.teams.find((team) => team.id === 'team-personal')!
+    const selected = { ...initialState, currentTeamId: initialState.teams[0].id }
+    const snapshot = {
+      schemaVersion: 3 as const,
+      teams: initialState.teams,
+      departments: [], roles: [], taskBriefs: [], serviceGrants: [],
+    }
+
+    expect(reducer(selected, {
+      type: 'HYDRATE_ORGANIZATION',
+      snapshot,
+    }).currentTeamId).toBe(selected.currentTeamId)
+    expect(reducer(selected, {
+      type: 'HYDRATE_ORGANIZATION',
+      snapshot: { ...snapshot, teams: [personal] },
+    }).currentTeamId).toBe('team-personal')
+  })
+
+  it('重新读取期间保留已有 Agent 诊断', () => {
+    const diagnostic = { code: 'invalid-agent', severity: 'error' as const, message: 'Agent 配置无效' }
+    const state = { ...initialState, runtime: 'desktop' as const, agentDiagnostics: [diagnostic] }
+
+    const refreshing = reducer(state, { type: 'START_DESKTOP_HYDRATION' })
+
+    expect(refreshing.agentDiagnostics).toEqual([diagnostic])
+    expect(refreshing.hydration.managedAgents).toBe('loading')
+  })
+
+  it('Agent 与组织 hydration 顺序不影响 Team 和 Department 成员关系', () => {
+    const agent = { ...initialState.agents[0], id: 'hydrated-agent', teamId: 'team-a', primaryDepartmentId: 'department-a' }
+    const snapshot = {
+      schemaVersion: 3 as const,
+      teams: [{ id: 'team-a', name: 'Team A', memberAgentIds: [], departmentIds: ['department-a'], sharedAssetIds: [] }],
+      departments: [{ id: 'department-a', teamId: 'team-a', name: 'Department A', status: 'active' as const, responsibilities: [], boundaries: [], delegationDepth: 0, memberAgentIds: [], ownedSopIds: [] }], roles: [], taskBriefs: [], serviceGrants: [],
+    }
+    const emptyDesktop = { ...initialState, runtime: 'desktop' as const, agents: [], teams: [] }
+
+    const agentsFirst = reducer(reducer(emptyDesktop, { type: 'HYDRATE_MANAGED_AGENTS', agents: [agent], diagnostics: [] }), { type: 'HYDRATE_ORGANIZATION', snapshot })
+    const organizationFirst = reducer(reducer(emptyDesktop, { type: 'HYDRATE_ORGANIZATION', snapshot }), { type: 'HYDRATE_MANAGED_AGENTS', agents: [agent], diagnostics: [] })
+
+    expect(agentsFirst.teams).toEqual(organizationFirst.teams)
+    expect(agentsFirst.teams.find((team) => team.id === 'team-a')?.memberAgentIds).toEqual([agent.id])
+    expect(agentsFirst.departments).toEqual(organizationFirst.departments)
+    expect(agentsFirst.departments[0]).toMatchObject({ memberAgentIds: [agent.id], members: 1 })
+    expect(agentsFirst.teams.find((team) => team.id === 'team-personal')).toBeDefined()
+    expect(agentsFirst.currentTeamId).toBe('team-personal')
+    expect(organizationFirst.currentTeamId).toBe('team-personal')
   })
 
   it('onboarding 初始启用，完成后只返回新内存状态', () => {
@@ -142,26 +195,30 @@ describe('演示状态', () => {
     expect(reducer(completed, { type: 'COMPLETE_ONBOARDING' })).toBe(completed)
   })
 
-  it('持久化实体同步会回写规范化结果并保留其他实体', () => {
-    const company = { ...initialState.companies[0], name: '规范化公司' }
+  it('持久化治理实体同步会回写规范化结果并保留其他实体', () => {
+    const team = { ...initialState.teams[0], name: '规范化Team' }
     const department = { ...initialState.departments[0], name: '规范化部门' }
     const role = { ...initialState.roles[0], name: '规范化岗位' }
-    const workspace = { ...initialState.workspaces[0], name: '规范化工作区' }
 
-    const withCompany = reducer(initialState, { type: 'SYNC_PERSISTED_COMPANIES', companies: [company] })
-    const withDepartment = reducer(withCompany, { type: 'SYNC_PERSISTED_DEPARTMENTS', departments: [department] })
-    const withRole = reducer(withDepartment, { type: 'SYNC_PERSISTED_ROLES', roles: [role] })
-    const result = reducer(withRole, { type: 'SYNC_PERSISTED_WORKSPACES', workspaces: [workspace] })
+    const withTeam = reducer(initialState, { type: 'SYNC_PERSISTED_TEAMS', teams: [team] })
+    const withDepartment = reducer(withTeam, { type: 'SYNC_PERSISTED_DEPARTMENTS', departments: [department] })
+    const result = reducer(withDepartment, { type: 'SYNC_PERSISTED_ROLES', roles: [role] })
 
-    expect(result.companies.find((item) => item.id === company.id)?.name).toBe('规范化公司')
+    expect(result.teams.find((item) => item.id === team.id)?.name).toBe('规范化Team')
     expect(result.departments.find((item) => item.id === department.id)?.name).toBe('规范化部门')
     expect(result.roles.find((item) => item.id === role.id)?.name).toBe('规范化岗位')
-    expect(result.workspaces.find((item) => item.id === workspace.id)?.name).toBe('规范化工作区')
-    expect(result.currentWorkspaceId).toBe(workspace.id)
-    expect(result.companies).toHaveLength(initialState.companies.length)
+    expect(result.teams).toHaveLength(initialState.teams.length)
   })
 
-  it('切换主题', () => expect(reducer(initialState, { type: 'THEME' }).theme).toBe('dark'))
+  it.each([
+    ['light', 'dark'],
+    ['dark', 'light'],
+  ] as const)('根据当前生效的 %s 主题切换为 %s', (effectiveTheme, expected) => {
+    const result = reducer(initialState, { type: 'THEME', effectiveTheme })
+
+    expect(result.theme).toBe(expected)
+    expect(result.uiPreferences.theme).toBe(expected)
+  })
 
   it('保存指令生成新的不可变配置版本', () => {
     const result = reducer(initialState, { type: 'SAVE_INSTRUCTIONS', agentId: 'zhouce', text: '新的演示指令' })
@@ -204,24 +261,6 @@ describe('演示状态', () => {
     expect(result.configRevisions[0]).toMatchObject({ ownerType: 'agent', ownerId: source.id, path: 'config/context.yaml' })
   })
 
-  it('保存 WorkspaceBinding 时登记 config.yaml 且不虚构 memory.md', () => {
-    const result = reducer(initialState, { type: 'SAVE_AGENT_CONFIG', input: { agentId: 'songyan', kind: 'workspace-binding', value: { workspaceId: 'card', instructions: '负责审查', ruleIds: ['rule-common'], skillIds: [], mcpIds: [] } } })
-    const files = result.agents.find((item) => item.id === 'songyan')!.files
-    expect(files.some((file) => file.path === 'workspaces/card/config.yaml')).toBe(true)
-    expect(files.some((file) => file.path === 'workspaces/card/memory.md')).toBe(false)
-    expect(result.configRevisions[0].path).toBe('workspaces/card/config.yaml')
-  })
-
-  it('创建 Agent 时统一登记根配置与 WorkspaceBinding 版本', () => {
-    const source = initialState.agents.find((item) => item.id === 'zhouce')!
-    const agent = { ...source, id: 'new-agent', name: '新 Agent', files: [], workspaceBindings: [{ workspaceId: 'card', instructions: '负责验收', ruleIds: ['rule-common'], skillIds: [], mcpIds: [], memoryRevision: '' }] }
-    const result = reducer(initialState, { type: 'CREATE_AGENT', agent })
-    const created = result.agents.find((item) => item.id === agent.id)!
-    expect(created.files.map((file) => file.path)).toEqual(expect.arrayContaining(['agent.yaml', 'instructions.md', 'config/context.yaml', 'config/permissions.yaml', 'config/orchestration.yaml', 'workspaces/card/config.yaml']))
-    expect(created.files.some((file) => file.path === 'workspaces/card/memory.md')).toBe(false)
-    expect(result.configRevisions.filter((revision) => revision.ownerId === agent.id)).toHaveLength(6)
-  })
-
   it('未改变指令时不生成重复版本', () => {
     const agent = initialState.agents.find((item) => item.id === 'zhouce')!
     expect(reducer(initialState, { type: 'SAVE_INSTRUCTIONS', agentId: agent.id, text: agent.instructions })).toBe(initialState)
@@ -253,19 +292,6 @@ describe('演示状态', () => {
     const result = reducer(state, { type: 'RESTORE_CONFIG_REVISION', revisionId: target.id })
     expect(result.configRevisions).toBe(state.configRevisions)
     expect(result.configRevisions[0].restoredFromRevisionId).toBeUndefined()
-  })
-
-  it('添加 Workspace 只更新集中状态并选中它', () => {
-    const result = reducer(initialState, {
-      type: 'ADD_WORKSPACE',
-      workspace: {
-        id: 'x', name: 'x', path: '/x', config: '配置完整', health: '配置完整',
-        collaboratorDepartmentIds: [], agentIds: [], assetIds: [], publicMemorySpaceId: 'mem-x',
-        departmentMemorySpaceIds: [], files: [], recentEdits: [],
-      },
-    })
-    expect(result.workspaces).toHaveLength(initialState.workspaces.length + 1)
-    expect(result.currentWorkspaceId).toBe('x')
   })
 
   it('创建配置环境并统一切换，切换本身不生成版本', () => {
@@ -328,7 +354,6 @@ describe('演示状态', () => {
     const cleared = reducer(removed, { type: 'CLEAR_RECENT_AGENTS' })
     expect(cleared.recentAgentIds).toEqual([])
     expect(cleared.uiPreferences).toBe(state.uiPreferences)
-    expect(cleared.workspaces).toBe(state.workspaces)
     expect(reducer(cleared, { type: 'CLEAR_RECENT_AGENTS' })).toBe(cleared)
   })
 
@@ -344,26 +369,6 @@ describe('演示状态', () => {
     expect(duplicateName).toBe(added)
   })
 
-  it('只接受存在的 Workspace', () => {
-    expect(reducer(initialState, { type: 'SELECT_WORKSPACE', workspaceId: 'missing' })).toBe(initialState)
-    expect(reducer(initialState, { type: 'SELECT_WORKSPACE', workspaceId: 'card' }).currentWorkspaceId).toBe('card')
-  })
-
-  it('移除当前 Workspace 后选择剩余项且保留其他领域关系', () => {
-    const result = reducer(initialState, { type: 'REMOVE_WORKSPACE_INDEX', workspaceId: 'bandi' })
-    expect(result.currentWorkspaceId).toBe('card')
-    expect(result.agents).toBe(initialState.agents)
-    expect(result.memorySpaces).toBe(initialState.memorySpaces)
-    expect(result.assets).toBe(initialState.assets)
-  })
-
-  it('移除最后一个 Workspace 后进入零 Workspace 状态', () => {
-    const single = { ...initialState, workspaces: [initialState.workspaces[0]], currentWorkspaceId: 'bandi' }
-    const result = reducer(single, { type: 'REMOVE_WORKSPACE_INDEX', workspaceId: 'bandi' })
-    expect(result.workspaces).toHaveLength(0)
-    expect(result.currentWorkspaceId).toBeNull()
-  })
-
   it('Desktop 拒绝技能与插件模拟操作', () => {
     const desktopState = { ...initialState, runtime: 'desktop' as const }
     const skill = reducer(desktopState, { type: 'APPLY_SKILL_ACTION', skillId: 'skill-docs', action: 'install' })
@@ -377,11 +382,9 @@ describe('演示状态', () => {
 
   it('Skill 生命周期只修改安装事实，不修改 Agent 引用', () => {
     const originalRefs = initialState.agents.map((agent) => agent.skillRefs)
-    const originalWorkspaceRefs = initialState.agents.map((agent) => agent.workspaceBindings.map((binding) => binding.skillIds))
     const installed = reducer(initialState, { type: 'APPLY_SKILL_ACTION', skillId: 'skill-docs', action: 'install' })
     expect(installed.assets.find((asset) => asset.id === 'skill-docs')?.skill?.installation.status).toBe('installed')
     expect(installed.agents.map((agent) => agent.skillRefs)).toEqual(originalRefs)
-    expect(installed.agents.map((agent) => agent.workspaceBindings.map((binding) => binding.skillIds))).toEqual(originalWorkspaceRefs)
     expect(installed.notice?.description).toContain('未自动分配给 Agent')
 
     const rolledBack = reducer(initialState, { type: 'APPLY_SKILL_ACTION', skillId: 'skill-release', action: 'rollback', version: '2.0.0' })
@@ -402,8 +405,7 @@ describe('演示状态', () => {
     expect(result.backupSnapshots[0]).toEqual(beforeSnapshot)
     expect(result.agents).toBe(initialState.agents)
     expect(result.assets).toBe(initialState.assets)
-    expect(result.companies).toBe(initialState.companies)
-    expect(result.workspaces).toBe(initialState.workspaces)
+    expect(result.teams).toBe(initialState.teams)
   })
 
   it('拒绝创建提议者无法写入的 MemoryCandidate', () => {

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bandi.local/contracts/team-snapshot-v4.schema.json",
+  "title": "Bandi Team Snapshot v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "teams", "taskBriefs"],
+  "properties": {
+    "schemaVersion": { "const": 4 },
+    "teams": { "type": "array", "items": { "$ref": "#/$defs/team" } },
+    "taskBriefs": { "type": "array", "items": { "$ref": "#/$defs/taskBrief" } }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "text": { "type": "string", "maxLength": 16384 },
+    "nonEmptyText": { "type": "string", "minLength": 1, "maxLength": 16384 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "team": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "memberAgentIds", "sharedAssetIds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "$ref": "#/$defs/nonEmptyText" },
+        "mark": { "type": "string", "pattern": "^[\\p{L}\\p{N}]{1,2}$" },
+        "color": { "enum": ["#20201f", "#2563eb", "#7c3aed", "#0f766e", "#c2410c"] },
+        "mission": { "$ref": "#/$defs/text" },
+        "boundary": { "$ref": "#/$defs/text" },
+        "memberAgentIds": { "$ref": "#/$defs/ids" },
+        "sharedAssetIds": { "$ref": "#/$defs/ids" }
+      }
+    },
+    "taskBrief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "teamId", "title"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "teamId": { "$ref": "#/$defs/id" },
+        "title": { "$ref": "#/$defs/nonEmptyText" },
+        "brief": { "$ref": "#/$defs/text" },
+        "archivedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    }
+  }
+}

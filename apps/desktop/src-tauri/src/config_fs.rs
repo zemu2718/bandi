@@ -26,6 +26,14 @@ pub(crate) fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String
     Ok(())
 }
 
+pub(crate) fn ensure_regular_directory(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| format!("无法检查 {label}"))?;
+    if is_link_like(&metadata) || !metadata.is_dir() {
+        return Err(format!("{label}必须是普通目录"));
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 fn regular_file_identity(path: &Path, label: &str) -> Result<(u64, u64), String> {
     use std::{os::windows::ffi::OsStrExt, ptr};

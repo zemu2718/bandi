@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { groupAssetReferences, groupDiscoveryDiagnostics, projectDiscoveredAssets } from '../discovered-assets'
+import { groupAssetReferences, groupDiscoveryDiagnostics, projectDiscoveredAssets, projectSharedAssets } from '../discovered-assets'
 
 const hash = `sha256:${'a'.repeat(64)}` as const
 
 describe('真实资产发现投影', () => {
+  it('将共享索引转换为 Agent 可用的引用候选并跳过未知类型', () => {
+    const assets = projectSharedAssets([
+      { id: 'skill-review', kind: 'skill', teamId: 'team-personal', locator: { rootKind: 'bandi', displayPath: '/tmp/shared/skills/code-review', relativePath: 'skills/code-review' }, contentHash: hash, parseStatus: 'parsed', diagnostics: [] },
+      { id: 'unknown', kind: 'unknown', teamId: 'team-personal', locator: { rootKind: 'bandi', displayPath: '/tmp/shared/unknown' }, contentHash: hash, parseStatus: 'invalid', diagnostics: [] },
+    ])
+
+    expect(assets).toEqual([expect.objectContaining({ id: 'skill-review', name: 'skill-review', kind: 'Skill', path: 'skills/code-review', sourceType: '显式共享' })])
+  })
+
   it('连接来源容器并保留只读与诊断事实', () => {
     const rows = projectDiscoveredAssets({
       requestId: 'discover-1',
@@ -19,7 +28,7 @@ describe('真实资产发现投影', () => {
     expect(rows[0].diagnostics[0].message).toBe('未来版本只读')
   })
 
-  it('按 AgentPackage 聚合缺失文件并保留原始诊断', () => {
+  it('按 Agent 配置聚合缺失文件并保留原始诊断', () => {
     const diagnostics = ['rules', 'skills', 'mcp', 'sop', 'hooks', 'commands'].map((kind) => ({
       code: `${kind}_missing`, severity: 'warning' as const, source: 'agt_a', message: `缺少 ${kind}`, path: `config/${kind}.yaml`,
     }))
@@ -31,7 +40,7 @@ describe('真实资产发现投影', () => {
     expect(groups[0]).toMatchObject({ title: 'agt_a 缺少配置文件', severity: 'warning' })
     expect(groups[0].diagnostics).toHaveLength(6)
     expect(groups[0].diagnostics.map((item) => item.path)).toEqual(diagnostics.map((item) => item.path))
-    expect(groups[1]).toMatchObject({ severity: 'info', title: '共享资产尚未启用，不影响受管 AgentPackage 查看' })
+    expect(groups[1]).toMatchObject({ severity: 'info', title: '共享资产尚未启用，不影响查看受管 Agent 配置' })
   })
 
   it('按状态、目标和类型汇总引用且保留每条来源边', () => {

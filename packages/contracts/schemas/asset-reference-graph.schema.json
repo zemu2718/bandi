@@ -39,12 +39,11 @@
     "sharedAsset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "companyId", "locator", "contentHash", "parseStatus", "diagnostics"],
+      "required": ["id", "kind", "teamId", "locator", "contentHash", "parseStatus", "diagnostics"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "kind": { "oneOf": [{ "$ref": "#/$defs/kind" }, { "const": "unknown" }] },
-        "companyId": { "$ref": "#/$defs/id" },
-        "departmentId": { "$ref": "#/$defs/id" },
+        "teamId": { "$ref": "#/$defs/id" },
         "locator": { "$ref": "#/$defs/locator" },
         "contentHash": { "$ref": "#/$defs/hash" },
         "parseStatus": { "enum": ["parsed", "invalid"] },
@@ -60,12 +59,11 @@
         "sourceContainerId": { "$ref": "#/$defs/id" },
         "referrerKind": { "const": "agent" },
         "referrerId": { "$ref": "#/$defs/id" },
-        "workspaceId": { "$ref": "#/$defs/id" },
         "targetAssetId": { "$ref": "#/$defs/id" },
         "targetKind": { "$ref": "#/$defs/kind" },
         "state": { "enum": ["resolved", "unresolved", "dangling", "type_mismatch", "out_of_scope", "target_invalid"] },
         "targetLocator": { "$ref": "#/$defs/locator" },
-        "targetCompanyId": { "$ref": "#/$defs/id" },
+        "targetTeamId": { "$ref": "#/$defs/id" },
         "sourcePath": { "type": "string", "minLength": 1, "maxLength": 4096 }
       }
     }

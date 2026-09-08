@@ -26,9 +26,8 @@ export function applySkillAction(installation: SkillInstallation, action: SkillA
 
 export function getSkillReferences(agents: FullAgent[], skillId: string) {
   return agents.flatMap((agent) => {
-    const references = [] as { agentId: string; agentName: string; workspaceId?: string }[]
+    const references = [] as { agentId: string; agentName: string }[]
     if (agent.skillRefs.includes(skillId)) references.push({ agentId: agent.id, agentName: agent.name })
-    for (const binding of agent.workspaceBindings) if (binding.skillIds.includes(skillId)) references.push({ agentId: agent.id, agentName: agent.name, workspaceId: binding.workspaceId })
     return references
   })
 }

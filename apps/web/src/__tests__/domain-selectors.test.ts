@@ -1,57 +1,77 @@
 import { describe, expect, it } from 'vitest'
-import { getAgentsBoundToWorkspace, getAgentConfigStatus, getDanglingWorkspaceBindings, getLatestRevisionForAgent, getWorkspaceConfigStatus } from '../domain-selectors'
-import { initialState, reducer } from '../state'
+import { getAgentConfigStatus, getAvailableAgents, getConfigurationStatusSummary, getLatestRevisionForAgent } from '../domain-selectors'
+import { initialState } from '../state'
 
 describe('配置事实 selectors', () => {
-  it('Workspace Agents 只从 Binding 派生', () => {
-    const state = { ...initialState, workspaces: initialState.workspaces.map((workspace) => workspace.id === 'bandi' ? { ...workspace, agentIds: [] } : workspace) }
-    expect(getAgentsBoundToWorkspace(state, 'bandi').map((agent) => agent.id)).toEqual(['zhiheng', 'zhouce', 'linxu'])
+  it('启动候选只按生命周期与 Team 成员关系过滤', () => {
+    const state = {
+      ...initialState,
+      agents: initialState.agents,
+    }
+
+    expect(getAvailableAgents(state, 'xinghe').map((agent) => agent.id)).toEqual(['zhiheng', 'zhouce', 'linxu'])
+    expect(getAvailableAgents(state, 'studio')).toEqual([])
+    expect(getAvailableAgents(state).map((agent) => agent.id)).toEqual(['zhiheng', 'zhouce', 'linxu'])
   })
 
-  it('移除 Workspace 索引后保留并报告 dangling Binding', () => {
-    const state = reducer(initialState, { type: 'REMOVE_WORKSPACE_INDEX', workspaceId: 'card' })
-    const dangling = getDanglingWorkspaceBindings(state)
-    expect(dangling.some(({ agent, binding }) => agent.id === 'zhouce' && binding.workspaceId === 'card')).toBe(true)
-    expect(getAgentConfigStatus(state, state.agents.find((agent) => agent.id === 'zhouce')!).issues.some((issue) => issue.code === 'missing-workspace')).toBe(true)
+  it('Team 可独立存在，Department 和 Role 可后补', () => {
+    const source = initialState.agents[0]
+    const agent = { ...source, teamId: 'xinghe', primaryDepartmentId: undefined, roleId: undefined }
+    const state = { ...initialState, agents: [agent] }
+
+    expect(getAgentConfigStatus(state, agent).issues.some((issue) => issue.code === 'role-scope-mismatch')).toBe(false)
   })
 
-  it('新建且没有文件证据的 Workspace 为未验证', () => {
-    const workspace = { ...initialState.workspaces[0], id: 'new', files: [] }
-    expect(getWorkspaceConfigStatus(initialState, workspace)).toMatchObject({ level: 'unknown', label: '未验证' })
+  it('聚合全部待处理配置并让待处理优先于首次欢迎', () => {
+    const warningAgent = {
+      ...initialState.agents[0],
+      files: initialState.agents[0].files.map((file, index) => index === 0 ? { ...file, status: '外部变化' } : file),
+    }
+    const errorAgent = {
+      ...initialState.agents[1],
+      roleId: 'missing-role',
+    }
+    const candidate = { ...initialState.memoryCandidates[0], id: 'candidate-extra', status: '待审核' as const }
+    const summary = getConfigurationStatusSummary({
+      ...initialState,
+      onboarding: { status: 'active' },
+      agents: [warningAgent, errorAgent],
+      memoryCandidates: [candidate],
+      agentDiagnostics: [{ code: 'invalid-agent', severity: 'error', message: 'Agent 配置无效' }],
+      agentRecoveryOperations: [{ id: 'recovery', agentId: errorAgent.id, operationKind: 'create', status: 'organization_pending', createdAt: '2026-09-08T00:00:00Z' }],
+    })
+
+    expect(summary.phase).toBe('pending')
+    expect(summary.items.map((item) => item.kind)).toEqual(['agent', 'agent', 'memory', 'diagnostic', 'recovery'])
+  })
+
+  it('按读取、首次使用和正常状态确定阶段', () => {
+    const healthyAgents = initialState.agents.filter((agent) => getAgentConfigStatus(initialState, agent).level === 'healthy')
+    const healthy = { ...initialState, onboarding: { status: 'completed' as const }, agents: healthyAgents, memoryCandidates: [], agentDiagnostics: [], agentRecoveryOperations: [] }
+    expect(getConfigurationStatusSummary(healthy).phase).toBe('healthy')
+    expect(getConfigurationStatusSummary({ ...healthy, agents: [], onboarding: { status: 'active' } }).phase).toBe('first-use')
+    expect(getConfigurationStatusSummary({ ...healthy, runtime: 'desktop', hydration: { ...healthy.hydration, managedAgents: 'loading' } }).phase).toBe('loading')
+    expect(getConfigurationStatusSummary({ ...healthy, runtime: 'desktop', agentDiagnostics: [{ code: 'invalid-agent', severity: 'error', message: 'Agent 配置无效' }], hydration: { ...healthy.hydration, managedAgents: 'loading' } }).phase).toBe('pending')
+    expect(getConfigurationStatusSummary({ ...healthy, runtime: 'desktop', hydration: { ...healthy.hydration, managedAgents: 'failed' } }).phase).toBe('failed')
   })
 
   it('最近保存只来自 ConfigRevision', () => {
     expect(getLatestRevisionForAgent(initialState, 'zhouce')?.id).toBe('cfg-zhouce-instructions-r8')
   })
 
-  it('报告 package 兼容状态、Role 作用域和 Workspace 编排扩权', () => {
+  it('报告 package 兼容状态和 Role 作用域', () => {
     const source = initialState.agents.find((agent) => agent.id === 'zhouce')!
     const agent = {
       ...source,
       packageSchema: { schemaVersion: 2, compatibility: 'future' as const },
       roleId: 'missing-role',
-      workspaceBindings: source.workspaceBindings.map((binding) => binding.workspaceId === 'bandi' ? { ...binding, orchestrationPolicy: { maxDelegationDepth: source.orchestrationPolicy.maxDelegationDepth + 1 } } : binding),
     }
     const state = { ...initialState, agents: initialState.agents.map((item) => item.id === agent.id ? agent : item) }
     const codes = getAgentConfigStatus(state, agent).issues.map((issue) => issue.code)
-    expect(codes).toEqual(expect.arrayContaining(['package-future', 'role-missing', 'orchestration-expanded']))
+    expect(codes).toEqual(expect.arrayContaining(['package-future', 'role-missing']))
   })
 
-  it('空 Workspace Rule 是合法配置，缺少文件事实才报告缺口', () => {
-    const source = initialState.agents.find((agent) => agent.id === 'zhouce')!
-    const agent = {
-      ...source,
-      files: source.files.filter((file) => file.path !== 'workspaces/bandi/config.yaml'),
-      workspaceBindings: source.workspaceBindings.map((binding) => binding.workspaceId === 'bandi' ? { ...binding, ruleIds: [] } : binding),
-    }
-    const state = { ...initialState, agents: initialState.agents.map((item) => item.id === agent.id ? agent : item) }
-    const issues = getAgentConfigStatus(state, agent).issues
-
-    expect(issues.some((issue) => issue.label.includes('缺少 Rules'))).toBe(false)
-    expect(issues.some((issue) => issue.code === 'missing-binding-file' && issue.label.includes('bandi'))).toBe(true)
-  })
-
-  it('外部只读引用不根据空文件列表推断 Binding 文件缺失', () => {
+  it('外部只读引用报告未验证包状态', () => {
     const source = initialState.agents.find((agent) => agent.id === 'zhouce')!
     const agent = {
       ...source,
@@ -63,7 +83,6 @@ describe('配置事实 selectors', () => {
     const codes = getAgentConfigStatus(state, agent).issues.map((issue) => issue.code)
 
     expect(codes).toContain('package-unverified')
-    expect(codes).not.toContain('missing-binding-file')
   })
 
   it('报告类型错误、Plugin 不可用和参数非法的组件引用', () => {

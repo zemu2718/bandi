@@ -1,4 +1,5 @@
-import type { BackupScope, BackupSnapshot, Company, FullAgent } from './domain'
+import type { TeamDto } from './contracts'
+import type { BackupScope, BackupSnapshot, FullAgent } from './domain'
 
 export const NEVER_BACKED_UP = ['凭据', 'Token', '钥匙串', '聊天', '工具调用', 'Todo', '日志', '终端与执行过程']
 
@@ -10,28 +11,28 @@ export type BackupPreview = {
   includesFormalMemory: boolean
 }
 
-type BackupContext = { companies: Company[]; agents: FullAgent[] }
+type BackupContext = { teams: TeamDto[]; agents: FullAgent[] }
 
 export function describeBackupScope(scope: BackupScope, context: BackupContext): string {
   if (scope.kind === 'all') return '全部配置'
-  if (scope.kind === 'company') return `公司：${context.companies.find((item) => item.id === scope.companyId)?.name ?? '不存在'}`
+  if (scope.kind === 'team') return `Team：${context.teams.find((item) => item.id === scope.teamId)?.name ?? '不存在'}`
   if (scope.kind === 'agent') return `Agent：${context.agents.find((item) => item.id === scope.agentId)?.name ?? '不存在'}`
   return `指定文件：${scope.paths.length} 项`
 }
 
 export function buildBackupPreview(context: BackupContext, scope: BackupScope): BackupPreview | undefined {
-  if (scope.kind === 'company' && !context.companies.some((item) => item.id === scope.companyId)) return undefined
+  if (scope.kind === 'team' && !context.teams.some((item) => item.id === scope.teamId)) return undefined
   if (scope.kind === 'agent' && !context.agents.some((item) => item.id === scope.agentId)) return undefined
   if (scope.kind === 'files' && !scope.paths.length) return undefined
   const includes = scope.kind === 'files'
     ? [...scope.paths, '正式 Memory（若选中文件包含）']
     : [
         ...(scope.kind === 'all' ? ['Bandi 配置方案元数据'] : []),
-        'AgentPackage',
+        'Agent 配置',
         '组织关系',
-        '工作区索引',
+        '项目与目录授权信息',
         '共享资产',
-        '正式 Memory',
+        '正式记忆',
       ]
   return { scope, label: describeBackupScope(scope, context), includes, excludes: [...NEVER_BACKED_UP], includesFormalMemory: true }
 }

@@ -1,4 +1,5 @@
-import type { AssetReferenceDto, Diagnostic, DiscoveryResult, SourceAssetSummaryDto, SourceContainerDto } from './contracts'
+import type { AssetReferenceDto, Diagnostic, DiscoveryResult, SharedAssetNodeDto, SourceAssetSummaryDto, SourceContainerDto } from './contracts'
+import type { AssetKind, FullAsset } from './domain'
 
 export type ReferenceSummary = {
   key: string
@@ -36,7 +37,33 @@ export type DiscoveryIssueGroup = {
 }
 
 const pathName = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path
-const sourceFromPath = (path: string) => path.match(/^(agt_[^/]+)/)?.[1] ?? '受管 AgentPackage'
+const sourceFromPath = (path: string) => path.match(/^(agt_[^/]+)/)?.[1] ?? '受管 Agent 配置'
+const sharedKindMap: Partial<Record<SharedAssetNodeDto['kind'], AssetKind>> = {
+  rule: 'Rules', skill: 'Skill', mcp: 'MCP', sop: 'SOP', hook: 'Hook', command: 'Command', output_profile: 'OutputProfile',
+}
+
+export function projectSharedAssets(assets: SharedAssetNodeDto[]): FullAsset[] {
+  return assets.flatMap((asset) => {
+    const kind = sharedKindMap[asset.kind]
+    if (!kind) return []
+    const path = asset.locator.relativePath ?? asset.locator.displayPath
+    return [{
+      id: asset.id,
+      name: asset.id,
+      kind,
+      teamId: asset.teamId,
+      owner: '共享资产',
+      scope: asset.departmentId ? '部门级' : 'Team 共享',
+      refs: 0,
+      path,
+      status: asset.parseStatus === 'parsed' ? '已发现' : '解析失败',
+      sourceType: '显式共享',
+      summary: pathName(path),
+      content: '',
+      references: [],
+    } satisfies FullAsset]
+  })
+}
 
 export function groupAssetReferences(references: AssetReferenceDto[]): ReferenceSummary[] {
   const groups = new Map<string, ReferenceSummary>()
@@ -108,7 +135,7 @@ export function groupDiscoveryDiagnostics(diagnostics: Diagnostic[]): DiscoveryI
       title: missingPackageFile
         ? `${item.source} 缺少配置文件`
         : item.code === 'shared_asset_root_not_initialized'
-          ? '共享资产尚未启用，不影响受管 AgentPackage 查看'
+          ? '共享资产尚未启用，不影响查看受管 Agent 配置'
           : item.message,
       diagnostics: [item],
     })

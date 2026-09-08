@@ -28,7 +28,6 @@ export function formatRelativeExpiry(
 }
 
 const domainTerms: Array<[string, string]> = [
-  ['WorkspaceBinding', '工作区专属配置'],
   ['ConfigRevision', '配置版本'],
   ['MemoryRevision', '记忆版本'],
   ['Backup', '备份'],
@@ -41,9 +40,6 @@ export function localizeDomainText(value: string): string {
 
 const memoryScopeLabels: Record<string, string> = {
   agent_long_term: 'Agent 长期记忆',
-  agent_workspace: 'Agent 工作区记忆',
-  workspace_shared: '工作区公共记忆',
-  department_workspace: '部门工作区记忆',
 }
 
 export function memoryScopeLabel(scopeType: string): string {
@@ -71,7 +67,6 @@ const assetKindLabels: Record<string, string> = {
   commands: '命令',
   command: '命令',
   Command: '命令',
-  workspace_binding: '工作区专属配置',
   output_profile: '输出格式',
   OutputProfile: '输出格式',
   memory: '正式记忆',
@@ -94,4 +89,13 @@ const assetParseStatusLabels: Record<string, string> = {
 
 export function assetParseStatusLabel(status: string): string {
   return assetParseStatusLabels[status] ?? '未知状态'
+}
+
+const assetScopeLabels: Record<string, string> = {
+  公司共享: 'Team 共享',
+  公司安全边界: 'Team 安全边界',
+}
+
+export function assetScopeLabel(scope: string): string {
+  return assetScopeLabels[scope] ?? scope
 }

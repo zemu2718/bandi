@@ -30,12 +30,27 @@ const restoreStatusLabels: Record<BackupRestoreResultDto['entries'][number]['sta
   restored: '已恢复',
   baseline_changed: '当前版本已变化',
   integrity_failed: '完整性校验失败',
+  validation_failed: '配置校验失败',
   save_failed: '保存失败',
   skipped: '已跳过',
 }
 
 function Diagnostics({ items }: { items?: Diagnostic[] }) {
   return <DiagnosticList items={items} className="mt-2 text-xs" />
+}
+
+function RestoreFileState({ entry }: { entry: BackupRestoreResultDto['entries'][number] }) {
+  if (!entry.fileState) return null
+  const message = entry.fileState === 'unchanged'
+    ? '目标文件未改变。'
+    : entry.fileState === 'write_not_verified'
+      ? '目标文件写入状态无法确认，请先检查当前内容，不要直接重试。'
+      : '目标文件已写入，但版本记录尚未完成。请使用下方恢复引用继续处理。'
+  return <>
+    <p className="mt-1 text-xs text-muted-foreground">{message}</p>
+    {entry.recoveryRef && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">恢复引用：{entry.recoveryRef}</p>}
+    {entry.retryable === false && <p className="mt-1 text-xs text-muted-foreground">该失败不可直接重试。</p>}
+  </>
 }
 
 export function DesktopBackupPanel() {
@@ -64,7 +79,7 @@ export function DesktopBackupPanel() {
     try {
       const [history, discovery] = await Promise.all([
         listBackupSnapshots(),
-        discoverConfig({ requestId: requestId('discover-backup'), workspaceIds: [], includeClaudeUserRoot: false }),
+        discoverConfig({ requestId: requestId('discover-backup'), includeClaudeUserRoot: false }),
       ])
       setSnapshots(history)
       setAssets(discovery.assets)
@@ -176,7 +191,7 @@ export function DesktopBackupPanel() {
 
   return <div className="space-y-5">
     <section className="panel flex flex-wrap items-start justify-between gap-4 p-5">
-      <div><b>快照与恢复</b><p className="mt-1 text-sm leading-6 text-muted-foreground">保存所选受管配置文件，并可按资产恢复。</p><details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">查看安全范围</summary><p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">只包含 Bandi 当前发现并由你选中的可写受管配置文件。不包含公司、部门、岗位、工作区注册信息、服务授权、领域数据或正式记忆文件；凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入。</p></details></div>
+      <div><b>快照与恢复</b><p className="mt-1 text-sm leading-6 text-muted-foreground">保存所选受管配置文件，并可按资产恢复。</p><details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">查看安全范围</summary><p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">只包含 Bandi 当前发现并由你选中的可写受管配置文件。不包含 Team、部门、岗位、项目目录记录、跨部门服务、领域数据或正式记忆文件；凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入。</p></details></div>
       <Button ref={createTriggerRef} disabled={loading || !writableAssets.length} onClick={() => setCreateOpen(true)}><Plus size={15} aria-hidden="true" />创建本地快照</Button>
     </section>
     {error && <ErrorNotice error={error} />}
@@ -192,14 +207,16 @@ export function DesktopBackupPanel() {
     </section>
 
     <AppDialog open={createOpen} onOpenChange={(open) => { if (!open) closeCreate() }} title="创建本地快照" description="选择 1–256 个 Bandi 已发现且可写的受管配置文件；未选择的文件与领域数据不会加入。" size="lg" footer={<><Button variant="outline" onClick={closeCreate}>取消</Button><Button disabled={!selectedAssetIds.length || saving} onClick={create}>{saving ? '创建中…' : '确认创建'}</Button></>}>
+      {error && <ErrorNotice error={error} className="mb-4" />}
       <AssetChecklist assets={writableAssets} selected={selectedAssetIds} onChange={setSelectedAssetIds} />
       <p className="mt-4 text-xs leading-5 text-muted-foreground">快照正文写入 Bandi Desktop 受控目录；凭据、Token、Cookie、私钥、钥匙串和执行过程不会加入快照。</p>
     </AppDialog>
 
     <AppDialog open={Boolean(restoreTarget)} onOpenChange={(open) => { if (!open) closeRestore() }} title="恢复本地快照" description={restoreTarget?.id} size="lg" footer={<><Button variant="outline" onClick={closeRestore}>{result ? '关闭' : '取消'}</Button>{!result && (!preview ? <Button disabled={!restoreAssetIds.length || saving} onClick={previewRestore}>{saving ? '校验中…' : '校验并预览'}</Button> : <Button variant="danger" disabled={!preview.canRestore || !confirmed || saving} onClick={restore}>{saving ? '恢复中…' : '确认恢复'}</Button>)}</>}>
+      {error && <ErrorNotice error={error} className="mb-4" />}
       {restoreTarget && !preview && <fieldset><legend className="text-sm font-medium">选择恢复资产</legend><div className="mt-2 max-h-72 space-y-2 overflow-auto rounded-lg border border-border p-3">{restoreTarget.entries.map((entry) => <label key={entry.assetId} className="flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={restoreAssetIds.includes(entry.assetId)} onChange={(event) => setRestoreAssetIds((current) => event.target.checked ? [...current, entry.assetId] : current.filter((id) => id !== entry.assetId))} /><span className="min-w-0"><b>{assetKindLabel(entry.kind)}</b><MonoPath>{entry.locator.displayPath}</MonoPath></span></label>)}</div></fieldset>}
       {preview && !result && <div className="space-y-3">{preview.entries.map((entry) => <div key={entry.assetId} className="rounded-lg border border-border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><MonoPath>{entry.assetId}</MonoPath><StatusBadge tone={entry.status === 'ready' ? 'success' : 'danger'}>{statusLabels[entry.status]}</StatusBadge></div><Diagnostics items={entry.diagnostics} /></div>)}<p className="text-xs text-muted-foreground">预览有效期至 {formatDisplayTimestamp(preview.expiresAt)}。配置将逐项恢复；如果部分项目失败，可使用自动创建的恢复前安全快照回退。</p><label className="flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我确认恢复这些配置资产。恢复仍会校验当前版本、文件格式和权限变化。</span></label></div>}
-      {result && <div className="space-y-3"><StatusBadge tone={result.kind === 'restored' ? 'success' : 'warning'}>{result.kind === 'restored' ? '恢复完成' : result.kind === 'partial_failure' ? '部分恢复' : '恢复失败'}</StatusBadge><p className="text-sm text-muted-foreground">已恢复 {result.entries.filter((entry) => entry.status === 'restored').length} 项；其余 {result.entries.filter((entry) => entry.status !== 'restored').length} 项保持原状。</p><p className="text-sm text-muted-foreground">恢复前安全快照：<span className="font-mono">{result.preRestoreSnapshotId}</span></p>{result.entries.map((entry) => <div key={entry.assetId} className="rounded-lg border border-border p-3 text-sm"><b>{restoreStatusLabels[entry.status]}</b><MonoPath>{entry.assetId}</MonoPath>{entry.revisionId && <p className="mt-1 text-xs text-muted-foreground">新版本：{entry.revisionId}</p>}<Diagnostics items={entry.diagnostics} /></div>)}</div>}
+      {result && <div className="space-y-3"><StatusBadge tone={result.kind === 'restored' ? 'success' : 'warning'}>{result.kind === 'restored' ? '恢复完成' : result.kind === 'partial_failure' ? '部分恢复' : '恢复失败'}</StatusBadge><p className="text-sm text-muted-foreground">已恢复 {result.entries.filter((entry) => entry.status === 'restored').length} 项；其他条目请按下方实际状态处理。</p><p className="text-sm text-muted-foreground">恢复前安全快照：<span className="font-mono">{result.preRestoreSnapshotId}</span></p>{result.entries.map((entry) => <div key={entry.assetId} className="rounded-lg border border-border p-3 text-sm"><b>{restoreStatusLabels[entry.status]}</b><MonoPath>{entry.assetId}</MonoPath>{entry.revisionId && <p className="mt-1 text-xs text-muted-foreground">新版本：{entry.revisionId}</p>}<RestoreFileState entry={entry} /><Diagnostics items={entry.diagnostics} /></div>)}</div>}
     </AppDialog>
   </div>
 }

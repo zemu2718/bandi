@@ -89,7 +89,7 @@
       "properties": {
         "assetId": { "$ref": "#/$defs/id" },
         "containerId": { "$ref": "#/$defs/id" },
-        "kind": { "enum": ["instructions", "context", "rules", "skills", "mcp", "permissions", "sop", "orchestration", "hooks", "commands", "workspace_binding"] },
+        "kind": { "enum": ["instructions", "context", "rules", "skills", "mcp", "permissions", "sop", "hooks", "commands"] },
         "locator": { "$ref": "#/$defs/locator" },
         "assetContentHash": { "$ref": "#/$defs/hash" },
         "containerContentHash": { "$ref": "#/$defs/hash" },
@@ -193,8 +193,11 @@
       "required": ["assetId", "status"],
       "properties": {
         "assetId": { "$ref": "#/$defs/id" },
-        "status": { "enum": ["restored", "baseline_changed", "integrity_failed", "save_failed", "skipped"] },
+        "status": { "enum": ["restored", "baseline_changed", "integrity_failed", "validation_failed", "save_failed", "skipped"] },
         "revisionId": { "$ref": "#/$defs/id" },
+        "retryable": { "type": "boolean" },
+        "fileState": { "enum": ["unchanged", "write_not_verified", "verified_written_revision_pending"] },
+        "recoveryRef": { "$ref": "#/$defs/id" },
         "diagnostics": {
           "type": "array",
           "maxItems": 64,

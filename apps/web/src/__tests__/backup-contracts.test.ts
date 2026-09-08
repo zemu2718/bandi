@@ -53,4 +53,18 @@ describe('本地 Backup 共享合同', () => {
     })
     expect(result.entries[0].revisionId).toBeTruthy()
   })
+
+  it('恢复失败保留实际文件状态和后续恢复引用', () => {
+    const entry: BackupRestoreResultDto['entries'][number] = {
+      assetId: 'asset-permissions-1',
+      status: 'save_failed',
+      retryable: true,
+      fileState: 'verified_written_revision_pending',
+      recoveryRef: 'revision-backup-recovery-1',
+    }
+    expect(entry).toMatchObject({
+      fileState: 'verified_written_revision_pending',
+      recoveryRef: 'revision-backup-recovery-1',
+    })
+  })
 })

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    domain_store::OrganizationSnapshotDto,
+    domain_store::LongTermDomainSnapshotDtoV4,
     local_service::{diagnostic, AssetLocatorDto, DiagnosticDto, RootKind},
 };
 
@@ -29,9 +29,7 @@ const SHARED_ASSET_KINDS: &[&str] = &[
 pub(crate) struct SharedAssetNodeDto {
     pub(crate) id: String,
     pub(crate) kind: String,
-    pub(crate) company_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) department_id: Option<String>,
+    pub(crate) team_id: String,
     pub(crate) locator: AssetLocatorDto,
     pub(crate) content_hash: String,
     pub(crate) parse_status: String,
@@ -44,9 +42,7 @@ struct SharedAssetManifest {
     schema_version: u64,
     id: String,
     kind: String,
-    company_id: String,
-    #[serde(default)]
-    department_id: Option<String>,
+    team_id: String,
     content_file: String,
 }
 
@@ -69,24 +65,13 @@ fn content_hash(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
-fn owner_is_registered(snapshot: &OrganizationSnapshotDto, manifest: &SharedAssetManifest) -> bool {
-    let company = snapshot
-        .companies
-        .iter()
-        .find(|company| company.id == manifest.company_id);
-    let Some(company) = company else { return false };
-    if !company.shared_asset_ids.iter().any(|id| id == &manifest.id) {
-        return false;
-    }
-    match manifest.department_id.as_deref() {
-        None => true,
-        Some(department_id) => snapshot.departments.iter().any(|department| {
-            department.id == department_id
-                && department.company_id == manifest.company_id
-                && (manifest.kind != "sop"
-                    || department.owned_sop_ids.iter().any(|id| id == &manifest.id))
-        }),
-    }
+fn owner_is_registered(
+    snapshot: &LongTermDomainSnapshotDtoV4,
+    manifest: &SharedAssetManifest,
+) -> bool {
+    snapshot.teams.iter().any(|team| {
+        team.id == manifest.team_id && team.shared_asset_ids.iter().any(|id| id == &manifest.id)
+    })
 }
 
 fn safe_content_path(package: &Path, relative: &str) -> Result<PathBuf, Box<DiagnosticDto>> {
@@ -125,16 +110,14 @@ fn safe_content_path(package: &Path, relative: &str) -> Result<PathBuf, Box<Diag
 fn invalid_node(
     id: String,
     kind: String,
-    company_id: String,
-    department_id: Option<String>,
+    team_id: String,
     relative_path: String,
     issue: DiagnosticDto,
 ) -> SharedAssetNodeDto {
     SharedAssetNodeDto {
         id,
         kind,
-        company_id,
-        department_id,
+        team_id,
         locator: AssetLocatorDto {
             root_kind: RootKind::Bandi,
             display_path: relative_path.clone(),
@@ -150,7 +133,7 @@ fn discover_package(
     root: &Path,
     package: &Path,
     directory_id: &str,
-    snapshot: &OrganizationSnapshotDto,
+    snapshot: &LongTermDomainSnapshotDtoV4,
 ) -> SharedAssetNodeDto {
     let relative_manifest = format!("{directory_id}/asset.yaml");
     let manifest_path = package.join("asset.yaml");
@@ -161,7 +144,6 @@ fn discover_package(
             directory_id.into(),
             "unknown".into(),
             "unknown".into(),
-            None,
             relative_manifest,
             diagnostic(
                 "shared_asset_manifest_rejected",
@@ -180,7 +162,6 @@ fn discover_package(
             directory_id.into(),
             "unknown".into(),
             "unknown".into(),
-            None,
             relative_manifest,
             diagnostic(
                 "shared_asset_manifest_invalid",
@@ -194,15 +175,13 @@ fn discover_package(
     let basic_valid = manifest.schema_version == SHARED_ASSET_SCHEMA_VERSION
         && manifest.id == directory_id
         && valid_id(&manifest.id)
-        && valid_id(&manifest.company_id)
-        && manifest.department_id.as_deref().is_none_or(valid_id)
+        && valid_id(&manifest.team_id)
         && SHARED_ASSET_KINDS.contains(&manifest.kind.as_str());
     if !basic_valid {
         return invalid_node(
             manifest.id,
             manifest.kind,
-            manifest.company_id,
-            manifest.department_id,
+            manifest.team_id,
             relative_manifest,
             diagnostic(
                 "shared_asset_identity_invalid",
@@ -217,15 +196,14 @@ fn discover_package(
         return invalid_node(
             manifest.id,
             manifest.kind,
-            manifest.company_id,
-            manifest.department_id,
+            manifest.team_id,
             relative_manifest,
             diagnostic(
                 "shared_asset_owner_invalid",
                 "error",
-                "共享资产未在对应 Company 或 Department 中显式登记",
-                Some("companyId".into()),
-                Some("先在组织配置中登记共享资产及其归属"),
+                "共享资产未与对应 Team 显式关联",
+                Some("teamId".into()),
+                Some("先在 Team 配置中注册该共享资产"),
             ),
         );
     }
@@ -235,8 +213,7 @@ fn discover_package(
             return invalid_node(
                 manifest.id,
                 manifest.kind,
-                manifest.company_id,
-                manifest.department_id,
+                manifest.team_id,
                 relative_manifest,
                 *issue,
             )
@@ -248,8 +225,7 @@ fn discover_package(
             return invalid_node(
                 manifest.id,
                 manifest.kind,
-                manifest.company_id,
-                manifest.department_id,
+                manifest.team_id,
                 relative_manifest,
                 diagnostic(
                     "shared_asset_content_unreadable",
@@ -269,8 +245,7 @@ fn discover_package(
     SharedAssetNodeDto {
         id: manifest.id,
         kind: manifest.kind,
-        company_id: manifest.company_id,
-        department_id: manifest.department_id,
+        team_id: manifest.team_id,
         locator: AssetLocatorDto {
             root_kind: RootKind::Bandi,
             display_path: relative_content.clone(),
@@ -282,7 +257,7 @@ fn discover_package(
     }
 }
 
-pub(crate) fn discover(root: &Path, snapshot: &OrganizationSnapshotDto) -> SharedAssetIndex {
+pub(crate) fn discover(root: &Path, snapshot: &LongTermDomainSnapshotDtoV4) -> SharedAssetIndex {
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -352,67 +327,38 @@ pub(crate) fn discover(root: &Path, snapshot: &OrganizationSnapshotDto) -> Share
     }
 }
 
-pub(crate) fn agent_companies(snapshot: &OrganizationSnapshotDto) -> HashMap<String, String> {
-    let mut values = HashMap::new();
-    for department in &snapshot.departments {
-        for agent_id in department
-            .member_agent_ids
-            .iter()
-            .chain(department.manager_agent_id.iter())
-        {
-            values
-                .entry(agent_id.clone())
-                .or_insert_with(|| department.company_id.clone());
-        }
-    }
-    for company in &snapshot.companies {
-        if let Some(agent_id) = &company.assistant_agent_id {
-            values
-                .entry(agent_id.clone())
-                .or_insert_with(|| company.id.clone());
-        }
-    }
-    values
+pub(crate) fn agent_teams(snapshot: &LongTermDomainSnapshotDtoV4) -> HashMap<String, String> {
+    snapshot
+        .teams
+        .iter()
+        .flat_map(|team| {
+            team.member_agent_ids
+                .iter()
+                .map(|agent_id| (agent_id.clone(), team.id.clone()))
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain_store::{CompanyDto, DepartmentDto};
+    use crate::domain_store::TeamDtoV4;
     use tempfile::tempdir;
 
-    fn snapshot() -> OrganizationSnapshotDto {
-        OrganizationSnapshotDto {
-            schema_version: 1,
-            companies: vec![CompanyDto {
+    fn snapshot() -> LongTermDomainSnapshotDtoV4 {
+        LongTermDomainSnapshotDtoV4 {
+            schema_version: 4,
+            teams: vec![TeamDtoV4 {
                 id: "xinghe".into(),
                 name: "星河".into(),
-                mission: String::new(),
-                boundary: String::new(),
-                assistant_agent_id: None,
-                department_ids: vec!["dev".into()],
-                workspace_ids: Vec::new(),
+                mark: None,
+                color: None,
+                mission: None,
+                boundary: None,
+                member_agent_ids: vec!["zhouce".into()],
                 shared_asset_ids: vec!["skill-review".into()],
             }],
-            departments: vec![DepartmentDto {
-                id: "dev".into(),
-                name: "研发".into(),
-                company_id: "xinghe".into(),
-                parent_department_id: None,
-                parent: None,
-                manager_agent_id: Some("zhouce".into()),
-                manager: None,
-                mission: String::new(),
-                members: 1,
-                responsibilities: Vec::new(),
-                boundaries: Vec::new(),
-                delegation_depth: 1,
-                member_agent_ids: vec!["zhouce".into()],
-                owned_sop_ids: Vec::new(),
-            }],
-            roles: Vec::new(),
-            workspaces: Vec::new(),
-            service_grants: Vec::new(),
+            task_briefs: Vec::new(),
         }
     }
 
@@ -421,7 +367,7 @@ mod tests {
         let root = tempdir().unwrap();
         let package = root.path().join("skill-review");
         fs::create_dir(&package).unwrap();
-        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\ncompanyId: xinghe\ncontentFile: SKILL.md\n").unwrap();
+        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\nteamId: xinghe\ncontentFile: SKILL.md\n").unwrap();
         fs::write(package.join("SKILL.md"), "# Review\n").unwrap();
 
         let result = discover(root.path(), &snapshot());
@@ -430,6 +376,23 @@ mod tests {
         assert_eq!(result.nodes.len(), 1);
         assert_eq!(result.nodes[0].parse_status, "parsed");
         assert_eq!(result.nodes[0].locator.root_kind, RootKind::Bandi);
+    }
+
+    #[test]
+    fn rejects_department_scoped_manifest() {
+        let root = tempdir().unwrap();
+        let package = root.path().join("skill-review");
+        fs::create_dir(&package).unwrap();
+        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\nteamId: xinghe\ndepartmentId: dev\ncontentFile: SKILL.md\n").unwrap();
+        fs::write(package.join("SKILL.md"), "# Review\n").unwrap();
+
+        let result = discover(root.path(), &snapshot());
+
+        assert_eq!(result.nodes[0].parse_status, "invalid");
+        assert_eq!(
+            result.nodes[0].diagnostics[0].code,
+            "shared_asset_manifest_invalid"
+        );
     }
 
     #[cfg(unix)]
@@ -441,7 +404,7 @@ mod tests {
         let outside = tempdir().unwrap();
         let package = root.path().join("skill-review");
         fs::create_dir(&package).unwrap();
-        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\ncompanyId: xinghe\ncontentFile: SKILL.md\n").unwrap();
+        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\nteamId: xinghe\ncontentFile: SKILL.md\n").unwrap();
         fs::write(outside.path().join("secret.md"), "secret").unwrap();
         symlink(outside.path().join("secret.md"), package.join("SKILL.md")).unwrap();
 

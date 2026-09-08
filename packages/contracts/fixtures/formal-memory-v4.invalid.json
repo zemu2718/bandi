@@ -1,0 +1,28 @@
+{
+  "space": {
+    "id": "memory-agent-zhouce",
+    "scopeType": "agent_long_term",
+    "scopeKey": {
+      "kind": "agent_long_term",
+      "agentId": "zhouce"
+    },
+    "owner": {
+      "kind": "agent",
+      "agentId": "zhouce"
+    },
+    "visibilityPolicy": "agent_private",
+    "storageProfileVersion": "memory-v4",
+    "state": "active",
+    "storageLocator": {
+      "rootKind": "managed",
+      "displayPath": "memory/long-term.md",
+      "relativePath": "memory/long-term.md"
+    },
+    "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "updatedAt": "2026-09-01T00:00:00Z",
+    "reviewPolicy": "independent_reviewer"
+  },
+  "candidate": {},
+  "reviewRequest": {},
+  "savedResult": {}
+}

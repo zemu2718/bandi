@@ -10,7 +10,6 @@ use crate::{domain_store, local_service};
 #[derive(Debug, Clone)]
 pub struct LocalServicePaths {
     pub database: PathBuf,
-    pub workspace_registry: PathBuf,
     pub managed_agents: PathBuf,
     pub shared_assets: PathBuf,
 }
@@ -19,7 +18,6 @@ impl LocalServicePaths {
     pub fn from_roots(home: &Path, app_data: &Path) -> Self {
         Self {
             database: app_data.join("bandi.db"),
-            workspace_registry: app_data.join("workspaces"),
             shared_assets: app_data.join("shared-assets"),
             managed_agents: home.join(".bandi/agents"),
         }
@@ -45,10 +43,8 @@ pub struct DoctorReport {
 #[serde(rename_all = "camelCase")]
 pub struct StatusReport {
     pub status: String,
-    pub companies: usize,
-    pub departments: usize,
-    pub workspaces: usize,
-    pub service_grants: usize,
+    pub teams: usize,
+    pub task_briefs: usize,
     pub managed_assets: usize,
     pub shared_assets: usize,
     pub asset_references: usize,
@@ -116,23 +112,24 @@ fn path_check(name: &str, path: &Path, expected_directory: bool) -> CheckItem {
 pub fn doctor(paths: &LocalServicePaths) -> DoctorReport {
     let mut checks = vec![
         path_check("domainDatabase", &paths.database, false),
-        path_check("workspaceRegistry", &paths.workspace_registry, true),
         path_check("managedAgents", &paths.managed_agents, true),
         path_check("sharedAssets", &paths.shared_assets, true),
     ];
     if paths.database.is_file() {
-        checks.push(match domain_store::load_snapshot_at(&paths.database) {
-            Ok(_) => CheckItem {
-                name: "databaseSchema".into(),
-                status: "ok".into(),
-                message: "SQLite/WAL schema 可读取".into(),
+        checks.push(
+            match domain_store::load_long_term_domain_snapshot_v4_at(&paths.database) {
+                Ok(_) => CheckItem {
+                    name: "databaseSchema".into(),
+                    status: "ok".into(),
+                    message: "SQLite/WAL schema 可读取".into(),
+                },
+                Err(message) => CheckItem {
+                    name: "databaseSchema".into(),
+                    status: "error".into(),
+                    message,
+                },
             },
-            Err(message) => CheckItem {
-                name: "databaseSchema".into(),
-                status: "error".into(),
-                message,
-            },
-        });
+        );
     }
     let status = if checks.iter().any(|item| item.status == "error") {
         "degraded"
@@ -147,22 +144,19 @@ pub fn doctor(paths: &LocalServicePaths) -> DoctorReport {
     }
 }
 
-fn empty_snapshot() -> domain_store::OrganizationSnapshotDto {
-    domain_store::OrganizationSnapshotDto {
-        schema_version: 1,
-        companies: Vec::new(),
-        departments: Vec::new(),
-        roles: Vec::new(),
-        workspaces: Vec::new(),
-        service_grants: Vec::new(),
+fn empty_snapshot() -> domain_store::LongTermDomainSnapshotDtoV4 {
+    domain_store::LongTermDomainSnapshotDtoV4 {
+        schema_version: 4,
+        teams: Vec::new(),
+        task_briefs: Vec::new(),
     }
 }
 
 fn organization_snapshot(
     paths: &LocalServicePaths,
-) -> Result<domain_store::OrganizationSnapshotDto, String> {
+) -> Result<domain_store::LongTermDomainSnapshotDtoV4, String> {
     if paths.database.is_file() {
-        domain_store::load_snapshot_at(&paths.database)
+        domain_store::load_long_term_domain_snapshot_v4_at(&paths.database)
     } else {
         Ok(empty_snapshot())
     }
@@ -170,17 +164,15 @@ fn organization_snapshot(
 
 fn discovery(
     paths: &LocalServicePaths,
-    snapshot: &domain_store::OrganizationSnapshotDto,
+    snapshot: &domain_store::LongTermDomainSnapshotDtoV4,
 ) -> local_service::DiscoveryResult {
     local_service::discover_with_shared_at(
-        &paths.workspace_registry,
         &paths.managed_agents,
         &paths.shared_assets,
         snapshot,
         true,
         local_service::DiscoveryRequest {
             request_id: "bandi-cli-config-check".into(),
-            workspace_ids: Vec::new(),
             include_claude_user_root: false,
         },
     )
@@ -201,10 +193,8 @@ pub fn status(paths: &LocalServicePaths) -> Result<StatusReport, String> {
         .count();
     Ok(StatusReport {
         status: if errors == 0 { "ready" } else { "degraded" }.into(),
-        companies: snapshot.companies.len(),
-        departments: snapshot.departments.len(),
-        workspaces: snapshot.workspaces.len(),
-        service_grants: snapshot.service_grants.len(),
+        teams: snapshot.teams.len(),
+        task_briefs: snapshot.task_briefs.len(),
         managed_assets: discovered.assets.len(),
         shared_assets: discovered.shared_assets.len(),
         asset_references: discovered.references.len(),
@@ -256,7 +246,6 @@ mod tests {
         let app_data = Path::new("D:/Profiles/Bandi/Roaming/com.bandi.desktop");
         let paths = LocalServicePaths::from_roots(home, app_data);
         assert_eq!(paths.database, app_data.join("bandi.db"));
-        assert_eq!(paths.workspace_registry, app_data.join("workspaces"));
         assert_eq!(paths.shared_assets, app_data.join("shared-assets"));
         assert_eq!(paths.managed_agents, home.join(".bandi/agents"));
     }
@@ -266,7 +255,6 @@ mod tests {
         let root = tempdir().unwrap();
         let paths = LocalServicePaths {
             database: root.path().join("missing/bandi.db"),
-            workspace_registry: root.path().join("missing/workspaces"),
             managed_agents: root.path().join("missing/agents"),
             shared_assets: root.path().join("missing/shared-assets"),
         };
@@ -280,7 +268,6 @@ mod tests {
         let root = tempdir().unwrap();
         let paths = LocalServicePaths {
             database: root.path().join("bandi.db"),
-            workspace_registry: root.path().join("workspaces"),
             managed_agents: root.path().join("agents"),
             shared_assets: root.path().join("shared-assets"),
         };
@@ -301,7 +288,6 @@ mod tests {
         let root = tempdir().unwrap();
         let paths = LocalServicePaths {
             database: root.path().join("bandi.db"),
-            workspace_registry: root.path().join("workspaces"),
             managed_agents: root.path().join("agents"),
             shared_assets: root.path().join("shared-assets"),
         };
@@ -309,23 +295,21 @@ mod tests {
         fs::create_dir_all(&package).unwrap();
         fs::write(
             package.join("asset.yaml"),
-            "schemaVersion: 1\nid: skill-review\nkind: skill\ncompanyId: xinghe\ncontentFile: SKILL.md\n",
+            "schemaVersion: 1\nid: skill-review\nkind: skill\nteamId: xinghe\ncontentFile: SKILL.md\n",
         )
         .unwrap();
         fs::write(package.join("SKILL.md"), "# Review\n").unwrap();
-        domain_store::save_company_at(
+        domain_store::save_team_v4_at(
             &paths.database,
-            domain_store::SaveCompanyRequest {
-                company: domain_store::CompanyDto {
-                    id: "xinghe".into(),
-                    name: "星河".into(),
-                    mission: "管理共享配置资产".into(),
-                    boundary: "只允许 Company 内显式引用".into(),
-                    assistant_agent_id: None,
-                    department_ids: Vec::new(),
-                    workspace_ids: Vec::new(),
-                    shared_asset_ids: vec!["skill-review".into()],
-                },
+            domain_store::TeamDtoV4 {
+                id: "xinghe".into(),
+                name: "星河".into(),
+                mark: None,
+                color: None,
+                mission: Some("管理共享配置资产".into()),
+                boundary: Some("只允许 Team 内显式引用".into()),
+                member_agent_ids: Vec::new(),
+                shared_asset_ids: vec!["skill-review".into()],
             },
         )
         .unwrap();
@@ -350,7 +334,6 @@ mod tests {
         symlink(&actual, &link).unwrap();
         let paths = LocalServicePaths {
             database: root.path().join("bandi.db"),
-            workspace_registry: root.path().join("workspaces"),
             managed_agents: link,
             shared_assets: root.path().join("shared-assets"),
         };

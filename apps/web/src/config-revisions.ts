@@ -44,14 +44,3 @@ export function appendConfigRevision(
 export function getLatestAgentRevision(revisions: ConfigRevision[], agentId: string): ConfigRevision | undefined {
   return revisions.find((item) => item.ownerType === 'agent' && item.ownerId === agentId)
 }
-
-export function getRecentWorkspaceRevisions(
-  revisions: ConfigRevision[],
-  agentIds: string[],
-  workspaceId: string,
-): ConfigRevision[] {
-  const workspacePrefix = `workspaces/${workspaceId}/`
-  return revisions.filter((item) => item.ownerType === 'agent'
-    && agentIds.includes(item.ownerId)
-    && (item.path.startsWith(workspacePrefix) || !item.path.startsWith('workspaces/')))
-}

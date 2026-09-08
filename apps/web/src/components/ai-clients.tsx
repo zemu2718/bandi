@@ -7,7 +7,7 @@ import claudeLogo from '../assets/ai-clients/claude.svg'
 import openClawLogo from '../assets/ai-clients/openclaw.svg'
 import openCodeLogo from '../assets/ai-clients/opencode.svg'
 import piLogo from '../assets/ai-clients/pi.svg'
-import { handoffDescriptor } from '../client-adapters'
+import { launchDescriptor } from '../client-adapters'
 import { cn } from '../lib'
 import type { AiClient, AiClientKind } from '../mock'
 import { useApp } from '../state'
@@ -29,33 +29,35 @@ export function AiClientIcon({ client, size = 18, tile = false }: { client: AiCl
   return <img src={logo} alt="" aria-hidden="true" width={size} height={size} onError={() => setFailed(true)} className={cn('shrink-0 object-cover', tile && 'rounded-[22%]')} />
 }
 
-export function supportsWorkspaceHandoff(client: AiClient): boolean {
-  return Boolean(handoffDescriptor(client.id))
+export function supportsClientLaunch(client: AiClient): boolean {
+  return Boolean(launchDescriptor(client.id))
 }
 
-const handoffMenuContentClass = 'z-[60] min-w-72 max-w-[calc(100vw-24px)] rounded-lg border border-border bg-card p-1.5 text-card-foreground shadow-xl'
-const handoffMenuItemClass = 'flex min-h-12 cursor-default items-center gap-3 rounded-md px-2.5 py-2 outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-muted'
+const launchMenuContentClass = 'z-[60] min-w-72 max-w-[calc(100vw-24px)] rounded-lg border border-border bg-card p-1.5 text-card-foreground shadow-xl'
+const launchMenuItemClass = 'flex min-h-12 cursor-default items-center gap-3 rounded-md px-2.5 py-2 outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-muted'
 
-export function AiClientHandoffAction({ workspaceId, agentId, agentName, disabled = false, planning = false, className }: { workspaceId?: string; agentId?: string; agentName?: string; disabled?: boolean; planning?: boolean; className?: string }) {
+export function AiClientLaunchAction({ agentId, agentName, disabled = false, className }: { agentId?: string; agentName?: string; disabled?: boolean; className?: string }) {
   const { state, dispatch } = useApp()
   const navigate = useNavigate()
   const environment = state.configurationEnvironments.find((item) => item.id === state.currentConfigurationEnvironmentId)
   const clients = (environment?.clientIds ?? []).map((id) => state.aiClients.find((client) => client.id === id)).filter((client): client is AiClient => Boolean(client))
-  const openClient = (client: AiClient) => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'client-guide', workspaceId, clientId: client.id, agentId, planning: planning || undefined } })
+  const openClient = (client: AiClient) => supportsClientLaunch(client)
+    ? dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'client-guide', clientId: client.id, agentId } })
+    : navigate('/settings?section=tools')
   if (!clients.length) return <Button className={className} disabled={disabled} title={disabled ? '当前 Agent 已停用或归档，不能接受新指令' : undefined} onClick={() => navigate('/settings?section=tools')}><Plus size={16} aria-hidden="true" /><span>选择要管理的 AI 编程工具</span></Button>
   if (clients.length === 1) {
     const client = clients[0]
-    const handoff = supportsWorkspaceHandoff(client)
-    const disabledReason = disabled ? '当前 Agent 已停用或归档，不能接受新指令' : handoff && !workspaceId ? '请先添加工作区' : undefined
-    return <Button className={className} disabled={disabled || (handoff && !workspaceId)} title={disabledReason} aria-label={disabledReason} onClick={() => openClient(client)}><AiClientIcon client={client} size={16} /><span>{handoff ? planning ? '让 AI 帮我规划协作方式' : agentName ? `与 ${agentName} 直接沟通` : `在 ${client.name} 中继续` : `查看 ${client.name} 配置`}</span></Button>
+    const launch = supportsClientLaunch(client)
+    const disabledReason = disabled ? '当前 Agent 已停用或归档，不能接受新指令' : undefined
+    return <Button className={className} disabled={disabled} title={disabledReason} aria-label={disabledReason} onClick={() => openClient(client)}><AiClientIcon client={client} size={16} /><span>{launch ? agentName ? `与 ${agentName} 直接沟通` : `在 ${client.name} 中继续` : `查看 ${client.name} 配置`}</span></Button>
   }
-  const handoffClients = clients.filter(supportsWorkspaceHandoff)
-  const configClients = clients.filter((client) => !supportsWorkspaceHandoff(client))
+  const launchClients = clients.filter(supportsClientLaunch)
+  const configClients = clients.filter((client) => !supportsClientLaunch(client))
   const item = (client: AiClient) => {
-    const handoff = supportsWorkspaceHandoff(client)
-    return <DropdownMenu.Item key={client.id} disabled={disabled || (handoff && !workspaceId)} className={handoffMenuItemClass} onSelect={() => openClient(client)}><AiClientIcon client={client} size={22} /><span className="min-w-0"><b className="block text-sm">{client.name}</b><small className="block text-muted-foreground">{disabled ? '当前 Agent 不能接受新指令' : handoff ? workspaceId ? agentName ? `与 ${agentName} 直接沟通` : '从工作区继续使用' : '请先添加工作区' : '仅管理配置 · 暂不支持直接打开'}</small></span></DropdownMenu.Item>
+    const launch = supportsClientLaunch(client)
+    return <DropdownMenu.Item key={client.id} disabled={disabled} className={launchMenuItemClass} onSelect={() => openClient(client)}><AiClientIcon client={client} size={22} /><span className="min-w-0"><b className="block text-sm">{client.name}</b><small className="block text-muted-foreground">{disabled ? '当前 Agent 不能接受新指令' : launch ? agentName ? `与 ${agentName} 直接沟通` : '选择 Agent 与可选上下文' : '仅管理配置 · 暂不支持直接打开'}</small></span></DropdownMenu.Item>
   }
-  return <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button className={className} disabled={disabled} title={disabled ? '当前 Agent 已停用或归档，不能接受新指令' : undefined}><span>{planning ? '选择工具规划协作方式' : agentName ? `与 ${agentName} 直接沟通` : '选择 AI 编程工具'}</span><ChevronDown size={15} aria-hidden="true" /></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6} className={handoffMenuContentClass}>{handoffClients.length > 0 && <><DropdownMenu.Label className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold text-muted-foreground">可继续使用</DropdownMenu.Label>{handoffClients.map(item)}</>}{configClients.length > 0 && <>{handoffClients.length > 0 && <DropdownMenu.Separator className="my-1 h-px bg-border" />}<DropdownMenu.Label className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold text-muted-foreground">仅配置</DropdownMenu.Label>{configClients.map(item)}</>}<DropdownMenu.Separator className="my-1 h-px bg-border" /><DropdownMenu.Item className={handoffMenuItemClass} onSelect={() => navigate('/settings?section=tools')}><Settings size={18} aria-hidden="true" /><span className="text-sm font-medium">管理 AI 编程工具</span></DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+  return <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button className={className} disabled={disabled} title={disabled ? '当前 Agent 已停用或归档，不能接受新指令' : undefined}><span>{agentName ? `与 ${agentName} 直接沟通` : '选择 AI 编程工具'}</span><ChevronDown size={15} aria-hidden="true" /></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6} className={launchMenuContentClass}>{launchClients.length > 0 && <><DropdownMenu.Label className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold text-muted-foreground">可继续使用</DropdownMenu.Label>{launchClients.map(item)}</>}{configClients.length > 0 && <>{launchClients.length > 0 && <DropdownMenu.Separator className="my-1 h-px bg-border" />}<DropdownMenu.Label className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold text-muted-foreground">仅配置</DropdownMenu.Label>{configClients.map(item)}</>}<DropdownMenu.Separator className="my-1 h-px bg-border" /><DropdownMenu.Item className={launchMenuItemClass} onSelect={() => navigate('/settings?section=tools')}><Settings size={18} aria-hidden="true" /><span className="text-sm font-medium">管理 AI 编程工具</span></DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
 }
 
 function addCustomClient(name: string, clients: AiClient[], dispatch: ReturnType<typeof useApp>['dispatch']) {
@@ -83,5 +85,5 @@ export function AiClientManagementSection() {
     setCustomOpen(open)
     if (!open) requestAnimationFrame(() => customTriggerRef.current?.focus())
   }
-  return <><section className="panel overflow-hidden"><div className="flex flex-wrap items-end justify-between gap-4 border-b border-border px-5 py-4"><div><b>要管理的 AI 编程工具</b><p className="mt-1 text-xs text-muted-foreground">这里只记录当前配置方案管理哪些工具，不表示工具已安装、已探测或可交接。</p></div><div className="flex flex-wrap items-end gap-2"><label className="text-xs font-medium">当前配置方案<select aria-label="当前配置方案" className="mt-1 block h-9 min-w-40 px-3 text-sm" value={environment?.id ?? ''} onChange={(event) => dispatch({ type: 'SELECT_CONFIGURATION_ENVIRONMENT', environmentId: event.target.value })}>{state.configurationEnvironments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><Button ref={customTriggerRef} size="sm" onClick={() => setCustomOpen(true)}><Plus size={15} />添加工具</Button></div></div><div className="border-b border-warning/20 bg-warning/8 px-5 py-3 text-xs text-warning">当前未探测本机工具；配置方案与加入状态仅在当前页面有效。</div><div className="divide-y divide-border">{state.aiClients.map((client) => { const registered = environment?.clientIds.includes(client.id) ?? false; const handoff = supportsWorkspaceHandoff(client); return <div key={client.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto] sm:items-center"><div className="flex items-center gap-3"><span className="grid size-10 shrink-0 place-items-center"><AiClientIcon client={client} size={40} tile /></span><div><b className="block">{client.name}</b><span className="text-xs text-muted-foreground">{handoff ? '可从工作区继续使用 · 尚未检查是否已安装' : '仅管理配置 · 暂不支持直接打开'}</span></div></div><div className="text-xs leading-5 text-muted-foreground"><div>{client.description}</div><div>{registered ? `已纳入“${environment?.name}”` : `未纳入“${environment?.name}”`}</div></div><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" size="sm" onClick={() => environment && dispatch({ type: 'SET_ENVIRONMENT_CLIENT_REGISTRATION', environmentId: environment.id, clientId: client.id, registered: !registered })}>{registered ? '从方案移除' : '加入配置方案'}</Button></div></div> })}</div><CustomClientDialog open={customOpen} onOpenChange={setCustomDialogOpen} /></section></>
+  return <><section className="panel overflow-hidden"><div className="flex flex-wrap items-end justify-between gap-4 border-b border-border px-5 py-4"><div><b>要管理的 AI 编程工具</b><p className="mt-1 text-xs text-muted-foreground">这里只记录当前配置方案管理哪些工具，不表示工具已安装、已探测或可交接。</p></div><div className="flex flex-wrap items-end gap-2"><label className="text-xs font-medium">当前配置方案<select aria-label="当前配置方案" className="mt-1 block h-9 min-w-40 px-3 text-sm" value={environment?.id ?? ''} onChange={(event) => dispatch({ type: 'SELECT_CONFIGURATION_ENVIRONMENT', environmentId: event.target.value })}>{state.configurationEnvironments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><Button ref={customTriggerRef} size="sm" onClick={() => setCustomOpen(true)}><Plus size={15} />添加工具</Button></div></div><div className="border-b border-warning/20 bg-warning/8 px-5 py-3 text-xs text-warning">当前未探测本机工具；配置方案与加入状态仅在当前页面有效。</div><div className="divide-y divide-border">{state.aiClients.map((client) => { const registered = environment?.clientIds.includes(client.id) ?? false; const launch = supportsClientLaunch(client); return <div key={client.id} className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_auto] sm:items-center"><div className="flex items-center gap-3"><span className="grid size-10 shrink-0 place-items-center"><AiClientIcon client={client} size={40} tile /></span><div><b className="block">{client.name}</b><span className="text-xs text-muted-foreground">{launch ? '可选择 Agent 与上下文 · 尚未检查是否已安装' : '仅管理配置 · 暂不支持直接打开'}</span></div></div><div className="text-xs leading-5 text-muted-foreground"><div>{client.description}</div><div>{registered ? `已纳入“${environment?.name}”` : `未纳入“${environment?.name}”`}</div></div><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" size="sm" onClick={() => environment && dispatch({ type: 'SET_ENVIRONMENT_CLIENT_REGISTRATION', environmentId: environment.id, clientId: client.id, registered: !registered })}>{registered ? '从方案移除' : '加入配置方案'}</Button></div></div> })}</div><CustomClientDialog open={customOpen} onOpenChange={setCustomDialogOpen} /></section></>
 }

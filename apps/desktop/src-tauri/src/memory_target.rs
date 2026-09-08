@@ -3,84 +3,15 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::{domain_store, local_service};
+use crate::local_service;
 
-pub(crate) const PROFILE_VERSION: &str = "memory-v1";
-
-#[derive(Debug, Clone)]
-pub(crate) enum ScopeKey {
-    AgentLongTerm {
-        agent_id: String,
-    },
-    AgentWorkspace {
-        agent_id: String,
-        workspace_id: String,
-    },
-    WorkspaceShared {
-        workspace_id: String,
-    },
-    DepartmentWorkspace {
-        department_id: String,
-        workspace_id: String,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum Owner {
-    Agent {
-        agent_id: String,
-    },
-    Workspace {
-        workspace_id: String,
-    },
-    DepartmentWorkspace {
-        department_id: String,
-        workspace_id: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-#[serde(
-    tag = "kind",
-    rename_all = "snake_case",
-    rename_all_fields = "camelCase",
-    deny_unknown_fields
-)]
-pub(crate) enum ReviewPrincipal {
-    Agent { agent_id: String },
-    ChairmanUser { company_id: String },
-}
-
-impl ReviewPrincipal {
-    pub(crate) fn database_parts(&self) -> (&'static str, &str) {
-        match self {
-            Self::Agent { agent_id } => ("agent", agent_id),
-            Self::ChairmanUser { company_id } => ("chairman_user", company_id),
-        }
-    }
-
-    pub(crate) fn from_database(kind: &str, id: String) -> Result<Self, String> {
-        match kind {
-            "agent" => Ok(Self::Agent { agent_id: id }),
-            "chairman_user" => Ok(Self::ChairmanUser { company_id: id }),
-            _ => Err("正式 Memory 审核主体已损坏".into()),
-        }
-    }
-
-    pub(crate) fn is_agent(&self, agent_id: &str) -> bool {
-        matches!(self, Self::Agent { agent_id: id } if id == agent_id)
-    }
-}
+pub(crate) const PROFILE_VERSION: &str = "memory-v4";
+const MEMORY_RELATIVE_PATH: &str = "memory/long-term.md";
 
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedMemoryTarget {
     pub(crate) space_id: String,
-    pub(crate) scope_type: &'static str,
-    pub(crate) scope_key: ScopeKey,
-    pub(crate) owner: Owner,
-    pub(crate) steward_agent_id: String,
-    pub(crate) review_principal: ReviewPrincipal,
-    pub(crate) visibility_policy: &'static str,
+    pub(crate) agent_id: String,
     pub(crate) state: &'static str,
     pub(crate) root_kind: local_service::RootKind,
     pub(crate) relative_path: String,
@@ -88,7 +19,7 @@ pub(crate) struct ResolvedMemoryTarget {
     pub(crate) target: PathBuf,
 }
 
-fn validate_id(value: &str, label: &str) -> Result<(), String> {
+pub(crate) fn validate_id(value: &str, label: &str) -> Result<(), String> {
     let valid = !value.is_empty()
         && value.len() <= 128
         && value
@@ -96,11 +27,7 @@ fn validate_id(value: &str, label: &str) -> Result<(), String> {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
         && value != "."
         && value != "..";
-    if valid {
-        Ok(())
-    } else {
-        Err(format!("{label}无效"))
-    }
+    valid.then_some(()).ok_or_else(|| format!("{label}无效"))
 }
 
 fn agent_package(agents_root: &Path, agent_id: &str) -> Result<PathBuf, String> {
@@ -111,554 +38,71 @@ fn agent_package(agents_root: &Path, agent_id: &str) -> Result<PathBuf, String> 
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err("受管 AgentPackage 必须是普通目录".into());
     }
+    let identity_path = package.join(".bandi-agent.json");
+    let identity_metadata = fs::symlink_metadata(&identity_path)
+        .map_err(|_| "Agent 身份索引不存在或不可读取".to_string())?;
+    if identity_metadata.file_type().is_symlink() || !identity_metadata.is_file() {
+        return Err("Agent 身份索引必须是普通文件".into());
+    }
+    let identity: serde_json::Value = serde_json::from_slice(
+        &fs::read(identity_path).map_err(|_| "Agent 身份索引不存在或不可读取".to_string())?,
+    )
+    .map_err(|_| "Agent 身份索引已损坏".to_string())?;
+    if identity.get("id").and_then(serde_json::Value::as_str) != Some(agent_id) {
+        return Err("Agent 身份索引与请求不匹配".into());
+    }
     Ok(package)
 }
 
-fn agent_record(agents_root: &Path, agent_id: &str) -> Result<serde_json::Value, String> {
-    let package = agent_package(agents_root, agent_id)?;
-    let path = package.join(".bandi-agent.json");
-    let metadata =
-        fs::symlink_metadata(&path).map_err(|_| "Agent 身份索引不存在或不可读取".to_string())?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err("Agent 身份索引必须是普通文件".into());
-    }
-    serde_json::from_slice(
-        &fs::read(path).map_err(|_| "Agent 身份索引不存在或不可读取".to_string())?,
-    )
-    .map_err(|_| "Agent 身份索引已损坏".to_string())
-}
-
-fn is_active_agent(agents_root: &Path, agent_id: &str) -> bool {
-    agent_record(agents_root, agent_id)
-        .ok()
-        .and_then(|record| {
-            record
-                .get("status")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref()
-        == Some("active")
-}
-
-fn agent_reviewer(agents_root: &Path, agent_id: &str) -> Result<ReviewPrincipal, String> {
-    let record = agent_record(agents_root, agent_id)?;
-    if let Some(manager) = record
-        .get("managerAgentId")
-        .and_then(serde_json::Value::as_str)
-    {
-        validate_id(manager, "直属主管标识")?;
-        if manager != agent_id && is_active_agent(agents_root, manager) {
-            return Ok(ReviewPrincipal::Agent {
-                agent_id: manager.into(),
-            });
-        }
-    }
-    let company_id = record
-        .get("companyId")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "没有直属主管或所属公司，无法确定独立审核者".to_string())?;
-    validate_id(company_id, "公司标识")?;
-    Ok(ReviewPrincipal::ChairmanUser {
-        company_id: company_id.into(),
-    })
-}
-
-fn workspace_root(
-    database: &Path,
-    registry_root: &Path,
-    workspace_id: &str,
-) -> Result<PathBuf, String> {
-    validate_id(workspace_id, "Workspace 标识")?;
-    if let Ok(path) = domain_store::workspace_path_at(database, workspace_id) {
-        return local_service::ensure_registered_workspace_path(&path);
-    }
-    let path = local_service::workspace_path_from_registry_at(registry_root, workspace_id)?;
-    domain_store::import_workspace_record_at(database, workspace_id, &path)?;
-    Ok(path)
-}
-
-fn has_workspace_binding(
+fn build(
     agents_root: &Path,
     agent_id: &str,
-    workspace_id: &str,
-) -> Result<bool, String> {
-    let package = agent_package(agents_root, agent_id)?;
-    let directory = package.join("workspaces").join(workspace_id);
-    let directory_metadata = match fs::symlink_metadata(&directory) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(_) => return Err("无法检查 WorkspaceBinding".into()),
-    };
-    if directory_metadata.file_type().is_symlink() || !directory_metadata.is_dir() {
-        return Err("WorkspaceBinding 目录必须是普通目录".into());
-    }
-    let path = directory.join("config.yaml");
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(_) => return Err("无法检查 WorkspaceBinding".into()),
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err("WorkspaceBinding 必须是普通文件".into());
-    }
-    let document: serde_yaml::Value = serde_yaml::from_str(
-        &fs::read_to_string(path).map_err(|_| "无法读取 WorkspaceBinding".to_string())?,
-    )
-    .map_err(|_| "WorkspaceBinding 已损坏".to_string())?;
-    let actual = document
-        .get("workspaceBinding")
-        .and_then(|binding| binding.get("workspaceId"))
-        .and_then(serde_yaml::Value::as_str);
-    Ok(actual == Some(workspace_id))
-}
-
-fn escalated_reviewer(
-    snapshot: &domain_store::OrganizationSnapshotDto,
-    agents_root: &Path,
-    company_id: &str,
-    proposer_agent_id: &str,
-) -> ReviewPrincipal {
-    snapshot
-        .companies
-        .iter()
-        .find(|company| company.id == company_id)
-        .and_then(|company| company.assistant_agent_id.as_deref())
-        .filter(|assistant| {
-            *assistant != proposer_agent_id && is_active_agent(agents_root, assistant)
-        })
-        .map(|assistant| ReviewPrincipal::Agent {
-            agent_id: assistant.into(),
-        })
-        .unwrap_or_else(|| ReviewPrincipal::ChairmanUser {
-            company_id: company_id.into(),
-        })
-}
-
-fn department_manager(
-    snapshot: &domain_store::OrganizationSnapshotDto,
-    department_id: &str,
-) -> Result<(String, String), String> {
-    let department = snapshot
-        .departments
-        .iter()
-        .find(|department| department.id == department_id)
-        .ok_or_else(|| "Department 不存在".to_string())?;
-    let manager = department
-        .manager_agent_id
-        .clone()
-        .ok_or_else(|| "Department 未配置主管".to_string())?;
-    Ok((department.company_id.clone(), manager))
-}
-
-fn workspace<'a>(
-    snapshot: &'a domain_store::OrganizationSnapshotDto,
-    workspace_id: &str,
-) -> Result<&'a domain_store::WorkspaceDto, String> {
-    snapshot
-        .workspaces
-        .iter()
-        .find(|workspace| workspace.id == workspace_id)
-        .ok_or_else(|| "Workspace 尚未登记".to_string())
-}
-
-fn can_propose_department(
-    snapshot: &domain_store::OrganizationSnapshotDto,
-    agents_root: &Path,
-    proposer_agent_id: &str,
-    department_id: &str,
-    workspace_id: &str,
-) -> Result<bool, String> {
-    let record = agent_record(agents_root, proposer_agent_id)?;
-    if record
-        .get("primaryDepartmentId")
-        .and_then(serde_json::Value::as_str)
-        == Some(department_id)
-    {
-        return Ok(true);
-    }
-    Ok(snapshot.service_grants.iter().any(|grant| {
-        grant.agent_id == proposer_agent_id
-            && grant.department_id == department_id
-            && grant.status == "有效"
-            && grant.workspace_ids.iter().any(|id| id == workspace_id)
-    }))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build(
-    space_id: String,
-    scope_type: &'static str,
-    scope_key: ScopeKey,
-    owner: Owner,
-    steward_agent_id: String,
-    review_principal: ReviewPrincipal,
-    visibility_policy: &'static str,
-    root_kind: local_service::RootKind,
-    relative_path: String,
-    root: PathBuf,
-) -> ResolvedMemoryTarget {
+    space_id: &str,
+    state: &'static str,
+) -> Result<ResolvedMemoryTarget, String> {
+    let root = agent_package(agents_root, agent_id)?;
+    let relative_path = MEMORY_RELATIVE_PATH.to_string();
     let target = root.join(&relative_path);
-    ResolvedMemoryTarget {
-        space_id,
-        scope_type,
-        scope_key,
-        owner,
-        steward_agent_id,
-        review_principal,
-        visibility_policy,
-        state: "active",
-        root_kind,
+    Ok(ResolvedMemoryTarget {
+        space_id: space_id.into(),
+        agent_id: agent_id.into(),
+        state,
+        root_kind: local_service::RootKind::Managed,
         relative_path,
         root,
         target,
-    }
-}
-
-pub(crate) fn discover_requested(
-    database: &Path,
-    agents_root: &Path,
-    registry_root: &Path,
-    proposer_agent_id: &str,
-) -> Result<(Vec<ResolvedMemoryTarget>, Vec<String>), String> {
-    validate_id(proposer_agent_id, "提议者标识")?;
-    agent_package(agents_root, proposer_agent_id)?;
-    let snapshot = domain_store::load_snapshot_at(database)?;
-    let mut space_ids = vec![format!("memory-agent-{proposer_agent_id}")];
-    let mut diagnostics = Vec::new();
-
-    for item in &snapshot.workspaces {
-        match has_workspace_binding(agents_root, proposer_agent_id, &item.id) {
-            Ok(true) => {
-                space_ids.push(format!("mem-agent-ws-{proposer_agent_id}-{}", item.id));
-                space_ids.push(format!("mem-ws-{}", item.id));
-            }
-            Ok(false) => continue,
-            Err(message) => {
-                diagnostics.push(format!("Workspace {}：{message}", item.id));
-                continue;
-            }
-        }
-        let mut departments = Vec::new();
-        if let Some(primary) = &item.primary_department_id {
-            departments.push(primary.clone());
-        }
-        departments.extend(item.collaborator_department_ids.clone());
-        departments.sort();
-        departments.dedup();
-        for department_id in departments {
-            match can_propose_department(
-                &snapshot,
-                agents_root,
-                proposer_agent_id,
-                &department_id,
-                &item.id,
-            ) {
-                Ok(true) => space_ids.push(format!("mem-{department_id}-{}", item.id)),
-                Ok(false) => {}
-                Err(message) => diagnostics.push(format!(
-                    "Department {department_id} × Workspace {}：{message}",
-                    item.id
-                )),
-            }
-        }
-    }
-
-    let mut spaces = Vec::new();
-    for space_id in space_ids {
-        match resolve_requested(
-            database,
-            agents_root,
-            registry_root,
-            &space_id,
-            proposer_agent_id,
-        ) {
-            Ok(target) => spaces.push(target),
-            Err(message) => diagnostics.push(format!("MemorySpace {space_id}：{message}")),
-        }
-    }
-    Ok((spaces, diagnostics))
-}
-
-pub(crate) fn resolve_requested(
-    database: &Path,
-    agents_root: &Path,
-    registry_root: &Path,
-    space_id: &str,
-    proposer_agent_id: &str,
-) -> Result<ResolvedMemoryTarget, String> {
-    validate_id(space_id, "MemorySpace 标识")?;
-    validate_id(proposer_agent_id, "提议者标识")?;
-    let snapshot = domain_store::load_snapshot_at(database)?;
-    if space_id == format!("memory-agent-{proposer_agent_id}") {
-        let reviewer = agent_reviewer(agents_root, proposer_agent_id)?;
-        let root = agent_package(agents_root, proposer_agent_id)?;
-        return Ok(build(
-            space_id.into(),
-            "agent_long_term",
-            ScopeKey::AgentLongTerm {
-                agent_id: proposer_agent_id.into(),
-            },
-            Owner::Agent {
-                agent_id: proposer_agent_id.into(),
-            },
-            proposer_agent_id.into(),
-            reviewer,
-            "agent_private",
-            local_service::RootKind::Managed,
-            "memory/long-term.md".into(),
-            root,
-        ));
-    }
-    for item in &snapshot.workspaces {
-        if space_id == format!("mem-agent-ws-{proposer_agent_id}-{}", item.id) {
-            let reviewer = agent_reviewer(agents_root, proposer_agent_id)?;
-            workspace_root(database, registry_root, &item.id)?;
-            if !has_workspace_binding(agents_root, proposer_agent_id, &item.id)? {
-                return Err("Agent 未建立该 Workspace 的 WorkspaceBinding".into());
-            }
-            let root = agent_package(agents_root, proposer_agent_id)?;
-            return Ok(build(
-                space_id.into(),
-                "agent_workspace",
-                ScopeKey::AgentWorkspace {
-                    agent_id: proposer_agent_id.into(),
-                    workspace_id: item.id.clone(),
-                },
-                Owner::Agent {
-                    agent_id: proposer_agent_id.into(),
-                },
-                proposer_agent_id.into(),
-                reviewer,
-                "agent_private",
-                local_service::RootKind::Managed,
-                format!("workspaces/{}/memory.md", item.id),
-                root,
-            ));
-        }
-        if space_id == format!("mem-ws-{}", item.id) {
-            if !has_workspace_binding(agents_root, proposer_agent_id, &item.id)? {
-                return Err("提议者未绑定该 Workspace".into());
-            }
-            let primary = item
-                .primary_department_id
-                .as_deref()
-                .ok_or_else(|| "Workspace 未配置主责部门".to_string())?;
-            let (company_id, steward) = department_manager(&snapshot, primary)?;
-            if item.company_id.as_deref() != Some(company_id.as_str()) {
-                return Err("Workspace 主责部门不属于所属公司".into());
-            }
-            let reviewer = if proposer_agent_id != steward && is_active_agent(agents_root, &steward)
-            {
-                ReviewPrincipal::Agent {
-                    agent_id: steward.clone(),
-                }
-            } else {
-                escalated_reviewer(&snapshot, agents_root, &company_id, proposer_agent_id)
-            };
-            let root = workspace_root(database, registry_root, &item.id)?;
-            return Ok(build(
-                space_id.into(),
-                "workspace_shared",
-                ScopeKey::WorkspaceShared {
-                    workspace_id: item.id.clone(),
-                },
-                Owner::Workspace {
-                    workspace_id: item.id.clone(),
-                },
-                steward,
-                reviewer,
-                "workspace_shared",
-                local_service::RootKind::Workspace,
-                ".bandi/memory/public.md".into(),
-                root,
-            ));
-        }
-        let mut departments = Vec::new();
-        if let Some(primary) = &item.primary_department_id {
-            departments.push(primary.clone());
-        }
-        departments.extend(item.collaborator_department_ids.clone());
-        for department_id in departments {
-            if space_id != format!("mem-{department_id}-{}", item.id) {
-                continue;
-            }
-            let (company_id, steward) = department_manager(&snapshot, &department_id)?;
-            if item.company_id.as_deref() != Some(company_id.as_str()) {
-                return Err("Department 与 Workspace 不属于同一 Company".into());
-            }
-            if !can_propose_department(
-                &snapshot,
-                agents_root,
-                proposer_agent_id,
-                &department_id,
-                &item.id,
-            )? {
-                return Err("提议者无权向该 Department × Workspace 空间提交候选".into());
-            }
-            let reviewer = if proposer_agent_id != steward && is_active_agent(agents_root, &steward)
-            {
-                ReviewPrincipal::Agent {
-                    agent_id: steward.clone(),
-                }
-            } else {
-                escalated_reviewer(&snapshot, agents_root, &company_id, proposer_agent_id)
-            };
-            let root = workspace_root(database, registry_root, &item.id)?;
-            return Ok(build(
-                space_id.into(),
-                "department_workspace",
-                ScopeKey::DepartmentWorkspace {
-                    department_id: department_id.clone(),
-                    workspace_id: item.id.clone(),
-                },
-                Owner::DepartmentWorkspace {
-                    department_id: department_id.clone(),
-                    workspace_id: item.id.clone(),
-                },
-                steward,
-                reviewer,
-                "department_workspace",
-                local_service::RootKind::Workspace,
-                format!(".bandi/memory/departments/{department_id}.md"),
-                root,
-            ));
-        }
-    }
-    Err("目标 MemorySpace 不存在或提议者无权访问".into())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn resolve_stored(
-    database: &Path,
-    agents_root: &Path,
-    registry_root: &Path,
-    scope_type: &str,
-    agent_id: Option<&str>,
-    workspace_id: Option<&str>,
-    department_id: Option<&str>,
-    space_id: &str,
-    steward_agent_id: String,
-    review_principal: ReviewPrincipal,
-    state: &str,
-) -> Result<ResolvedMemoryTarget, String> {
-    let (scope_key, owner, visibility, root_kind, relative, root) = match scope_type {
-        "agent_long_term" => {
-            let agent = agent_id.ok_or_else(|| "MemorySpace Agent key 缺失".to_string())?;
-            (
-                ScopeKey::AgentLongTerm {
-                    agent_id: agent.into(),
-                },
-                Owner::Agent {
-                    agent_id: agent.into(),
-                },
-                "agent_private",
-                local_service::RootKind::Managed,
-                "memory/long-term.md".into(),
-                agent_package(agents_root, agent)?,
-            )
-        }
-        "agent_workspace" => {
-            let agent = agent_id.ok_or_else(|| "MemorySpace Agent key 缺失".to_string())?;
-            let workspace =
-                workspace_id.ok_or_else(|| "MemorySpace Workspace key 缺失".to_string())?;
-            workspace_root(database, registry_root, workspace)?;
-            if !has_workspace_binding(agents_root, agent, workspace)? {
-                return Err("Agent 的 WorkspaceBinding 已失效".into());
-            }
-            (
-                ScopeKey::AgentWorkspace {
-                    agent_id: agent.into(),
-                    workspace_id: workspace.into(),
-                },
-                Owner::Agent {
-                    agent_id: agent.into(),
-                },
-                "agent_private",
-                local_service::RootKind::Managed,
-                format!("workspaces/{workspace}/memory.md"),
-                agent_package(agents_root, agent)?,
-            )
-        }
-        "workspace_shared" => {
-            let workspace =
-                workspace_id.ok_or_else(|| "MemorySpace Workspace key 缺失".to_string())?;
-            (
-                ScopeKey::WorkspaceShared {
-                    workspace_id: workspace.into(),
-                },
-                Owner::Workspace {
-                    workspace_id: workspace.into(),
-                },
-                "workspace_shared",
-                local_service::RootKind::Workspace,
-                ".bandi/memory/public.md".into(),
-                workspace_root(database, registry_root, workspace)?,
-            )
-        }
-        "department_workspace" => {
-            let workspace_id =
-                workspace_id.ok_or_else(|| "MemorySpace Workspace key 缺失".to_string())?;
-            let department =
-                department_id.ok_or_else(|| "MemorySpace Department key 缺失".to_string())?;
-            let snapshot = domain_store::load_snapshot_at(database)?;
-            let item = workspace(&snapshot, workspace_id)?;
-            let active = item.primary_department_id.as_deref() == Some(department)
-                || item
-                    .collaborator_department_ids
-                    .iter()
-                    .any(|id| id == department);
-            if state == "active" && !active {
-                return Err("Department × Workspace 关系已失效".into());
-            }
-            (
-                ScopeKey::DepartmentWorkspace {
-                    department_id: department.into(),
-                    workspace_id: workspace_id.into(),
-                },
-                Owner::DepartmentWorkspace {
-                    department_id: department.into(),
-                    workspace_id: workspace_id.into(),
-                },
-                "department_workspace",
-                local_service::RootKind::Workspace,
-                format!(".bandi/memory/departments/{department}.md"),
-                workspace_root(database, registry_root, workspace_id)?,
-            )
-        }
-        _ => return Err("MemorySpace scope 已损坏".into()),
-    };
-    let target = root.join(&relative);
-    Ok(ResolvedMemoryTarget {
-        space_id: space_id.into(),
-        scope_type: match scope_type {
-            "agent_long_term" => "agent_long_term",
-            "agent_workspace" => "agent_workspace",
-            "workspace_shared" => "workspace_shared",
-            _ => "department_workspace",
-        },
-        scope_key,
-        owner,
-        steward_agent_id,
-        review_principal,
-        visibility_policy: visibility,
-        state: if state == "active" {
-            "active"
-        } else {
-            "read_only_history"
-        },
-        root_kind,
-        relative_path: relative,
-        root,
-        target,
     })
 }
 
-pub(crate) fn read(target: &ResolvedMemoryTarget) -> Result<String, String> {
+pub(crate) fn discover_requested(
+    agents_root: &Path,
+    agent_id: &str,
+) -> Result<Vec<ResolvedMemoryTarget>, String> {
+    Ok(vec![resolve_requested(
+        agents_root,
+        &format!("memory-agent-{agent_id}"),
+        agent_id,
+    )?])
+}
+
+pub(crate) fn resolve_requested(
+    agents_root: &Path,
+    space_id: &str,
+    agent_id: &str,
+) -> Result<ResolvedMemoryTarget, String> {
+    validate_id(space_id, "MemorySpace 标识")?;
+    validate_id(agent_id, "Agent 标识")?;
+    if space_id != format!("memory-agent-{agent_id}") {
+        return Err("目标 MemorySpace 不存在或 Agent 无权访问".into());
+    }
+    build(agents_root, agent_id, space_id, "active")
+}
+
+pub(crate) fn read(target: &ResolvedMemoryTarget) -> Result<(String, bool), String> {
     ensure_safe_chain(&target.root, &target.relative_path, false)?;
     match fs::read_to_string(&target.target) {
-        Ok(content) => Ok(content),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Ok(content) => Ok((content, true)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok((String::new(), false)),
         Err(_) => Err("无法读取正式 Memory".into()),
     }
 }
@@ -682,11 +126,11 @@ pub(crate) fn ensure_safe_chain(
         current.push(component.as_os_str());
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-                return Err("正式 Memory 路径包含符号链接或非目录分量".into())
+                return Err("正式 Memory 路径包含符号链接或非目录分量".into());
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound && create_parent => {
-                fs::create_dir(&current).map_err(|_| "无法创建正式 Memory 目标目录".to_string())?
+                fs::create_dir(&current).map_err(|_| "无法创建正式 Memory 目标目录".to_string())?;
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
             Err(_) => return Err("无法检查正式 Memory 目标目录".into()),
@@ -698,4 +142,41 @@ pub(crate) fn ensure_safe_chain(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn agent_root() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        let package = root.path().join("agt_agent-1");
+        fs::create_dir(&package).unwrap();
+        fs::write(
+            package.join(".bandi-agent.json"),
+            br#"{"id":"agent-1","teamId":"team-1","status":"active"}"#,
+        )
+        .unwrap();
+        root
+    }
+
+    #[test]
+    fn resolves_only_agent_owned_v4_target() {
+        let root = agent_root();
+        let target = resolve_requested(root.path(), "memory-agent-agent-1", "agent-1").unwrap();
+        assert_eq!(PROFILE_VERSION, "memory-v4");
+        assert_eq!(target.agent_id, "agent-1");
+        assert!(resolve_requested(root.path(), "memory-agent-agent-2", "agent-1").is_err());
+    }
+
+    #[test]
+    fn rejects_symlink_in_memory_path() {
+        let root = agent_root();
+        let target = resolve_requested(root.path(), "memory-agent-agent-1", "agent-1").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.path(), target.root.join("memory")).unwrap();
+            assert!(ensure_safe_chain(&target.root, &target.relative_path, true).is_err());
+        }
+    }
 }

@@ -18,7 +18,6 @@ const impactGroups: Array<{
   key: Exclude<keyof ManagedAgentDeletionPreviewDto['impacts'], 'blockers'>
   title: string
 }> = [
-  { key: 'workspaceBindings', title: '工作区专属配置' },
   { key: 'sharedAssetReferences', title: '共享资产引用' },
   { key: 'organizationRelationships', title: '组织关系' },
   { key: 'reviewResponsibilities', title: '审核责任' },

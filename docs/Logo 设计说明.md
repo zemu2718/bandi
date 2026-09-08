@@ -2,7 +2,7 @@
 
 ## 1. 设计定位
 
-Bandi 是面向多个长期 Agent 的可视化配置管理产品，负责管理 Agent、Workspace、Instructions、Skills、Memory、Rules、MCP、权限以及 Agent × Workspace 专属配置。
+Bandi 是面向多个长期 Agent 的可视化配置管理产品，负责按 Team 管理 Agent、可选的 Team-scoped TaskBrief，以及 Instructions、Skills、Agent 长期 Memory、Rules、MCP 和权限等长期配置资产。
 
 Logo 不直接描绘终端、节点、组织架构或任务流程，而是用一个完整、稳定的抽象实体表达 Bandi 的品牌特征：
 
@@ -79,11 +79,11 @@ Favicon 使用白色底和深色 Logo。小尺寸下优先保证外轮廓与中�
 设置中的自定义工作台 Logo 是当前设备的辅助标识，不是 Bandi Logo 变体：
 
 - 正式 `BrandMark`、产品名 Bandi、favicon、Dock / 桌面图标和系统菜单不被替换；
-- 自定义标识只出现在工作台辅助品牌区域，保存在桌面应用数据目录的固定 `logo` 槽位；
-- Company / Workspace Logo 如未来支持，应作为独立业务资产建模，不得复用本机工作台标识或覆盖 Bandi 品牌；
+- 自定义标识只出现在工作台辅助品牌区域，保存在桌面应用数据区的固定 `logo` 槽位；
+- Team 专属 Logo 如未来支持，应作为独立业务资产建模，不得复用本机工作台标识或覆盖 Bandi 品牌；
 - 本机标识不进入 Agent 配置、配置版本、备份、Git 或跨设备同步。
 
-## 7. 项目资产
+## 7. 品牌资产
 
 | 用途 | 文件 |
 | --- | --- |
@@ -105,4 +105,4 @@ pnpm exec tauri icon \
   --output apps/desktop/src-tauri/icons
 ```
 
-该命令还会生成移动端及 Windows Store 的额外尺寸；当前项目未使用的产物不应提交。
+该命令还会生成移动端及 Windows Store 的额外尺寸；当前产品未使用的产物不应提交。

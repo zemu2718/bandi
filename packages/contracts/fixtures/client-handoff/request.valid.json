@@ -1,7 +1,0 @@
-{
-  "clientId": "claude-code",
-  "adapterId": "claude-code-terminal-v1",
-  "workspaceId": "bandi",
-  "terminalId": "terminal",
-  "intent": "continue_workspace"
-}

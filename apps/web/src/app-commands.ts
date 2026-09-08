@@ -2,12 +2,13 @@ import type { NavigateFunction } from 'react-router-dom'
 import type { Dispatch } from 'react'
 import type { Action } from './state'
 import type { EditorSession } from './editor-session'
+import type { EffectiveTheme } from './ui-preferences'
 
 export const appCommandIds = [
   'navigation.home',
   'navigation.agents',
   'navigation.organization',
-  'navigation.workspaces',
+  'navigation.tasks',
   'navigation.assets',
   'navigation.settings',
   'theme.toggle',
@@ -21,7 +22,7 @@ const navigationTargets: Partial<Record<AppCommandId, string>> = {
   'navigation.home': '/',
   'navigation.agents': '/agents',
   'navigation.organization': '/organization',
-  'navigation.workspaces': '/workspaces',
+  'navigation.tasks': '/tasks',
   'navigation.assets': '/assets',
   'navigation.settings': '/settings',
 }
@@ -36,6 +37,7 @@ export function executeAppCommand(
     navigate: NavigateFunction
     dispatch: Dispatch<Action>
     editor?: EditorSession
+    effectiveTheme?: EffectiveTheme
   },
 ): boolean {
   const target = navigationTargets[command]
@@ -44,7 +46,7 @@ export function executeAppCommand(
     return true
   }
   if (command === 'theme.toggle') {
-    context.dispatch({ type: 'THEME' })
+    context.dispatch({ type: 'THEME', effectiveTheme: context.effectiveTheme })
     return true
   }
   if (command === 'editor.save' && context.editor?.canSave) {

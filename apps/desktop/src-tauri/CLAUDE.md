@@ -5,26 +5,27 @@
 ## 技术与职责
 
 - 本目录使用 Rust 与 Tauri 2，为 Bandi Desktop 提供最小化的桌面壳和经明确授权的本机能力。
-- Desktop 的职责是支持多 Agent 配置资产管理，不得演变为任务执行器、内嵌终端、聊天客户端、人员调度器或 Claude Code 运行监控台。
-- 所有任务下达、协作、工具调用、Todo、日志、审批、汇报和验收继续留在用户自己的 Claude Code CLI。
+- Desktop 的职责是支持 Team、长期 Agent、可选 Team-scoped TaskBrief 与配置资产管理，不得演变为任务执行器、内嵌终端、聊天客户端、人员调度器或 Claude Code 运行监控台。
+- TaskBrief 必须属于一个 Team，只保存目标、背景、约束和期望产出，不持久化 Agent；所有实际任务下达、协作、工具调用、Todo、日志、调度、审批、汇报和验收继续留在用户自己的 Claude Code CLI。
 - 不得返回伪造的探测、安装、保存、备份、命令执行或 Claude Code 启动成功；未实现或未执行时必须明确报告真实状态。
 
 ## Tauri 与权限
 
 - 新增 command、plugin、capability、Shell、进程或文件系统访问前，先确认其直接服务于配置管理，并采用最小权限、最小参数和最小暴露面。
 - capability 只授权明确需要的窗口、命令、路径和操作；不得使用宽泛通配符作为方便性兜底。
-- Shell 和外部进程默认禁止。当前唯一终端交接例外是：前端只提交 `clientId / adapterId / workspaceId / terminalId / intent`，后端从 Workspace Registry 重取 canonical cwd；macOS 仅通过固定 `/usr/bin/open` 请求白名单终端打开目录，Windows 不启动终端并返回手动继续。不得接受或回传 cwd、bundle ID、executable、argv、Shell、AppleScript、环境变量、stdin、脚本或通用进程请求；不得启动 Claude Code、追加 `/bandi:bandi`、读取输出、保存 PID 或管理 Session。
-- 文件操作必须限定到已确认的配置目标，规范化并校验路径，防止路径穿越、符号链接越界和意外覆盖。
-- 删除、覆盖、恢复、扩大权限、写入外部配置及启动外部进程属于高风险操作，必须在界面中展示真实影响并获得独立确认。
-- 普通配置保存应执行基线检查、外部变化检测和原子写入；失败时保留原文件并返回可理解的错误，不以备份替代安全写入。
+- Shell 和外部进程禁止。Client Launch v3 是唯一外部继续使用合同且仅准备上下文，只接受稳定 `teamId / agentId / taskId?`；后端必须从 Bandi 受管数据重取并复核实体关系。不得接受或回传 cwd、TaskBrief 正文、prompt、bundle ID、executable、argv、Shell、AppleScript、环境变量、stdin、脚本或通用进程请求；不得打开目录或终端、启动 Claude Code、追加 `/bandi:bandi`、读取输出、保存 PID 或管理 Session。
+- 文件操作必须限定到 Bandi 自有数据，规范化并校验路径，防止路径穿越、符号链接越界和意外覆盖；Bandi 不接受、访问、扫描、修改或删除任意用户目录。
+- 删除、覆盖、恢复或扩大权限属于高风险操作，必须在界面中展示真实影响并获得独立确认；删除与恢复仅处理 Bandi 自有数据。
+- 普通配置和 Agent 长期 Memory 保存应执行受限目标校验、基线检查、外部变化检测、原子写入、重读验证、Revision 和 recovery；Memory 直接保存，不增加额外流程或状态机。失败时保留原文件并返回可理解的错误，不以备份替代安全写入。
 
 ## 数据与安全
 
 - 凭据、Token、Cookie、私钥和钥匙串数据不得写入日志、错误详情、前端状态、普通配置、快照或远程备份。
 - 执行过程、终端输出和 Claude Code 会话内容永不备份。
-- Git 远程备份仅允许 Private 仓库；正式记忆加入远程备份前必须获得用户单独确认。
+- Git 远程备份仅允许 Private 仓库；Agent 长期 Memory 加入远程备份前必须获得用户单独确认。
 - Rust 错误应保留可诊断上下文，但返回前端的信息不得泄露敏感路径、环境变量或秘密值。
 - 前端传入数据一律视为不可信；校验长度、枚举、标识符、路径和状态前置条件，不依赖 UI 已做校验。
+- 旧非零开发数据库不迁移、不双读、不生成兼容投影，只返回恢复出厂并重启的要求；恢复出厂仅清理 Bandi 自有数据。
 - 不引入与当前需求无关的后台服务、自动守护进程、遥测、网络请求或持久化层。
 
 ## Rust 实现

@@ -5,7 +5,7 @@ import { resetSandbox, sandboxEnv } from './sandbox.js'
 
 await run('pnpm', ['--filter', '@bandi/desktop-e2e', 'build:app'], { cwd: repoRoot })
 
-const baseEnv = {
+const baseEnv: Record<string, string> = {
   ...sandboxEnv(),
   // WebdriverIO 9 的 Undici dispatcher 与 Node 26 不兼容；原生 fetch 在受支持版本上行为一致。
   WDIO_USE_NATIVE_FETCH: '1',

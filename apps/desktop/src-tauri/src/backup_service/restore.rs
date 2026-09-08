@@ -31,10 +31,8 @@ fn config_change(kind: &str, value: String) -> Option<ConfigChangeDto> {
         "mcp" => ConfigChangeDto::Mcp { value },
         "permissions" => ConfigChangeDto::Permissions { value },
         "sop" => ConfigChangeDto::Sop { value },
-        "orchestration" => ConfigChangeDto::Orchestration { value },
         "hooks" => ConfigChangeDto::Hooks { value },
         "commands" => ConfigChangeDto::Commands { value },
-        "workspace_binding" => ConfigChangeDto::WorkspaceBinding { value },
         _ => return None,
     })
 }
@@ -152,18 +150,27 @@ fn save_result(asset_id: String, result: SaveConfigResult) -> BackupRestoreEntry
             asset_id,
             status: "restored".into(),
             revision_id: Some(revision.id),
+            retryable: None,
+            file_state: None,
+            recovery_ref: None,
             diagnostics: Vec::new(),
         },
         SaveConfigResult::Unchanged { .. } => BackupRestoreEntryResultDto {
             asset_id,
             status: "skipped".into(),
             revision_id: None,
+            retryable: None,
+            file_state: None,
+            recovery_ref: None,
             diagnostics: Vec::new(),
         },
         SaveConfigResult::BaselineChanged { diagnostics, .. } => BackupRestoreEntryResultDto {
             asset_id,
             status: "baseline_changed".into(),
             revision_id: None,
+            retryable: None,
+            file_state: None,
+            recovery_ref: None,
             diagnostics,
         },
         SaveConfigResult::ConfirmationRequired { diagnostics, .. } => {
@@ -177,14 +184,34 @@ fn save_result(asset_id: String, result: SaveConfigResult) -> BackupRestoreEntry
                 asset_id,
                 status: "save_failed".into(),
                 revision_id: None,
+                retryable: Some(false),
+                file_state: Some("unchanged".into()),
+                recovery_ref: None,
                 diagnostics,
             }
         }
-        SaveConfigResult::ValidationFailed { diagnostics, .. }
-        | SaveConfigResult::SaveFailed { diagnostics, .. } => BackupRestoreEntryResultDto {
+        SaveConfigResult::ValidationFailed { diagnostics, .. } => BackupRestoreEntryResultDto {
+            asset_id,
+            status: "validation_failed".into(),
+            revision_id: None,
+            retryable: None,
+            file_state: Some("unchanged".into()),
+            recovery_ref: None,
+            diagnostics,
+        },
+        SaveConfigResult::SaveFailed {
+            diagnostics,
+            retryable,
+            file_state,
+            recovery_ref,
+            ..
+        } => BackupRestoreEntryResultDto {
             asset_id,
             status: "save_failed".into(),
             revision_id: None,
+            retryable: Some(retryable),
+            file_state: Some(file_state),
+            recovery_ref,
             diagnostics,
         },
     }
@@ -192,7 +219,6 @@ fn save_result(asset_id: String, result: SaveConfigResult) -> BackupRestoreEntry
 
 pub(crate) fn restore_snapshot_at(
     database: &Path,
-    registry_root: &Path,
     managed_root: &Path,
     revisions_root: &Path,
     backup_root: &Path,
@@ -207,6 +233,7 @@ pub(crate) fn restore_snapshot_at(
     }
     validate_asset_ids(&request.asset_ids)?;
     let connection = domain_store::open_at(database)?;
+    load_snapshot(&connection, &request.snapshot_id)?;
     let preview: Option<(String, String, String, String)> = connection
         .query_row(
             "SELECT snapshot_id, requested_asset_ids_json, current_baselines_json, expires_at
@@ -251,7 +278,7 @@ pub(crate) fn restore_snapshot_at(
     let mut results = Vec::new();
     for (index, asset_id) in request.asset_ids.iter().enumerate() {
         results.push(restore_entry(
-            registry_root,
+            database,
             managed_root,
             revisions_root,
             backup_root,
@@ -302,7 +329,7 @@ pub(crate) fn restore_snapshot_at(
 
 #[allow(clippy::too_many_arguments)]
 fn restore_entry(
-    registry_root: &Path,
+    database: &Path,
     managed_root: &Path,
     revisions_root: &Path,
     backup_root: &Path,
@@ -327,6 +354,9 @@ fn restore_entry(
                 asset_id: asset_id.into(),
                 status: "integrity_failed".into(),
                 revision_id: None,
+                retryable: None,
+                file_state: None,
+                recovery_ref: None,
                 diagnostics: vec![*issue],
             }
         }
@@ -387,7 +417,7 @@ fn restore_entry(
         );
     };
     let result = local_service::save_config_registered_at(
-        registry_root,
+        database,
         managed_root,
         revisions_root,
         SaveConfigRequest {
@@ -414,6 +444,40 @@ fn failed_entry(
         asset_id: asset_id.into(),
         status: status.into(),
         revision_id: None,
+        retryable: None,
+        file_state: None,
+        recovery_ref: None,
         diagnostics: vec![diagnostic(code, message, remediation)],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::save_result;
+    use crate::local_service::SaveConfigResult;
+
+    #[test]
+    fn save_failure_preserves_recovery_state() {
+        let result = save_result(
+            "asset-permissions-1".into(),
+            SaveConfigResult::SaveFailed {
+                request_id: "restore-save-1".into(),
+                diagnostics: Vec::new(),
+                retryable: true,
+                file_state: "verified_written_revision_pending".into(),
+                recovery_ref: Some("revision-backup-recovery-1".into()),
+            },
+        );
+
+        assert_eq!(result.status, "save_failed");
+        assert_eq!(result.retryable, Some(true));
+        assert_eq!(
+            result.file_state.as_deref(),
+            Some("verified_written_revision_pending")
+        );
+        assert_eq!(
+            result.recovery_ref.as_deref(),
+            Some("revision-backup-recovery-1")
+        );
     }
 }

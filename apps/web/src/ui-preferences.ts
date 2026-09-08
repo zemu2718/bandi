@@ -10,7 +10,7 @@ export const LEGACY_THEME_STORAGE_KEY = 'bandi-theme'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type EffectiveTheme = 'light' | 'dark'
-export type InterfaceFont = 'bandi' | 'system'
+export type InterfaceFont = 'bandi' | 'system' | 'rounded'
 export type MonoFont = 'system' | 'classic'
 export type FontScale = 'small' | 'default' | 'large'
 export type UiDensity = 'compact' | 'default' | 'comfortable'
@@ -91,7 +91,7 @@ export function parseUiPreferences(value: unknown): UiPreferences {
     accentColor: typeof value.accentColor === 'string'
       ? normalizeHexColor(value.accentColor) ?? DEFAULT_UI_PREFERENCES.accentColor
       : DEFAULT_UI_PREFERENCES.accentColor,
-    interfaceFont: oneOf(value.interfaceFont, ['bandi', 'system'], DEFAULT_UI_PREFERENCES.interfaceFont),
+    interfaceFont: oneOf(value.interfaceFont, ['bandi', 'system', 'rounded'], DEFAULT_UI_PREFERENCES.interfaceFont),
     monoFont: oneOf(value.monoFont, ['system', 'classic'], DEFAULT_UI_PREFERENCES.monoFont),
     fontScale: oneOf(value.fontScale, ['small', 'default', 'large'], DEFAULT_UI_PREFERENCES.fontScale),
     density: oneOf(value.density, ['compact', 'default', 'comfortable'], DEFAULT_UI_PREFERENCES.density),

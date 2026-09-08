@@ -6,8 +6,6 @@ const files: AgentFile[] = [
   { path: 'agent.yaml', type: '身份', status: '已保存', scope: { kind: 'agent-root' } },
   { path: 'instructions.md', type: '指令', status: '已保存', scope: { kind: 'agent-root' } },
   { path: 'config/rules.yaml', type: '规则', status: '已保存', scope: { kind: 'agent-root' } },
-  { path: 'workspaces/bandi/config.yaml', type: '配置', status: '已保存', scope: { kind: 'workspace', workspaceId: 'bandi' } },
-  { path: 'workspaces/bandi/memory.md', type: '记忆', status: '已保存', scope: { kind: 'workspace', workspaceId: 'bandi' } },
 ]
 
 describe('AgentPackage 目录树', () => {
@@ -15,14 +13,12 @@ describe('AgentPackage 目录树', () => {
     const before = structuredClone(files)
     const tree = buildAgentPackageTree(files)
     expect(findAgentPackageNode(tree, 'config')?.kind).toBe('directory')
-    expect(findAgentPackageNode(tree, 'workspaces/bandi/config.yaml')?.file?.scope).toEqual({ kind: 'workspace', workspaceId: 'bandi' })
-    expect(findAgentPackageNode(tree, 'workspaces/bandi/memory.md')?.kind).toBe('file')
     expect(files).toEqual(before)
   })
 
   it('同级目录排在文件前且各自按名称排序', () => {
     const tree = buildAgentPackageTree(files)
-    expect(tree.map((item) => item.path)).toEqual(['config', 'workspaces', 'agent.yaml', 'instructions.md'])
+    expect(tree.map((item) => item.path)).toEqual(['config', 'agent.yaml', 'instructions.md'])
   })
 
   it('忽略重复和非法路径', () => {

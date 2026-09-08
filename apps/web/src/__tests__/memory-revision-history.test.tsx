@@ -63,7 +63,7 @@ describe('正式记忆版本历史', () => {
     expect(screen.getByText(revision.parentRevisionId!)).toBeInTheDocument()
     expect(screen.getByText(revision.candidateId)).toBeInTheDocument()
     expect(screen.queryByText(revision.writtenAt)).not.toBeInTheDocument()
-    expect(screen.getByText(new RegExp(revision.reviewPrincipal.kind === 'agent' ? revision.reviewPrincipal.agentId : revision.reviewPrincipal.companyId))).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(revision.reviewPrincipal.kind === 'agent' ? revision.reviewPrincipal.agentId : revision.reviewPrincipal.teamId))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /恢复/ })).not.toBeInTheDocument()
   })
 

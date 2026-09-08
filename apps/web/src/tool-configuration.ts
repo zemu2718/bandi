@@ -25,7 +25,7 @@ export function applyToolConfigurationSnapshot(snapshot: ToolConfigurationSnapsh
     kind: 'custom',
     name: tool.name,
     shortName: tool.name.slice(0, 2).toUpperCase(),
-    description: '用户登记的自定义工具',
+    description: '用户添加的自定义工具',
     detection: 'not-checked',
     persistence: 'memory-only',
   }))

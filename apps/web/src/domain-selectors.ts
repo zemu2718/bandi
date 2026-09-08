@@ -1,9 +1,8 @@
-import { getLatestAgentRevision, getRecentWorkspaceRevisions, listConfigRevisions } from './config-revisions'
-import { workspaceConfigPath } from './agent-config-model'
+import { getLatestAgentRevision, listConfigRevisions } from './config-revisions'
 import { getAgentPackageEditability } from './agent-package-schema'
 import { validateParameterBindings } from './component-parameters'
-import { findDelegationCycles, validateOrchestrationOverride, validateOrchestrationPolicy } from './orchestration-policy'
-import type { ConfigRevision, FullAgent, FullAsset, FullWorkspace, Role } from './domain'
+import type { ConfigRevision, FullAgent, FullAsset } from './domain'
+import type { AgentRecoveryOperationSummaryDto, Diagnostic, TeamDto } from './contracts'
 import type { PluginInstallation } from './plugin-installation'
 
 export type ConfigIssue = {
@@ -11,18 +10,11 @@ export type ConfigIssue = {
     | 'external-change'
     | 'missing-reference'
     | 'skill-unavailable'
-    | 'missing-workspace'
-    | 'missing-binding-file'
     | 'unverified'
     | 'package-legacy'
     | 'package-future'
     | 'package-unverified'
     | 'manifest-invalid'
-    | 'role-missing'
-    | 'role-scope-mismatch'
-    | 'orchestration-invalid'
-    | 'orchestration-expanded'
-    | 'delegation-cycle'
     | 'asset-kind-mismatch'
     | 'plugin-unavailable'
     | 'parameter-invalid'
@@ -36,23 +28,36 @@ export type ConfigStatus = {
 }
 
 type SelectorState = {
+  runtime: 'web' | 'desktop'
+  hydration: Record<'managedAgents' | 'organization' | 'sharedAssets' | 'agentRecovery' | 'toolConfiguration', 'idle' | 'loading' | 'succeeded' | 'failed'>
+  onboarding: { status: 'active' | 'completed' }
   agents: FullAgent[]
-  workspaces: FullWorkspace[]
+  teams: TeamDto[]
   assets: FullAsset[]
-  roles: Role[]
   pluginInstallations: PluginInstallation[]
   configRevisions: ConfigRevision[]
+  agentDiagnostics: Diagnostic[]
+  agentRecoveryOperations: AgentRecoveryOperationSummaryDto[]
 }
 
-export function getAgentsBoundToWorkspace(state: Pick<SelectorState, 'agents'>, workspaceId: string): FullAgent[] {
-  return state.agents.filter((agent) => agent.workspaceBindings.some((binding) => binding.workspaceId === workspaceId))
+export type ConfigurationStatusItem =
+  | { kind: 'agent'; agent: FullAgent; status: ConfigStatus }
+  | { kind: 'diagnostic'; diagnostic: Diagnostic; index: number }
+  | { kind: 'recovery'; operation: AgentRecoveryOperationSummaryDto }
+
+export type ConfigurationStatusSummary = {
+  phase: 'failed' | 'loading' | 'pending' | 'first-use' | 'healthy'
+  items: ConfigurationStatusItem[]
 }
 
-export function getDanglingWorkspaceBindings(state: Pick<SelectorState, 'agents' | 'workspaces'>) {
-  const indexed = new Set(state.workspaces.map((workspace) => workspace.id))
-  return state.agents.flatMap((agent) => agent.workspaceBindings
-    .filter((binding) => !indexed.has(binding.workspaceId))
-    .map((binding) => ({ agent, binding })))
+export function getAvailableAgents(
+  state: Pick<SelectorState, 'agents' | 'teams'>,
+  teamId?: string,
+): FullAgent[] {
+  const active = state.agents.filter((agent) => agent.status === 'active')
+  if (!teamId) return active
+  if (!state.teams.some((item) => item.id === teamId)) return []
+  return active.filter((agent) => agent.teamId === teamId)
 }
 
 function missingReferences(ids: string[], assets: FullAsset[]) {
@@ -85,28 +90,15 @@ function validateComponentReferences(
   })
 }
 
-export function getAgentConfigStatus(state: Pick<SelectorState, 'agents' | 'workspaces' | 'assets' | 'roles' | 'pluginInstallations'>, agent: FullAgent): ConfigStatus {
+export function getAgentConfigStatus(state: Pick<SelectorState, 'assets' | 'pluginInstallations'>, agent: FullAgent): ConfigStatus {
   const issues: ConfigIssue[] = []
   if (agent.files.some((file) => file.status.includes('外部变化'))) issues.push({ code: 'external-change', label: '存在预置的外部变化记录' })
-  if (agent.packageSchema.compatibility === 'legacy') issues.push({ code: 'package-legacy', label: 'AgentPackage 为旧版，只读且需要明确升级' })
-  if (agent.packageSchema.compatibility === 'future') issues.push({ code: 'package-future', label: 'AgentPackage 来自更高版本，禁止降级保存' })
-  if (agent.packageSchema.compatibility === 'unverified') issues.push({ code: 'package-unverified', label: '外部 AgentPackage 未读取和验证，仅保留引用' })
-  if (!getAgentPackageEditability(agent.packageSchema).editable && agent.packageSchema.compatibility === 'current') issues.push({ code: 'manifest-invalid', label: 'AgentPackage schema 元数据不一致' })
-  const organizationFields = [agent.roleId, agent.companyId, agent.primaryDepartmentId]
-  const organizationCount = organizationFields.filter(Boolean).length
-  if (organizationCount > 0 && organizationCount < organizationFields.length) {
-    issues.push({ code: 'role-scope-mismatch', label: '组织关联必须同时包含公司、主属部门和岗位' })
-  } else if (agent.roleId) {
-    const role = state.roles.find((item) => item.id === agent.roleId)
-    if (!role) issues.push({ code: 'role-missing', label: `Role ${agent.roleId} 不存在` })
-    else if (role.companyId !== agent.companyId || (role.departmentId && role.departmentId !== agent.primaryDepartmentId)) issues.push({ code: 'role-scope-mismatch', label: `Role ${role.name} 与 Agent 的公司或部门作用域不匹配` })
-  }
+  if (agent.packageSchema.compatibility === 'legacy') issues.push({ code: 'package-legacy', label: 'Agent 配置为旧版，升级前只能查看' })
+  if (agent.packageSchema.compatibility === 'future') issues.push({ code: 'package-future', label: 'Agent 配置来自更高版本，当前版本不会降级保存' })
+  if (agent.packageSchema.compatibility === 'unverified') issues.push({ code: 'package-unverified', label: '历史外部 Agent 引用未读取和验证，仅兼容查看' })
+  if (!getAgentPackageEditability(agent.packageSchema).editable && agent.packageSchema.compatibility === 'current') issues.push({ code: 'manifest-invalid', label: 'Agent 配置的格式信息不一致' })
   const missingRootRefs = missingReferences([...agent.ruleRefs, ...agent.skillRefs, ...agent.mcpRefs, ...agent.sopRefs], state.assets)
   if (missingRootRefs.length) issues.push({ code: 'missing-reference', label: `存在失效引用：${missingRootRefs.join('、')}` })
-  const orchestrationIssues = validateOrchestrationPolicy(agent.orchestrationPolicy)
-  issues.push(...orchestrationIssues.map((issue) => ({ code: 'orchestration-invalid' as const, label: issue.message })))
-  const cycles = findDelegationCycles(new Map(state.agents.map((item) => [item.id, item.orchestrationPolicy.allowedAgentIds])))
-  if (cycles.some((cycle) => cycle.includes(agent.id))) issues.push({ code: 'delegation-cycle', label: `委派范围存在环：${cycles.find((cycle) => cycle.includes(agent.id))?.join(' → ')}` })
   issues.push(...validateComponentReferences(agent.hookRefs, 'Hook', state, 'Hook'))
   issues.push(...validateComponentReferences(agent.commandRefs, 'Command', state, 'Command'))
   if (agent.outputProfileId) {
@@ -115,24 +107,7 @@ export function getAgentConfigStatus(state: Pick<SelectorState, 'agents' | 'work
     else if (output.kind !== 'OutputProfile' || !output.outputProfile) issues.push({ code: 'asset-kind-mismatch', label: `${agent.outputProfileId} 不是有效的 OutputProfile` })
     else issues.push(...validateParameterBindings(output.outputProfile.parameters, agent.outputParameterBindings).map((issue) => ({ code: 'parameter-invalid' as const, label: `OutputProfile ${issue.parameterId}：${issue.message}` })))
   }
-  const workspaceIds = new Set(state.workspaces.map((workspace) => workspace.id))
-  for (const binding of agent.workspaceBindings) {
-    if (!workspaceIds.has(binding.workspaceId)) issues.push({ code: 'missing-workspace', label: `工作区 ${binding.workspaceId} 不在当前索引中` })
-    const path = workspaceConfigPath(binding.workspaceId)
-    if (agent.packageSource.kind !== 'external-reference' && (!path || !agent.files.some((file) => file.path === path))) issues.push({ code: 'missing-binding-file', label: `${binding.workspaceId} Binding 未登记配置文件` })
-    const missing = missingReferences([...binding.ruleIds, ...binding.skillIds, ...binding.mcpIds], state.assets)
-    if (missing.length) issues.push({ code: 'missing-reference', label: `${binding.workspaceId} 存在失效引用：${missing.join('、')}` })
-    if (binding.orchestrationPolicy) issues.push(...validateOrchestrationOverride(agent.orchestrationPolicy, binding.orchestrationPolicy).map((issue) => ({ code: 'orchestration-expanded' as const, label: `${binding.workspaceId}：${issue.message}` })))
-    issues.push(...validateComponentReferences(binding.hookRefs ?? [], 'Hook', state, `${binding.workspaceId} Hook`))
-    issues.push(...validateComponentReferences(binding.commandRefs ?? [], 'Command', state, `${binding.workspaceId} Command`))
-    if (binding.outputProfileId) {
-      const output = state.assets.find((item) => item.id === binding.outputProfileId)
-      if (!output) issues.push({ code: 'missing-reference', label: `${binding.workspaceId} OutputProfile ${binding.outputProfileId} 不存在` })
-      else if (output.kind !== 'OutputProfile' || !output.outputProfile) issues.push({ code: 'asset-kind-mismatch', label: `${binding.workspaceId} 的 ${binding.outputProfileId} 不是有效 OutputProfile` })
-      else issues.push(...validateParameterBindings(output.outputProfile.parameters, binding.outputParameterBindings ?? []).map((issue) => ({ code: 'parameter-invalid' as const, label: `${binding.workspaceId} OutputProfile ${issue.parameterId}：${issue.message}` })))
-    }
-  }
-  for (const skillId of [...agent.skillRefs, ...agent.workspaceBindings.flatMap((binding) => binding.skillIds)]) {
+  for (const skillId of agent.skillRefs) {
     const skill = state.assets.find((asset) => asset.id === skillId)?.skill
     if (!skill || skill.installation.status === 'available') issues.push({ code: 'skill-unavailable', label: `Skill ${skillId} 当前不可用` })
   }
@@ -141,22 +116,26 @@ export function getAgentConfigStatus(state: Pick<SelectorState, 'agents' | 'work
   return { level: 'error', label: '配置缺口', issues }
 }
 
-export function getWorkspaceConfigStatus(state: Pick<SelectorState, 'agents' | 'workspaces' | 'assets' | 'roles' | 'pluginInstallations'>, workspace: FullWorkspace): ConfigStatus {
-  if (!workspace.files.length) return { level: 'unknown', label: '未验证', issues: [{ code: 'unverified', label: '尚未读取工作区目录或文件' }] }
-  const agents = getAgentsBoundToWorkspace(state, workspace.id)
-  const issues = agents.flatMap((agent) => getAgentConfigStatus(state, agent).issues.filter((issue) => issue.label.includes(workspace.id) || issue.code === 'external-change'))
-  if (workspace.files.some((file) => file.status.includes('外部变化'))) issues.unshift({ code: 'external-change', label: '工作区存在预置的外部变化记录' })
-  if (!issues.length) return { level: 'healthy', label: '配置完整', issues }
-  return { level: issues.some((issue) => issue.code === 'external-change') ? 'warning' : 'error', label: issues.some((issue) => issue.code === 'external-change') ? '外部变化' : '配置缺口', issues }
+export function getConfigurationStatusSummary(state: SelectorState): ConfigurationStatusSummary {
+  const items: ConfigurationStatusItem[] = [
+    ...state.agents.flatMap((agent) => {
+      const status = getAgentConfigStatus(state, agent)
+      return status.level === 'healthy' ? [] : [{ kind: 'agent' as const, agent, status }]
+    }),
+    ...state.agentDiagnostics.map((diagnostic, index) => ({ kind: 'diagnostic' as const, diagnostic, index })),
+    ...state.agentRecoveryOperations
+      .filter((operation) => operation.status !== 'completed')
+      .map((operation) => ({ kind: 'recovery' as const, operation })),
+  ]
+  if (state.runtime === 'desktop' && Object.values(state.hydration).some((status) => status === 'failed')) return { phase: 'failed', items }
+  if (items.length) return { phase: 'pending', items }
+  if (state.runtime === 'desktop' && Object.values(state.hydration).some((status) => status === 'loading')) return { phase: 'loading', items }
+  if (state.onboarding.status === 'active' || !state.agents.length) return { phase: 'first-use', items }
+  return { phase: 'healthy', items }
 }
 
 export function getLatestRevisionForAgent(state: Pick<SelectorState, 'configRevisions'>, agentId: string) {
   return getLatestAgentRevision(state.configRevisions, agentId)
-}
-
-export function getRecentRevisionsForWorkspace(state: Pick<SelectorState, 'agents' | 'configRevisions'>, workspaceId: string) {
-  const agentIds = getAgentsBoundToWorkspace(state, workspaceId).map((agent) => agent.id)
-  return getRecentWorkspaceRevisions(state.configRevisions, agentIds, workspaceId)
 }
 
 export function getConfigHistory(state: Pick<SelectorState, 'configRevisions'>, ownerType: ConfigRevision['ownerType'], ownerId: string, path: string) {

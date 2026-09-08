@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bandi.local/contracts/formal-memory-v4.schema.json",
+  "title": "Bandi Formal Memory v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["space", "saveRequest", "savedResult"],
+  "properties": {
+    "space": { "$ref": "#/$defs/space" },
+    "saveRequest": { "$ref": "#/$defs/saveRequest" },
+    "savedResult": { "$ref": "#/$defs/savedResult" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rootKind", "displayPath", "relativePath"],
+      "properties": {
+        "rootKind": { "enum": ["managed", "bandi"] },
+        "displayPath": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "relativePath": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "assetId", "containerId", "assetContentHash", "containerContentHash"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "assetId": { "$ref": "#/$defs/id" },
+        "containerId": { "$ref": "#/$defs/id" },
+        "assetContentHash": { "$ref": "#/$defs/hash" },
+        "containerContentHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "scopeKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "agentId"],
+      "properties": {
+        "kind": { "const": "agent_long_term" },
+        "agentId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "agentId"],
+      "properties": {
+        "kind": { "const": "agent" },
+        "agentId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "space": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scopeType", "scopeKey", "owner", "stewardAgentId", "visibilityPolicy", "storageProfileVersion", "state", "storageLocator", "contentHash", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "scopeType": { "const": "agent_long_term" },
+        "scopeKey": { "$ref": "#/$defs/scopeKey" },
+        "owner": { "$ref": "#/$defs/owner" },
+        "stewardAgentId": { "$ref": "#/$defs/id" },
+        "visibilityPolicy": { "const": "agent_private" },
+        "storageProfileVersion": { "const": "memory-v4" },
+        "state": { "enum": ["active", "read_only_history"] },
+        "storageLocator": { "$ref": "#/$defs/locator" },
+        "currentRevisionId": { "$ref": "#/$defs/id" },
+        "contentHash": { "$ref": "#/$defs/hash" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "saveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "spaceId", "expectedOwner", "content", "expectedBaseline", "baseContent"],
+      "properties": {
+        "requestId": { "$ref": "#/$defs/id" },
+        "spaceId": { "$ref": "#/$defs/id" },
+        "expectedOwner": { "$ref": "#/$defs/owner" },
+        "content": { "type": "string", "maxLength": 1048576 },
+        "expectedBaseline": { "$ref": "#/$defs/baseline" },
+        "baseContent": { "type": "string", "maxLength": 1048576 }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "spaceId", "sourceContentHash", "contentHash", "storageLocator", "writeReceiptId", "writtenAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "spaceId": { "$ref": "#/$defs/id" },
+        "parentRevisionId": { "$ref": "#/$defs/id" },
+        "sourceContentHash": { "$ref": "#/$defs/hash" },
+        "contentHash": { "$ref": "#/$defs/hash" },
+        "storageLocator": { "$ref": "#/$defs/locator" },
+        "writeReceiptId": { "$ref": "#/$defs/id" },
+        "writtenAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "containerId", "previousContainerHash", "writtenContainerHash", "verifiedAt", "atomicReplace"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "containerId": { "$ref": "#/$defs/id" },
+        "previousContainerHash": { "$ref": "#/$defs/hash" },
+        "writtenContainerHash": { "$ref": "#/$defs/hash" },
+        "verifiedAt": { "$ref": "#/$defs/timestamp" },
+        "atomicReplace": { "const": true }
+      }
+    },
+    "savedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "requestId", "space", "revision", "writeReceipt"],
+      "properties": {
+        "kind": { "const": "saved" },
+        "requestId": { "$ref": "#/$defs/id" },
+        "space": { "$ref": "#/$defs/space" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "writeReceipt": { "$ref": "#/$defs/receipt" }
+      }
+    }
+  }
+}

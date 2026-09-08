@@ -1,127 +1,112 @@
-# Bandi（班底）
+<div align="center">
 
-现实创业公司的本地数字孪生与长期 Agent 配置管理平面：在 Desktop 中可视化管理多 Agent 配置、组织关系和版本历史，在用户自己的 Claude Code CLI 中指挥班底工作。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme-bandi-mark-light.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/readme-bandi-mark-dark.png">
+  <img src="assets/readme-bandi-mark-dark.png" alt="Bandi 标志" width="200">
+</picture>
 
-> [!NOTE]
-> 仓库当前包含 React Web Mock、Tauri Desktop、本地 Rust 领域服务、SQLite/WAL、Workspace Registry、AI Adapter Registry、RestrictedConfigWriter、`bandi` CLI 与 Bandi Plugin；仍不建议用于生产环境。纯 Web 继续使用明确标识的页面内存演示，Desktop 已接入的真实能力以本地服务回执、受管文件事实和共享合同为准。
+# Bandi · 班底
 
-## 核心边界
+**可视化管理 AI Agent 的长期配置。**
 
-Bandi Desktop 管理“下次及以后如何工作”的长期配置：
+本地优先地管理长期 Agent、Team、配置与历史，再回到你自己的 Claude Code 中工作。
 
-- 基于稳定 `agent-id` 的 AgentPackage；
-- Instructions、Skills、正式 Memory、Rules、MCP、长期权限和 SOP；
-- Agent × Workspace 专属配置；
-- 多 Company、树形 Department、岗位、成员与明确服务授权；
-- 配置保存版本、文件历史、版本 Diff 与恢复；
-- 外部文件变化、配置文件冲突、共享配置影响和高风险长期变更确认；
-- 正式 `MemoryCandidate → Review → MemoryRevision` 治理；
-- 独立的本地快照与私有 Git 备份策略。
+[![Apache License 2.0](https://img.shields.io/github/license/zemu2718/bandi?style=flat-square)](LICENSE) ![Development](https://img.shields.io/badge/status-development-orange?style=flat-square) [![Desktop platforms](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml/badge.svg?branch=main)](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml?query=branch%3Amain)
 
-用户自己的 Claude Code CLI 管理“这一次正在如何工作”：
+[你会得到什么](#你会得到什么) · [如何工作](#它怎样工作) · [本地运行](#本地运行) · [默认边界](#默认边界)
 
-- 目标与方案确认；
-- 部门和员工分配；
-- 执行、阻塞与调整；
-- 某次工具调用的一次性权限授权；
-- 任务冲突、任务审批、逐级汇报与最终验收；
-- 聊天、工具调用、Todo、日志、Agent View、Session 和执行状态。
+🌐 [English](README.en.md)
 
-Desktop 不建立任务中心、审批中心、运行监控台或 Session 镜像，也不为每次任务要求用户选人。界面中的**工作区**是一个本地项目及其长期配置作用域，**本地目录**是该工作区登记的路径，只有进入外部 CLI 的指引才将这个路径称为**工作目录（cwd）**。当前工作区交接契约只接受 `clientId / adapterId / workspaceId / terminalId / intent`，由后端从 Workspace Registry 重取 canonical cwd。macOS 仅通过固定 `/usr/bin/open` 请求白名单终端打开目录；Windows 首版不启动终端，明确降级为复制路径后手动继续。通用 `executable`、`argv`、Shell、自动执行 `/bandi:bandi` 和 fallback 命令回传均不属于产品能力。交接被系统接受也不代表客户端已安装、连接、运行或创建了 Session。
+</div>
 
-首版内置 AI 编程工具目录固定为 Claude Code、Claude Desktop、Codex、Gemini CLI、Grok Build、OpenCode、OpenClaw、Hermes 和 Pi；完整稳定 ID 与逐项能力状态见[首版能力矩阵](./docs/首版能力矩阵.md)。目录身份只表示 Bandi 能稳定识别该工具，不证明本机安装、配置、连接、交接或 Bandi 集成可用。用户可以同时在 Claude Code、Codex、OpenClaw 等宿主工具中打开多个终端；DeepSeek 等通常是宿主工具中的 Model / Provider，不单独视为终端客户端。Bandi 不跟踪这些终端或会话，多个外部程序对配置文件的影响统一通过“编辑基线 → 保存前复核 → 三方 Diff → 解决冲突后重新保存”处理，也不猜测修改来自哪个终端。
+## 你会得到什么
 
-## 日常主线
+- **看清每个 Agent 的长期配置：** 在一个界面中查看 Agent 的 Team 归属、Instructions、Rules、Skills、MCP、权限、SOP 与长期 Memory。
+- **放心修改并随时回看：** 保存前检查外部变化，成功写入后保留 ConfigRevision 或 MemoryRevision，并提供本地备份与恢复能力。
+- **把配置管理与任务执行分开：** Bandi 维护“下次及以后如何工作”；当前任务的协作、授权、执行与验收仍在你自己的 Claude Code CLI 中完成。
+
+## Bandi 管理什么
+
+Bandi 的长期关系保持简单：
 
 ```text
-选择 Agent
-→ 查看配置
-→ 修改
-→ 保存并记录 ConfigRevision
-→ 按需查看历史、比较或恢复
-→ 回到 Claude Code 使用
+Team → Agent → 可选任务简报
 ```
 
-普通配置直接保存，不经过通用草稿、审批或发布流程。只有三类场景打断主线：
+每个 Agent 归属于一个 Team；个人使用时由内置 Personal Team 承载，无需先搭建组织。任务简报（TaskBrief）归属于 Team，用来提前整理一次任务的目标、背景、约束和期望产出，方便在 Claude Code 中继续沟通和执行。它不记录参与 Agent、进度、Todo、审批、日志或验收状态，也不会在 Bandi 中执行或跟踪任务。
 
-1. 数据安全异常，例如外部并发变化或配置文件冲突；
-2. 用户正在发起的高风险长期变更，例如扩大 AgentPackage 权限、恢复或永久删除；
-3. 正式记忆治理。
+| 场景 | Bandi Desktop | Claude Code CLI |
+| --- | --- | --- |
+| **长期 Agent** | 创建或导入 Agent，维护 Team 归属与 AgentPackage | 使用已配置的 Agent 完成当前任务 |
+| **配置与权限** | 编辑长期配置、默认策略与能力边界 | 处理当前任务的一次性权限请求 |
+| **Memory 与历史** | 保存 Agent 长期 Memory、Revision 和本地备份 | 保留当前会话的聊天、Todo、日志与执行反馈 |
+| **任务简报** | 按需整理任务的目标、背景、约束和期望产出 | 决定参与 Agent，并完成协作、汇报与验收 |
 
-权限收紧可以普通保存；永久扩大文件、命令、网络、MCP、数据或委派边界时需要长期权限变更确认。当前任务的一次性授权只在 Claude Code 对话中处理，不自动长期化。
+## 它怎样工作
 
-## 配置版本、正式记忆与备份
+1. **选择 Team 和 Agent。** 从 Personal Team 开始，或按需用 Team 组织多个长期 Agent。
+2. **查看或修改长期配置。** 创建或导入 Agent，在统一界面中编辑受管配置。
+3. **安全保存并保留历史。** Local Service 校验目标和 baseline，原子写入并重读验证，成功后生成 Revision。
+4. **回到 Claude Code 工作。** Bandi 只用稳定 ID 准备所选 Team、Agent 和可选任务简报的上下文；具体任务仍由外部 Claude Code CLI 完成。
 
-- **ConfigRevision**：普通配置每次成功写后验证产生的不可变单资产版本；可比较和恢复，恢复产生新 revision，旧历史不变。
-- **MemoryRevision**：正式 MemoryCandidate 获批并安全写入后产生的版本；不能绕过审核走普通配置保存。
-- **BackupSnapshot**：跨 Agent、Company 或文件的容灾快照；不替代日常版本、基线检查或原子写入。
-- **RuntimeProjection**：CLI / Plugin 按需从当前配置重建的运行时产物；不是 Desktop 的发布对象、配置主源或 Session 状态。
+### 它管理的长期资产
 
-远程 Git 备份只允许私有仓库。凭据、Token、钥匙串数据以及 Claude Code 的聊天与执行过程永不备份；正式 Memory 是否进入远程备份需用户单独确认。
+两个核心对象是：
 
-## SOP
+- **AgentPackage：** 基于稳定 `agent-id` 保存 Agent 身份及其长期配置。
+- **Memory 与 Revision：** 每个 Agent 维护自身长期 Memory；配置和 Memory 的成功写入均留下可追溯版本。
 
-SOP 是供 Claude Code 中的董事长助理和部门主管解析的长期配置定义，描述目标、步骤、责任部门/岗位、输入输出、依赖、确认条件、升级条件和验收标准。Desktop 只负责查看、编辑、保存和版本追溯；不运行 SOP、不产生任务待办或审批队列。
+<details>
+<summary><strong>查看其他长期配置资产</strong></summary>
 
-## 当前已接入
+- **Instructions / Context：** Agent 的长期指令与背景信息。
+- **Rules：** Agent 需要持续遵守的规则。
+- **Skills：** Agent 可引用的技能配置与诊断信息。
+- **MCP：** MCP 服务配置及其长期边界。
+- **Permissions：** 长期能力边界与默认策略；扩大边界时需要独立确认。
+- **SOP：** 供 Claude Code 中的 Agent 使用的工作流定义，Bandi 不负责执行。
+- **Hooks / Commands：** 受管配置内容，不作为 Bandi 的通用命令执行入口。
+- **共享资产：** Team 内显式引用的共享资产与只读引用诊断。
 
-- **React Web Mock**：配置管理界面与页面内存演示事实；`demo-fixture` 表示预置演示资料，`memory-only` 表示本次页面内存操作。
-- **Tauri Desktop 与本地服务**：受限配置发现与编辑器加载、受管 AgentPackage、Workspace Registry、Organization SQLite、全配置族安全保存、ConfigRevision、四类正式 Memory、本地 Backup/Restore、共享资产只读索引与显式引用图。
-- **安全写入链**：稳定资产身份、双哈希基线、外部变化保护、受限原子写入、重读验证和 Revision；恢复与扩大长期权限保留独立确认。
-- **AI 工具目录与交接**：9 个稳定工具/Adapter 身份；当前只有经验证组合可以请求白名单终端打开 Registry 中的 canonical cwd，不启动 AI 工具或管理 Session。
-- **CLI 与 Plugin**：`bandi doctor`、`bandi status`、`bandi config check` 复用本地配置事实；Plugin 提供白名单只读入口，不绕过服务写配置或正式 Memory。
-- **本机个性化窄能力**：固定 `logo` / `background` 槽位和受管 Agent PNG 头像；不接受任意目标路径或远程 URL。
-- **正交状态证据**：数据来源使用 `real / memory-only / demo-fixture / read-only`，系统能力使用 `supported / degraded / unavailable / not_checked`。配置目录项、客户端条目、文件存在或按钮可见性都不能证明已安装、已连接、已保存、已启动或已加载 Session。
+</details>
 
-### 平台状态
+## 本地运行
 
-- **macOS**：继续使用既有数据目录和白名单终端交接；本机 Rust 测试已通过，完整 Web/E2E 回归当前被工作树中另行进行的前端改动阻断。
-- **Windows 10/11 x64**：跨平台路径、安全写入、手动终端交接、真实 Desktop E2E 沙箱、NSIS 配置、安装/卸载 smoke 脚本和双平台 CI 已接入代码。
-- **尚未形成的证据**：Windows runner、真实 NSIS 首装/启动/卸载、覆盖升级、文件占用、reparse point、SmartScreen 与代码签名均尚未执行验收。因此当前 Windows 安装能力为 `not_checked`，不能宣称已可稳定安装使用。
-- Windows 安装器采用 WebView2 Evergreen 在线 bootstrapper；缺少 WebView2 Runtime 时安装过程可能需要联网。CI 预览产物未签名，只用于内部验证；公开发布前必须完成 Authenticode 签名。
-- 数据位置：Windows 应用数据为 `%APPDATA%/com.bandi.desktop`，受管 Agent 为 `%USERPROFILE%/.bandi/agents`；标准卸载设计为保留这些配置资产和用户 Workspace。
+仓库仍处于开发阶段，目前面向源码开发和内部验证，尚未提供正式 GitHub Release。
 
-共享资产本体当前只提供受限根内的可信只读 discovery、组织归属校验和反向引用诊断，不提供创建、编辑、删除、安装或执行事务。跨 Company 独立共享授权尚未建模，越界引用明确标记为 `out_of_scope`。
+安装依赖并启动 Desktop：
 
-## 系统组成
-
-```text
-Bandi Desktop
-    多 Agent 配置、组织关系、版本历史与正式记忆治理
-        ↓
-Rust Local Service
-    配置发现、有效配置解析、RestrictedConfigWriter、版本与审计
-    Workspace Registry、AI Adapter Registry、SQLite/WAL
-        ↑
-Bandi Plugin / bandi CLI
-    Claude Code 侧配置读取、边界校验与受限终端交接
-        ↓
-用户自己的 Claude Code CLI
-    任务交互、分层委派、执行、授权、汇报与验收
+```bash
+pnpm install
+pnpm desktop:dev
 ```
 
-Local Service 是本机领域服务和唯一受控配置写入边界；SQLite/WAL 保存组织、注册表、策略、版本元数据、正式记忆治理与本地快照元数据，不取代真实配置资产。Workspace Registry 保存经用户登记和验证的工作区身份与 canonical path；AI Adapter Registry 保存受支持客户端的稳定 adapter ID、能力声明和验证证据，不接受任意可执行程序或参数模板。各能力的真实、降级、不可用与未检查状态以[首版能力矩阵](./docs/首版能力矩阵.md)为准。
+只查看 Web 界面演示：
 
-## 当前有效文档
+```bash
+pnpm web:dev
+```
 
-1. [产品与页面架构](./docs/产品与页面架构.md) — 产品边界、领域模型、页面架构与首版验收。
-2. [页面低保真线框图](./docs/页面低保真线框图.md) — 配置工作台、Agent 配置、版本历史、条件 Dialog 与正式记忆审核。
-3. [技术架构](./docs/技术架构.md) — 安全写回、ConfigRevision、MemoryRevision、BackupSnapshot 与 Plugin / CLI 边界。
-4. [本地服务与前端联调契约](./docs/本地服务与前端联调契约.md) — Rust / TypeScript 跨进程 DTO、结果与事件契约。
-5. [首版能力矩阵](./docs/首版能力矩阵.md) — 当前真实、降级、不可用与未检查能力证据。
-6. [首版验收报告](./docs/首版验收报告.md) — 自动化、Chromium、故障场景、迁移回滚与用户验收脚本。
+纯 Web 使用明确标识的页面内存演示；真实的本地存储、安全写入和恢复能力以 Tauri Desktop 的 Local Service 回执为准。macOS 已接入 Desktop 闭环；Windows 相关代码和 CI 已进入仓库，但真实安装、升级、卸载、SmartScreen 与签名仍待验证。
 
-`docs/archive/**` 为历史讨论，不作为当前施工契约。
+## 默认边界
 
-## 技术方向
+Bandi 默认只管理自身受管的长期配置资产：
 
-- Tauri 2 + React 19 + TypeScript + Vite；
-- Rust Local Service + SQLite/WAL；
-- Tailwind CSS v4 + Radix + Lucide；
-- Bandi Claude Code Plugin、MCP 与 `bandi` CLI；
-- macOS 保持现有支持；Windows 10/11 x64 适配与 NSIS 验证流水线已接入，真实 Windows 验收与签名待完成；
-- 本地优先，远程能力按真实需求渐进演进。
+- **不执行或调度任务，** 不提供任务中心、审批流或运行监控台；
+- **不启动终端或命令，** Client Launch v3 只准备类型化上下文；
+- **不管理 Session，** 不读取终端输出，也不镜像聊天、Todo 或日志；
+- **不接受、访问、扫描、修改或删除任意用户目录；** 导入仅处理用户明确选择的单个受支持 Agent 文件，并创建受管副本；
+- **不备份凭据和执行过程，** Token、Cookie、私钥、钥匙串数据及 Claude Code 会话内容不进入备份；
+- **删除与恢复只处理 Bandi 自有数据，** 高风险操作保留独立确认和恢复边界。
 
-## License
+### 更多信息
 
-仓库当前包含 [Apache License 2.0](./LICENSE)。
+- **了解产品：** [产品与页面架构](./docs/产品与页面架构.md) · [页面低保真线框图](./docs/页面低保真线框图.md)
+- **核对实现：** [技术架构](./docs/技术架构.md) · [本地服务与前端联调契约](./docs/本地服务与前端联调契约.md) · [首版能力矩阵](./docs/首版能力矩阵.md)
+- **查看验收：** [首版验收报告](./docs/首版验收报告.md) · [反馈问题](https://github.com/zemu2718/bandi/issues)
+
+如果 Bandi 对你有帮助，欢迎给项目点个 Star。
+
+本项目采用 [Apache License 2.0](LICENSE) 开源。

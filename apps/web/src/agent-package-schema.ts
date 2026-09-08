@@ -33,13 +33,13 @@ export function getAgentPackageEditability(
     case 'current':
       return schema.schemaVersion === AGENT_PACKAGE_SCHEMA_VERSION
         ? { editable: true }
-        : { editable: false, reason: 'AgentPackage schema 元数据不一致。' }
+        : { editable: false, reason: 'Agent 配置的格式信息不一致。' }
     case 'legacy':
-      return { editable: false, reason: '旧版 AgentPackage 需明确升级后才能编辑。' }
+      return { editable: false, reason: '旧版 Agent 配置需升级后才能编辑。' }
     case 'future':
-      return { editable: false, reason: '该 AgentPackage 来自更高版本，当前版本禁止降级保存。' }
+      return { editable: false, reason: '该 Agent 配置来自更高版本，当前版本不会降级保存。' }
     case 'unverified':
-      return { editable: false, reason: '外部 AgentPackage 尚未读取和验证，仅可保留引用。' }
+      return { editable: false, reason: '历史外部 Agent 引用未读取和验证，仅兼容查看。' }
   }
 }
 

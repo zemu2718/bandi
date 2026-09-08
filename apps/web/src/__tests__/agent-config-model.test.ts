@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyAgentConfig, describeAgentConfigFile, getAgentConfigPath, isAgentConfigPayload, normalizeAgentName, parseAgentComponentRefs, parseAgentContextConfig, parseAgentMcpRefs, parseAgentOrchestrationPolicy, parseAgentPermissions, parseAgentRuleRefs, parseAgentSkillRefs, parseAgentSopRefs, parseWorkspaceBindingConfig, serializeAgentConfig, snapshotAgentConfig, validateAgentName, validateContextPolicy, validateContextWindowTokens, workspaceConfigPath } from '../agent-config-model'
+import { applyAgentConfig, getAgentConfigPath, isAgentConfigPayload, normalizeAgentName, parseAgentComponentRefs, parseAgentContextConfig, parseAgentMcpRefs, parseAgentOrchestrationPolicy, parseAgentPermissions, parseAgentRuleRefs, parseAgentSkillRefs, parseAgentSopRefs, serializeAgentConfig, snapshotAgentConfig, validateAgentName, validateContextPolicy, validateContextWindowTokens } from '../agent-config-model'
 import { initialAgents } from '../domain'
 
 const agent = initialAgents.find((item) => item.id === 'zhouce')!
@@ -20,27 +20,6 @@ describe('Agent 配置模型', () => {
     expect(getAgentConfigPath({ kind: 'instructions', value: 'x' })).toBe('instructions.md')
     expect(getAgentConfigPath({ kind: 'rules', value: [] })).toBe('config/rules.yaml')
     expect(getAgentConfigPath({ kind: 'context', value: { policy: agent.contextPolicy, contextWindowTokens: agent.contextWindowTokens } })).toBe('config/context.yaml')
-    expect(workspaceConfigPath('card')).toBe('workspaces/card/config.yaml')
-    expect(workspaceConfigPath('../card')).toBeUndefined()
-  })
-
-  it('稳定序列化、解析并应用 WorkspaceBinding 普通配置', () => {
-    const value = { workspaceId: 'lab', instructions: '研究验证', ruleIds: ['rule-common'], skillIds: [], mcpIds: [] }
-    const payload = { kind: 'workspace-binding' as const, value }
-    const content = serializeAgentConfig(agent, payload)!
-    expect(content).toBe(`schemaVersion: 1\nworkspaceBinding: ${JSON.stringify(value)}`)
-    expect(parseWorkspaceBindingConfig(content, agent)).toEqual(value)
-    expect(applyAgentConfig(agent, payload)?.workspaceBindings.at(-1)).toEqual({ ...value, memoryRevision: '' })
-    expect(parseWorkspaceBindingConfig(content.replace(/}$/, ',"memoryRevision":"MR-1"}'), agent)).toBeUndefined()
-    expect(parseWorkspaceBindingConfig(content.replace(/}$/, ',"unknown":true}'), agent)).toBeUndefined()
-  })
-
-  it('为新 Binding 只登记 config.yaml', () => {
-    const payload = { kind: 'workspace-binding' as const, value: { workspaceId: 'lab', instructions: '', ruleIds: [], skillIds: [], mcpIds: [] } }
-    const file = describeAgentConfigFile(payload)
-    expect(file?.path).toBe('workspaces/lab/config.yaml')
-    expect(file?.path).not.toContain('memory.md')
-    expect(file?.evidence).toBe('memory-only')
   })
 
   it('往返应用并序列化上下文策略与输出格式', () => {
@@ -57,6 +36,16 @@ describe('Agent 配置模型', () => {
     expect(applied?.outputProfileId).toBe('output-verifiable-delivery')
     expect(serializeAgentConfig(agent, payload)).toContain('triggerRatio: 0.85')
     expect(serializeAgentConfig(agent, payload)).toContain('outputProfileId: "output-verifiable-delivery"')
+  })
+
+  it('新身份配置不再写入主管副本，但继续接受旧字段', () => {
+    const legacy = { ...agent, managerAgentId: 'legacy-manager' }
+    const payload = snapshotAgentConfig(legacy, 'identity')!
+    expect(payload.kind).toBe('identity')
+    if (payload.kind !== 'identity') throw new Error('身份快照类型错误')
+    expect(payload.value.managerAgentId).toBe('legacy-manager')
+    expect(isAgentConfigPayload(payload)).toBe(true)
+    expect(serializeAgentConfig(legacy, payload)).not.toContain('managerAgentId:')
   })
 
   it('在身份配置中稳定保存头像引用并拒绝任意路径', () => {
@@ -176,20 +165,5 @@ describe('Agent 配置模型', () => {
       kind: 'context',
       value: { policy: { ...agent.contextPolicy, targetRatio: 0.75, triggerRatio: 0.8 }, contextWindowTokens: agent.contextWindowTokens },
     })).toBeUndefined()
-  })
-
-  it('Workspace 只序列化显式 Context 与输出格式覆盖', () => {
-    const payload = {
-      kind: 'workspace-binding' as const,
-      value: {
-        workspaceId: 'lab', instructions: '', ruleIds: [], skillIds: [], mcpIds: [],
-        contextPolicy: { triggerRatio: 0.75 },
-        outputProfileId: 'output-verifiable-delivery',
-      },
-    }
-    const content = serializeAgentConfig(agent, payload)!
-    expect(content).toContain('"triggerRatio":0.75')
-    expect(content).not.toContain('"targetRatio"')
-    expect(content).not.toContain('aiClientProfileId')
   })
 })

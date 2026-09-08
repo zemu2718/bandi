@@ -15,8 +15,8 @@ import {
 } from '../../ui-preferences'
 
 const preservedItems = [
-  '工作区项目及其中的源码和 .bandi/memory',
-  '外部 Agent 目录与 Claude Agent 导入来源',
+  '用户自己的外部目录和文件',
+  '历史外部 Agent 目录记录与 Agent 导入来源',
   'Claude Code、Codex、凭据和其他宿主配置',
 ]
 
@@ -24,10 +24,10 @@ const targetLabels: Record<string, string> = {
   database: '领域数据库',
   databaseWal: '数据库写入日志',
   databaseShm: '数据库共享状态',
-  workspaceRegistry: '工作区登记索引',
   sharedAssets: '共享资产',
   backups: '配置文件快照',
   revisions: '配置历史',
+  formalMemory: '正式记忆',
   uiAssets: '本机界面图片',
   managedAgents: 'Bandi 受管 Agent 配置',
 }
@@ -40,6 +40,13 @@ function resetTargets(preview: FactoryResetPreviewDto): Array<{ id: string; labe
     ...(databaseTargets.length ? [{ id: 'localData', label: 'Bandi 本机数据', state: databaseTargets.some((target) => target.state === 'present') ? 'present' as const : 'absent' as const }] : []),
     ...preview.targets.filter((target) => !databaseTargetIds.has(target.id)).map((target) => ({ ...target, label: targetLabels[target.id] ?? target.id })),
   ]
+}
+
+function resetFailureDescription(reason: unknown): string {
+  const details = reason instanceof Error ? reason.message : String(reason)
+  return details.includes('FACTORY_RESET_ROLLBACK_FAILED')
+    ? '恢复提交失败，且无法确认所有数据已回滚。请停止编辑、保留技术详情并重启 Bandi 后检查数据。'
+    : '恢复尚未提交。请重新检查恢复范围后再确认。'
 }
 
 function clearUiPreferences() {
@@ -96,7 +103,7 @@ export function FactoryResetPanel() {
       setError(errorFromCause(
         reason,
         '无法恢复出厂状态',
-        '恢复尚未提交。请重新检查恢复范围后再确认。',
+        resetFailureDescription(reason),
       ))
     } finally {
       setLoading(false)

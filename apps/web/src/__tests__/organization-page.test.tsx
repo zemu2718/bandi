@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LegacyDepartmentRedirect, OrganizationPage } from '../pages/organization/organization-pages'
+import { LegacyDepartmentRedirect, OrganizationPage, TeamDetailPage } from '../pages/organization/organization-pages'
 import { GlobalSheets } from '../sheets'
 import { AppProvider, initialState } from '../state'
 import * as desktopBridge from '../desktop-bridge'
@@ -30,6 +30,7 @@ function renderOrganization(initialEntry = '/organization', state = initialState
     element: <AppProvider initialState={state}><Outlet /><GlobalSheets /></AppProvider>,
     children: [
       { path: 'organization', element: <OrganizationPage /> },
+      { path: 'organization/teams/:id', element: <TeamDetailPage /> },
       { path: 'organization/departments/:id', element: <LegacyDepartmentRedirect /> },
     ],
   }], { initialEntries: [initialEntry] })
@@ -40,8 +41,8 @@ const rootWithChildren = initialState.departments.find((department) => initialSt
 const child = initialState.departments.find((department) => department.parentDepartmentId === rootWithChildren.id)!
 
 describe('组织页', () => {
-  it('独立展开和折叠部门，不改变右侧 Company 概览', () => {
-    renderOrganization(`/organization?company=${rootWithChildren.companyId}`)
+  it('独立展开和折叠部门，不改变右侧 Team 概览', () => {
+    renderOrganization(`/organization?team=${rootWithChildren.teamId}`)
 
     const toggle = screen.getByRole('button', { name: `收起${rootWithChildren.name}` })
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
@@ -50,16 +51,16 @@ describe('组织页', () => {
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('button', { name: child.name })).not.toBeInTheDocument()
-    expect(screen.getByText(initialState.companies.find((company) => company.id === rootWithChildren.companyId)!.mission)).toBeInTheDocument()
+    expect(screen.getByText(initialState.teams.find((team) => team.id === rootWithChildren.teamId)!.mission!)).toBeInTheDocument()
   })
 
   it('在同一组织页选择部门并展示详情', async () => {
-    const { router } = renderOrganization(`/organization?company=${rootWithChildren.companyId}`)
+    const { router } = renderOrganization(`/organization?team=${rootWithChildren.teamId}`)
 
     fireEvent.click(screen.getByRole('button', { name: child.name }))
 
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/organization'))
-    expect(router.state.location.search).toContain(`company=${child.companyId}`)
+    expect(router.state.location.search).toContain(`team=${child.teamId}`)
     expect(router.state.location.search).toContain(`department=${child.id}`)
     expect(screen.getByRole('button', { name: child.name })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: child.name })).toBeInTheDocument()
@@ -69,76 +70,77 @@ describe('组织页', () => {
     expect(screen.getByText('岗位设置')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '添加岗位' })).toBeInTheDocument()
     expect(screen.getByText('部门成员')).toBeInTheDocument()
-    expect(screen.getByText('服务授权')).toBeInTheDocument()
-    expect(screen.getByLabelText('共 0 项服务授权')).toBeInTheDocument()
-    expect(screen.queryByText('显式服务授权')).not.toBeInTheDocument()
+    expect(screen.getByText('跨部门服务')).toBeInTheDocument()
+    expect(screen.getByLabelText('共 0 项跨部门服务')).toBeInTheDocument()
+    expect(screen.getByText(/只汇总其他 Agent/)).toBeInTheDocument()
     expect(screen.queryByText('有效')).not.toBeInTheDocument()
   })
 
-  it('公司概览使用统一的中文实体术语', () => {
-    renderOrganization(`/organization?company=${rootWithChildren.companyId}`)
+  it('Team概览使用统一的中文实体术语', () => {
+    renderOrganization(`/organization?team=${rootWithChildren.teamId}`)
 
-    expect(screen.getByText('公司')).toBeInTheDocument()
-    expect(screen.getByText('工作区')).toBeInTheDocument()
+    expect(screen.getByText('Team')).toBeInTheDocument()
+    expect(screen.getByText('Agent')).toBeInTheDocument()
     expect(screen.queryByText('Company')).not.toBeInTheDocument()
     expect(screen.queryByText('Workspaces')).not.toBeInTheDocument()
   })
 
-  it('编辑部门时只读展示所属公司，并只允许从本部门成员选择主管', () => {
-    renderOrganization(`/organization?company=${child.companyId}&department=${child.id}`)
+  it('编辑部门时只读展示所属Team，并只允许从本部门成员选择主管', () => {
+    renderOrganization(`/organization?team=${child.teamId}&department=${child.id}`)
 
     fireEvent.click(screen.getByRole('button', { name: '编辑部门' }))
 
     const dialog = screen.getByRole('dialog', { name: '编辑部门' })
-    expect(within(dialog).getByText('所属公司')).toBeInTheDocument()
-    expect(within(dialog).getByText(initialState.companies.find((company) => company.id === child.companyId)!.name)).toBeInTheDocument()
-    expect(within(dialog).queryByRole('combobox', { name: '所属公司' })).not.toBeInTheDocument()
+    expect(within(dialog).getByText('所属Team')).toBeInTheDocument()
+    expect(within(dialog).getByText(initialState.teams.find((team) => team.id === child.teamId)!.name)).toBeInTheDocument()
+    expect(within(dialog).queryByRole('combobox', { name: '所属Team' })).not.toBeInTheDocument()
     const manager = within(dialog).getByRole('combobox', { name: '部门主管' })
-    const memberNames = initialState.agents.filter((agent) => child.memberAgentIds.includes(agent.id) && agent.companyId === child.companyId && agent.status === 'active').map((agent) => agent.name)
+    const memberNames = initialState.agents.filter((agent) => child.memberAgentIds.includes(agent.id) && agent.teamId === child.teamId && agent.status === 'active').map((agent) => agent.name)
     expect(within(manager).getAllByRole('option').map((option) => option.textContent)).toEqual(['未设置', ...memberNames])
     expect(within(dialog).getByText(/设置主管关系不会授予/)).toBeInTheDocument()
-    expect(within(dialog).queryByText('Company')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Team')).not.toBeInTheDocument()
   })
 
-  it('公司编辑只允许从同公司 Agent 选择董事长助理', () => {
-    const company = initialState.companies.find((item) => item.id === rootWithChildren.companyId)!
-    renderOrganization(`/organization?company=${company.id}`)
+  it('创建 Team 可预览自动标识并选择文字和颜色', () => {
+    renderOrganization()
+    fireEvent.click(screen.getByRole('button', { name: '编辑Team' }))
+    const dialog = screen.getByRole('dialog', { name: '编辑Team' })
+    const name = within(dialog).getByRole('textbox', { name: '名称' })
+    const mark = within(dialog).getByRole('textbox', { name: '文字标识' })
 
-    fireEvent.click(screen.getByRole('button', { name: '编辑公司' }))
+    fireEvent.change(name, { target: { value: 'Bandi Studio' } })
+    expect(within(dialog).getByText('BS')).toBeInTheDocument()
+    fireEvent.change(mark, { target: { value: '研发组' } })
+    expect(mark).toHaveAttribute('aria-invalid', 'true')
+    expect(within(dialog).getByText('请输入 1–2 个字母或数字。')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: '保存演示配置' })).toBeDisabled()
+    fireEvent.change(mark, { target: { value: 'RD' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '蓝色' }))
+    expect(within(dialog).getByRole('button', { name: '蓝色' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存演示配置' }))
 
-    const dialog = screen.getByRole('dialog', { name: '编辑公司' })
-    const assistant = within(dialog).getByRole('combobox', { name: '董事长助理' })
-    const companyAgentNames = initialState.agents.filter((agent) => agent.companyId === company.id && agent.status === 'active').map((agent) => agent.name)
-    expect(within(assistant).getAllByRole('option').map((option) => option.textContent)).toEqual(['未设置', ...companyAgentNames])
-    expect(within(dialog).getByText(/设置治理关系不会授予/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Bandi Studio' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '编辑Team' }))
+    const reopened = screen.getByRole('dialog', { name: '编辑Team' })
+    expect(within(reopened).getByRole('textbox', { name: '文字标识' })).toHaveValue('RD')
+    expect(within(reopened).getByRole('button', { name: '蓝色' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('深链接自动显示所选部门并展开祖先', () => {
-    renderOrganization(`/organization?company=${child.companyId}&department=${child.id}`)
+    renderOrganization(`/organization?team=${child.teamId}&department=${child.id}`)
 
     expect(screen.getByRole('button', { name: `收起${rootWithChildren.name}` })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: child.name })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: child.name })).toBeInTheDocument()
   })
 
-  it('Web 模式保存董事长助理和部门主管治理关系', async () => {
+  it('Web 模式保存部门主管治理关系', async () => {
     const governedDepartment = initialState.departments.find((item) => item.id === 'dev')!
-    const company = initialState.companies.find((item) => item.id === governedDepartment.companyId)!
-    const companyAssistant = initialState.agents.find((agent) => agent.companyId === company.id && agent.id !== company.assistantAgentId)!
     const departmentManager = initialState.agents.find((agent) => governedDepartment.memberAgentIds.includes(agent.id) && agent.id !== governedDepartment.managerAgentId)!
-    const companyView = renderOrganization(`/organization?company=${company.id}`)
 
-    fireEvent.click(screen.getByRole('button', { name: '编辑公司' }))
-    let dialog = screen.getByRole('dialog', { name: '编辑公司' })
-    fireEvent.change(within(dialog).getByRole('combobox', { name: '董事长助理' }), { target: { value: companyAssistant.id } })
-    fireEvent.click(within(dialog).getByRole('button', { name: '保存演示配置' }))
-    fireEvent.click(screen.getByRole('button', { name: '编辑公司' }))
-    expect(within(screen.getByRole('dialog', { name: '编辑公司' })).getByRole('combobox', { name: '董事长助理' })).toHaveValue(companyAssistant.id)
-    companyView.unmount()
-
-    renderOrganization(`/organization?company=${governedDepartment.companyId}&department=${governedDepartment.id}`)
+    renderOrganization(`/organization?team=${governedDepartment.teamId}&department=${governedDepartment.id}`)
     fireEvent.click(screen.getByRole('button', { name: '编辑部门' }))
-    dialog = screen.getByRole('dialog', { name: '编辑部门' })
+    const dialog = screen.getByRole('dialog', { name: '编辑部门' })
     fireEvent.change(within(dialog).getByRole('combobox', { name: '部门主管' }), { target: { value: departmentManager.id } })
     fireEvent.click(within(dialog).getByRole('button', { name: '保存演示配置' }))
     fireEvent.click(screen.getByRole('button', { name: '编辑部门' }))
@@ -146,24 +148,24 @@ describe('组织页', () => {
   })
 
   it('岗位重名错误具体说明并关联名称字段', () => {
-    renderOrganization(`/organization?company=${child.companyId}&department=${child.id}`)
+    renderOrganization(`/organization?team=${child.teamId}&department=${child.id}`)
     fireEvent.click(screen.getByRole('button', { name: '添加岗位' }))
     const dialog = screen.getByRole('dialog', { name: '添加岗位' })
-    const existing = initialState.roles.find((role) => role.companyId === child.companyId)!
+    const existing = initialState.roles.find((role) => role.teamId === child.teamId)!
     const nameInput = within(dialog).getByRole('textbox', { name: '岗位名称' })
     fireEvent.change(nameInput, { target: { value: existing.name } })
     expect(nameInput).toHaveAttribute('aria-describedby', 'role-name-error')
-    expect(within(dialog).getByText(`同一公司内已有名为“${existing.name}”的岗位，请使用其他名称。`)).toHaveAttribute('id', 'role-name-error')
+    expect(within(dialog).getByText(`同一Team内已有名为“${existing.name}”的岗位，请使用其他名称。`)).toHaveAttribute('id', 'role-name-error')
   })
 
   it('Desktop 岗位使用后端稳定 ID 并回写规范化结果', async () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const generateId = vi.spyOn(desktopBridge, 'generateEntityId').mockResolvedValue('role-persisted')
-    const saveRole = vi.spyOn(desktopBridge, 'saveRole').mockImplementation(async (role) => ({
+    const saveRole = vi.spyOn(desktopBridge, 'saveRoleV2').mockImplementation(async (role) => ({
       ...role,
       name: `${role.name}（规范化）`,
     }))
-    renderOrganization(`/organization?company=${child.companyId}&department=${child.id}`)
+    renderOrganization(`/organization?team=${child.teamId}&department=${child.id}`)
 
     fireEvent.click(screen.getByRole('button', { name: '添加岗位' }))
     const dialog = screen.getByRole('dialog', { name: '添加岗位' })
@@ -173,7 +175,7 @@ describe('组织页', () => {
 
     await vi.waitFor(() => expect(saveRole).toHaveBeenCalledWith(expect.objectContaining({
       id: 'role-persisted',
-      companyId: child.companyId,
+      teamId: child.teamId,
       departmentId: child.id,
       name: '质量负责人',
     })))
@@ -196,7 +198,7 @@ describe('组织页', () => {
         : department),
     }
 
-    renderOrganization(`/organization?company=${child.companyId}&department=${child.id}`, state)
+    renderOrganization(`/organization?team=${child.teamId}&department=${child.id}`, state)
 
     expect(screen.getByLabelText('共 7 位成员')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '查看全部 7 位成员' })).toBeInTheDocument()
@@ -209,37 +211,28 @@ describe('组织页', () => {
     expect(within(dialog).queryByText('成员 1')).not.toBeInTheDocument()
   })
 
-  it('用清晰中文展示部门项目记忆及关联 Workspace', () => {
-    const department = initialState.departments.find((item) => item.id === 'dev')!
-    renderOrganization(`/organization?company=${department.companyId}&department=${department.id}`)
+  it('Team query 和详情深链会同步当前 Team', async () => {
+    const target = initialState.teams.find((team) => team.id !== initialState.currentTeamId)!
+    const state = { ...initialState, currentTeamId: initialState.currentTeamId }
+    const queryView = renderOrganization(`/organization?team=${target.id}`, state)
 
-    expect(screen.getByText('部门项目记忆')).toBeInTheDocument()
-    expect(screen.getByText('按工作区沉淀的长期约定与项目经验。')).toBeInTheDocument()
-    expect(screen.getByText('第 7 版')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '查看 Bandi 的部门项目记忆，第 7 版' })).toHaveAttribute('href', '/workspaces/bandi?tab=memory')
-    expect(screen.queryByText('Department × Workspace Memory')).not.toBeInTheDocument()
-  })
+    expect(screen.getByText(target.mission!)).toBeInTheDocument()
+    queryView.unmount()
 
-  it('切换 Company 后清除旧部门选择', async () => {
-    const otherCompany = initialState.companies.find((company) => company.id !== child.companyId)!
-    const { router } = renderOrganization(`/organization?company=${child.companyId}&department=${child.id}`)
-
-    fireEvent.change(screen.getByLabelText('当前公司'), { target: { value: otherCompany.id } })
-
-    await vi.waitFor(() => expect(router.state.location.search).toBe(`?company=${otherCompany.id}`))
-    expect(screen.getByText(otherCompany.mission)).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: child.name })).not.toBeInTheDocument()
+    renderOrganization(`/organization/teams/${target.id}`, state)
+    expect(screen.getByRole('heading', { name: target.name })).toBeInTheDocument()
+    expect(screen.getByText(target.boundary!)).toBeInTheDocument()
   })
 
   it('忽略无效部门并兼容旧部门链接', async () => {
-    const company = initialState.companies.find((item) => item.id === child.companyId)!
-    const invalid = renderOrganization(`/organization?company=${company.id}&department=missing`)
-    expect(screen.getByText(company.mission)).toBeInTheDocument()
+    const team = initialState.teams.find((item) => item.id === child.teamId)!
+    const invalid = renderOrganization(`/organization?team=${team.id}&department=missing`)
+    expect(screen.getByText(team.mission!)).toBeInTheDocument()
     invalid.unmount()
 
     const legacy = renderOrganization(`/organization/departments/${child.id}`)
     await vi.waitFor(() => expect(legacy.router.state.location.pathname).toBe('/organization'))
-    expect(legacy.router.state.location.search).toBe(`?company=${child.companyId}&department=${child.id}`)
+    expect(legacy.router.state.location.search).toBe(`?team=${child.teamId}&department=${child.id}`)
     expect(screen.getByRole('heading', { name: child.name })).toBeInTheDocument()
   })
 })

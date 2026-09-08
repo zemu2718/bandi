@@ -4,8 +4,8 @@ import { HomePage } from './pages/home-page'
 import { AgentsPage } from './pages/agents/agents-page'
 import { AgentCreatePage } from './pages/agents/agent-create-page'
 import { AgentDetailPage } from './pages/agents/agent-detail-page'
-import { CompanyDetailPage, LegacyDepartmentRedirect, OrganizationPage } from './pages/organization/organization-pages'
-import { WorkspaceDetailPage, WorkspacesPage, WorkspaceWizardPage } from './pages/workspaces/workspace-pages'
+import { OrganizationPage, TeamDetailPage } from './pages/organization/organization-pages'
+import { TaskBriefsPage } from './pages/tasks/task-briefs-page'
 import { AssetDetailPage, AssetsPage } from './pages/assets/asset-pages'
 import { SkillsPage } from './pages/assets/skills-page'
 import { SettingsPage } from './pages/settings/settings-pages'
@@ -23,11 +23,8 @@ export const router = createHashRouter([{
     { path: 'agents/new', element: <AgentCreatePage /> },
     { path: 'agents/:id', element: <AgentDetailPage /> },
     { path: 'organization', element: <OrganizationPage /> },
-    { path: 'organization/companies/:id', element: <CompanyDetailPage /> },
-    { path: 'organization/departments/:id', element: <LegacyDepartmentRedirect /> },
-    { path: 'workspaces', element: <WorkspacesPage /> },
-    { path: 'workspaces/new', element: <WorkspaceWizardPage /> },
-    { path: 'workspaces/:id', element: <WorkspaceDetailPage /> },
+    { path: 'organization/teams/:id', element: <TeamDetailPage /> },
+    { path: 'tasks', element: <TaskBriefsPage /> },
     { path: 'assets', element: <AssetsPage /> },
     { path: 'assets/skills', element: <SkillsPage /> },
     { path: 'assets/:id', element: <AssetDetailPage /> },

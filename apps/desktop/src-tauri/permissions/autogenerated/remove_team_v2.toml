@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remove-team-v2"
+description = "Enables the remove_team_v2 command without any pre-configured scope."
+commands.allow = ["remove_team_v2"]
+
+[[permission]]
+identifier = "deny-remove-team-v2"
+description = "Denies the remove_team_v2 command without any pre-configured scope."
+commands.deny = ["remove_team_v2"]

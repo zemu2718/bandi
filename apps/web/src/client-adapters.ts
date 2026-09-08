@@ -1,5 +1,3 @@
-import type { TerminalId } from './terminal-model'
-
 export type BuiltInClientId =
   | 'claude-code'
   | 'claude-desktop'
@@ -22,34 +20,23 @@ export type ClientAdapterId =
   | 'hermes-terminal-v1'
   | 'pi-terminal-v1'
 
-export type ClientHandoffIntent = 'continue_workspace'
-
-export type ClientHandoffDescriptor = {
+export type ClientLaunchDescriptor = {
   clientId: BuiltInClientId
   adapterId: ClientAdapterId
-  intent: ClientHandoffIntent
-}
-
-export type RequestClientHandoff = {
-  clientId: BuiltInClientId
-  adapterId: ClientAdapterId
-  workspaceId: string
-  terminalId: Exclude<TerminalId, 'system'>
-  intent: ClientHandoffIntent
 }
 
 export const clientAdapterCatalog: Record<BuiltInClientId, {
   adapterId: ClientAdapterId
-  handoff?: ClientHandoffDescriptor
+  launch?: ClientLaunchDescriptor
 }> = {
   'claude-code': {
     adapterId: 'claude-code-terminal-v1',
-    handoff: { clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', intent: 'continue_workspace' },
+    launch: { clientId: 'claude-code', adapterId: 'claude-code-terminal-v1' },
   },
   'claude-desktop': { adapterId: 'claude-desktop-config-v1' },
   codex: {
     adapterId: 'codex-terminal-v1',
-    handoff: { clientId: 'codex', adapterId: 'codex-terminal-v1', intent: 'continue_workspace' },
+    launch: { clientId: 'codex', adapterId: 'codex-terminal-v1' },
   },
   'gemini-cli': { adapterId: 'gemini-cli-terminal-v1' },
   'grok-build': { adapterId: 'grok-build-config-v1' },
@@ -59,8 +46,8 @@ export const clientAdapterCatalog: Record<BuiltInClientId, {
   pi: { adapterId: 'pi-terminal-v1' },
 }
 
-export function handoffDescriptor(clientId: string): ClientHandoffDescriptor | undefined {
+export function launchDescriptor(clientId: string): ClientLaunchDescriptor | undefined {
   return clientId in clientAdapterCatalog
-    ? clientAdapterCatalog[clientId as BuiltInClientId].handoff
+    ? clientAdapterCatalog[clientId as BuiltInClientId].launch
     : undefined
 }

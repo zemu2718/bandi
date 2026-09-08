@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { formatWindowTitle, resolveRouteMetadata } from '../route-metadata'
 
 describe('route metadata', () => {
-  it('统一配置概览标题并排除新建页的最近 Agent 身份', () => {
-    expect(resolveRouteMetadata('/')).toEqual({ section: 'home', title: '配置概览' })
-    expect(formatWindowTitle('配置概览')).toBe('配置概览 · Bandi')
-    expect(resolveRouteMetadata('/agents/new')).toEqual({ section: 'agents', title: '创建个人 Agent' })
-    expect(resolveRouteMetadata('/agents/new?mode=import')).toEqual({ section: 'agents', title: '导入 Claude Agent' })
-    expect(resolveRouteMetadata('/agents/new?mode=reference')).toEqual({ section: 'agents', title: '仅登记外部引用' })
+  it('统一配置状态标题并排除新建页的最近 Agent 身份', () => {
+    expect(resolveRouteMetadata('/')).toEqual({ section: 'home', title: '配置状态' })
+    expect(formatWindowTitle('配置状态')).toBe('配置状态 · Bandi')
+    expect(resolveRouteMetadata('/agents/new')).toEqual({ section: 'agents', title: '新建 Agent' })
+    expect(resolveRouteMetadata('/agents/new?mode=import')).toEqual({ section: 'agents', title: '导入 Agent' })
+    expect(resolveRouteMetadata('/agents/new?mode=reference')).toEqual({ section: 'agents', title: '新建 Agent' })
   })
 
   it('解析实体名称和主导航归属', () => {
@@ -18,22 +18,18 @@ describe('route metadata', () => {
 
   it('根据组织页选择的部门解析标题', () => {
     const context = { departments: [{ id: 'dev', name: '研发部' }] }
-    expect(resolveRouteMetadata('/organization?company=xinghe&department=dev', context)).toEqual({
+    expect(resolveRouteMetadata('/organization?team=xinghe&department=dev', context)).toEqual({
       section: 'organization',
       title: '研发部',
     })
     expect(resolveRouteMetadata('/organization?department=missing', context)).toEqual({
       section: 'organization',
-      title: '组织',
+      title: '部门与岗位',
     })
   })
 
-  it('统一工作区相关窗口标题', () => {
-    const context = { workspaces: [{ id: 'bandi', name: 'Bandi' }] }
-    expect(resolveRouteMetadata('/workspaces')).toEqual({ section: 'workspaces', title: '工作区' })
-    expect(resolveRouteMetadata('/workspaces/new')).toEqual({ section: 'workspaces', title: '添加工作区' })
-    expect(resolveRouteMetadata('/workspaces/bandi', context)).toEqual({ section: 'workspaces', title: 'Bandi' })
-    expect(resolveRouteMetadata('/workspaces/missing', context)).toEqual({ section: 'workspaces', title: '工作区配置' })
+  it('保留任务简报窗口标题', () => {
+    expect(resolveRouteMetadata('/tasks')).toEqual({ section: 'tasks', title: '任务简报' })
   })
 
   it('将旧备份兼容路径归入设置', () => {

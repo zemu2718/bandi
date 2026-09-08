@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { getFilesForAgentSection, getPrimarySectionForAgentFile, projectAgentFilePreview, resolveAgentConfigRoute } from '../agent-config-projection'
-import { initialAgents, initialAssets, initialMemorySpaces, initialWorkspaces } from '../domain'
+import { getFilesForAgentSection, agentFilePreview, resolveAgentConfigRoute } from '../agent-config-projection'
+import { initialAgents, initialAssets, initialMemorySpaces } from '../domain'
 
 const agent = initialAgents.find((item) => item.id === 'zhouce')!
-const context = { assets: initialAssets, workspaces: initialWorkspaces, memorySpaces: initialMemorySpaces }
+const context = { assets: initialAssets, memorySpaces: initialMemorySpaces }
 
 describe('Agent 配置文件投影', () => {
   it('缺省 URL 进入管理概览且不需要规范化', () => {
@@ -21,25 +21,13 @@ describe('Agent 配置文件投影', () => {
     expect(second.needsReplace).toBe(false)
   })
 
-  it('支持同一 Workspace 配置关联多个领域', () => {
-    expect(getFilesForAgentSection(agent, 'instructions').map((item) => item.file.path)).toContain('workspaces/bandi/config.yaml')
-    expect(getFilesForAgentSection(agent, 'rules').map((item) => item.file.path)).toContain('workspaces/bandi/config.yaml')
-    expect(getFilesForAgentSection(agent, 'mcp').map((item) => item.file.path)).toContain('workspaces/bandi/config.yaml')
-    expect(getFilesForAgentSection(agent, 'context').map((item) => item.file.path)).toContain('config/context.yaml')
-    expect(getPrimarySectionForAgentFile(agent, 'workspaces/bandi/config.yaml')).toBe('workspaces')
-  })
-
-  it('只投影已登记文件，不为缺失的 Workspace 虚构文件', () => {
-    expect(getFilesForAgentSection(agent, 'workspaces').map((item) => item.file.path)).not.toContain('workspaces/card/config.yaml')
-  })
-
   it('结构化预览随当前内存事实更新', () => {
     const changed = { ...agent, instructions: '新的演示正文' }
-    expect(projectAgentFilePreview(changed, context, 'instructions.md')?.fields[0].value).toBe('新的演示正文')
+    expect(agentFilePreview(changed, context, 'instructions.md')?.fields[0].value).toBe('新的演示正文')
   })
 
   it('上下文预览只展示长期策略与输出格式引用', () => {
-    const preview = projectAgentFilePreview(agent, context, 'config/context.yaml')!
+    const preview = agentFilePreview(agent, context, 'config/context.yaml')!
     expect(preview.fields.map((field) => field.label)).toEqual(['规划上下文窗口', '压缩策略', '消息保护', '输出格式', '输出参数'])
     expect(preview.fields[0].value).toBe('200,000 Token')
     expect(preview.notice).toContain('尚未应用')
@@ -48,7 +36,7 @@ describe('Agent 配置文件投影', () => {
 
   it('AgentPackage 包含全部已登记文件', () => {
     expect(getFilesForAgentSection(agent, 'package').map((item) => item.file.path)).toEqual(
-      expect.arrayContaining(['agent.yaml', 'instructions.md', 'workspaces/bandi/config.yaml']),
+      expect.arrayContaining(['agent.yaml', 'instructions.md']),
     )
   })
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-department-v2"
+description = "Enables the save_department_v2 command without any pre-configured scope."
+commands.allow = ["save_department_v2"]
+
+[[permission]]
+identifier = "deny-save-department-v2"
+description = "Denies the save_department_v2 command without any pre-configured scope."
+commands.deny = ["save_department_v2"]

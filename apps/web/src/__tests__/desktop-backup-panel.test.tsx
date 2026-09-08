@@ -92,7 +92,7 @@ describe('Desktop Backup 面板', () => {
     expect(await screen.findByText(/保存所选受管配置文件/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('查看安全范围'))
     expect(screen.getByText(/只包含 Bandi 当前发现并由你选中的可写受管配置文件/)).toBeInTheDocument()
-    expect(screen.getByText(/不包含公司、部门、岗位、工作区注册信息、服务授权、领域数据或正式记忆文件/)).toBeInTheDocument()
+    expect(screen.getByText(/不包含 Team、部门、岗位、项目目录记录、跨部门服务、领域数据或正式记忆文件/)).toBeInTheDocument()
     expect(screen.getByText(/凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入/)).toBeInTheDocument()
   })
 
@@ -112,6 +112,31 @@ describe('Desktop Backup 面板', () => {
     const request = bridge.createBackupSnapshot.mock.calls[0][0]
     expect(request).not.toHaveProperty('path')
     expect(request).not.toHaveProperty('archivePath')
+  })
+
+  it('创建失败时在创建对话框内显示错误', async () => {
+    bridge.createBackupSnapshot.mockRejectedValue(new Error('snapshot write failed'))
+    render(<DesktopBackupPanel />)
+    await screen.findByText('手动快照')
+
+    fireEvent.click(screen.getByRole('button', { name: '创建本地快照' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /主指令/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认创建' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法创建本地快照')
+    expect(screen.getByRole('dialog')).toContainElement(screen.getByRole('alert'))
+  })
+
+  it('恢复预览失败时在恢复对话框内显示错误', async () => {
+    bridge.previewBackupRestore.mockRejectedValue(new Error('preview failed'))
+    render(<DesktopBackupPanel />)
+    await screen.findByText('手动快照')
+
+    fireEvent.click(screen.getByRole('button', { name: '预览恢复' }))
+    fireEvent.click(screen.getByRole('button', { name: '校验并预览' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法检查恢复内容')
+    expect(screen.getByRole('dialog')).toContainElement(screen.getByRole('alert'))
   })
 
   it('先校验预览和独立确认，再展示安全快照与 Revision 结果', async () => {
@@ -136,5 +161,54 @@ describe('Desktop Backup 面板', () => {
       previewRef: 'preview-ref-1',
       confirmed: true,
     }))
+  })
+
+  it('不可恢复预览禁用提交并展示校验失败', async () => {
+    bridge.previewBackupRestore.mockResolvedValue({
+      requestId: 'preview-1',
+      previewRef: 'preview-ref-1',
+      snapshotId: snapshot.id,
+      expiresAt: '2026-09-01T00:10:00Z',
+      entries: [{ assetId: 'asset-instructions-1', status: 'integrity_failed', snapshotContentHash: hash }],
+      canRestore: false,
+      requiresConfirmation: true,
+    })
+    render(<DesktopBackupPanel />)
+    await screen.findByText('手动快照')
+    fireEvent.click(screen.getByRole('button', { name: '预览恢复' }))
+    fireEvent.click(screen.getByRole('button', { name: '校验并预览' }))
+
+    expect(await screen.findByText('完整性失败')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '确认恢复' })).toBeDisabled()
+  })
+
+  it('按真实文件状态展示恢复失败，不保证其余条目保持原状', async () => {
+    bridge.restoreBackupSnapshot.mockResolvedValue({
+      kind: 'restore_failed',
+      requestId: 'restore-1',
+      snapshotId: snapshot.id,
+      preRestoreSnapshotId: 'backup-pre-1',
+      entries: [{
+        assetId: 'asset-instructions-1',
+        status: 'save_failed',
+        retryable: false,
+        fileState: 'verified_written_revision_pending',
+        recoveryRef: 'recovery-1',
+      }],
+    })
+    render(<DesktopBackupPanel />)
+    await screen.findByText('手动快照')
+    fireEvent.click(screen.getByRole('button', { name: '预览恢复' }))
+    fireEvent.click(screen.getByRole('button', { name: '校验并预览' }))
+    await screen.findByText('可恢复')
+    fireEvent.click(screen.getByRole('checkbox', { name: /我确认恢复这些配置资产/ }))
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
+
+    expect(await screen.findByText('恢复失败')).toBeInTheDocument()
+    expect(screen.getByText('保存失败')).toBeInTheDocument()
+    expect(screen.getByText(/目标文件已写入，但版本记录尚未完成/)).toBeInTheDocument()
+    expect(screen.getByText(/recovery-1/)).toBeInTheDocument()
+    expect(screen.getByText(/不可直接重试/)).toBeInTheDocument()
+    expect(screen.queryByText(/保持原状/)).not.toBeInTheDocument()
   })
 })

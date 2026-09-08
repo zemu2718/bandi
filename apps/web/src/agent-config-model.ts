@@ -1,17 +1,13 @@
 import { AGENT_PACKAGE_SCHEMA_VERSION } from './agent-package-schema'
 import { isParameterBinding, type ParameterBinding } from './component-parameters'
-import type { AgentFile, ContextPolicy, ContextPolicyOverride, EvidenceKind, FullAgent, WorkspaceBinding, WorkspaceBindingConfig } from './domain'
-import { validateOrchestrationOverride, validateOrchestrationPolicy, type OrchestrationPolicy } from './orchestration-policy'
+import type { AgentFile, ContextPolicy, EvidenceKind, FullAgent } from './domain'
 
 export type AgentIdentityConfig = Pick<
   FullAgent,
   | 'id'
   | 'name'
-  | 'roleId'
   | 'status'
-  | 'companyId'
-  | 'primaryDepartmentId'
-  | 'managerAgentId'
+  | 'teamId'
   | 'avatarPath'
   | 'mission'
   | 'responsibilities'
@@ -38,10 +34,8 @@ export type AgentConfigPayload =
   | { kind: 'mcp'; value: string[] }
   | { kind: 'permissions'; value: FullAgent['permissions'] }
   | { kind: 'sop'; value: string[] }
-  | { kind: 'orchestration'; value: OrchestrationPolicy }
   | { kind: 'hooks'; value: FullAgent['hookRefs'] }
   | { kind: 'commands'; value: FullAgent['commandRefs'] }
-  | { kind: 'workspace-binding'; value: WorkspaceBindingConfig }
 
 export type SaveAgentConfigInput = AgentConfigPayload & { agentId: string }
 
@@ -90,18 +84,6 @@ export function validateContextPolicy(policy: ContextPolicy): string[] {
   if (!Number.isInteger(policy.protectRecentTurns) || policy.protectRecentTurns < 0 || policy.protectRecentTurns > 20) errors.push('保护最近轮次必须是 0 到 20 的整数。')
   if (!Number.isInteger(policy.protectOpeningTurns) || policy.protectOpeningTurns < 0 || policy.protectOpeningTurns > 10) errors.push('保护开头轮次必须是 0 到 10 的整数。')
   return errors
-}
-
-export function isContextPolicyOverride(value: unknown): value is ContextPolicyOverride {
-  if (!isRecord(value)) return false
-  const allowed = new Set(['enabled', 'triggerRatio', 'targetRatio', 'protectRecentTurns', 'protectOpeningTurns'])
-  return Object.entries(value).every(([key, item]) => allowed.has(key) && (
-    key === 'enabled' ? typeof item === 'boolean' : typeof item === 'number'
-  ))
-}
-
-export function mergeContextPolicy(policy: ContextPolicy, override?: ContextPolicyOverride): ContextPolicy {
-  return { ...policy, ...override }
 }
 
 export function parseAgentContextConfig(content: string): AgentContextConfig | undefined {
@@ -191,25 +173,10 @@ export function parseAgentComponentRefs(content: string, key: 'hooks' | 'command
   return isSafeComponentReferences(references) ? references : undefined
 }
 
-export function parseAgentOrchestrationPolicy(content: string): OrchestrationPolicy | undefined {
-  const lines = content.split(/\r?\n/)
-  if (lines.length !== 2 || lines[0] !== `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}` || !lines[1].startsWith('orchestration: ')) return undefined
-  let policy: unknown
-  try { policy = JSON.parse(lines[1].slice('orchestration: '.length)) } catch { return undefined }
-  if (!isRecord(policy)) return undefined
-  const allowed = new Set([
-    'enabled', 'maxDelegationDepth', 'allowedAgentIds', 'allowedRoleIds', 'allowedDepartmentIds',
-    'requireWorkspaceBinding', 'requireSopMatch', 'requireServiceGrantForCrossDepartment',
-    'escalationAgentId', 'escalationConditions', 'prohibitions',
-  ])
-  if (Object.keys(policy).some((key) => !allowed.has(key)) || !isAgentConfigPayload({ kind: 'orchestration', value: policy })) return undefined
-  return policy as OrchestrationPolicy
-}
-
 export function parseAgentPermissions(content: string): FullAgent['permissions'] | undefined {
   const lines = content.split(/\r?\n/)
-  const keys = ['files', 'commands', 'network', 'delegation'] as const
-  if (lines.length !== 6 || lines[0] !== `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}` || lines[1] !== 'permissions:') return undefined
+  const keys = ['files', 'commands', 'network'] as const
+  if (lines.length !== 5 || lines[0] !== `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}` || lines[1] !== 'permissions:') return undefined
   const permissions = {} as FullAgent['permissions']
   for (const [index, key] of keys.entries()) {
     const match = lines[index + 2]?.match(new RegExp(`^ {2}${key}: ("(?:[^"\\\\]|\\\\.)*")$`))
@@ -226,51 +193,6 @@ export function isSafePathSegment(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value) && value !== '.' && value !== '..'
 }
 
-export function workspaceConfigPath(workspaceId: string): string | undefined {
-  return isSafePathSegment(workspaceId) ? `workspaces/${workspaceId}/config.yaml` : undefined
-}
-
-function hasSafeUniqueIds(values: string[]) {
-  return values.length <= 500 && new Set(values).size === values.length && values.every(isSafePathSegment)
-}
-
-function isSafeContextOverride(root: ContextPolicy, override: ContextPolicyOverride) {
-  return isContextPolicyOverride(override)
-    && !(override.enabled === true && !root.enabled)
-    && !(override.triggerRatio !== undefined && override.triggerRatio > root.triggerRatio)
-    && !(override.targetRatio !== undefined && override.targetRatio > root.targetRatio)
-    && !(override.protectRecentTurns !== undefined && override.protectRecentTurns < root.protectRecentTurns)
-    && !(override.protectOpeningTurns !== undefined && override.protectOpeningTurns < root.protectOpeningTurns)
-}
-
-export function validateWorkspaceBindingConfig(agent: FullAgent, value: WorkspaceBindingConfig): string[] {
-  const errors: string[] = []
-  const allowed = new Set(['workspaceId', 'instructions', 'ruleIds', 'skillIds', 'mcpIds', 'contextPolicy', 'outputProfileId', 'outputParameterBindings', 'orchestrationPolicy', 'hookRefs', 'commandRefs'])
-  if (Object.keys(value).some((key) => !allowed.has(key))) errors.push('WorkspaceBinding 普通配置包含未知字段；正式记忆修订不能在此写入。')
-  if (!workspaceConfigPath(value.workspaceId)) errors.push('WorkspaceBinding 必须使用合法稳定的 Workspace ID。')
-  if (value.instructions.length > 64 * 1024 || value.instructions.includes('\0')) errors.push('专属 Instructions 禁止空字符且不能超过 64 KiB。')
-  if (![value.ruleIds, value.skillIds, value.mcpIds].every(hasSafeUniqueIds)) errors.push('Rule、Skill 与 MCP 引用必须是不重复的稳定资产 ID，且每类最多 500 项。')
-  if (value.contextPolicy && (!isSafeContextOverride(agent.contextPolicy, value.contextPolicy) || validateContextPolicy(mergeContextPolicy(agent.contextPolicy, value.contextPolicy)).length)) errors.push('工作区上下文覆盖无效或扩大了根级策略。')
-  if (value.outputProfileId !== undefined && !isSafePathSegment(value.outputProfileId)) errors.push('输出格式必须使用稳定资产 ID。')
-  if ((value.outputParameterBindings?.length ?? 0) > 100 || !(value.outputParameterBindings ?? []).every((binding) => isParameterBinding(binding) && isSafeComponentBinding(binding))) errors.push('输出参数覆盖包含非法、敏感或过大的值。')
-  if (value.orchestrationPolicy && validateOrchestrationOverride(agent.orchestrationPolicy, value.orchestrationPolicy).length) errors.push('工作区协作策略只能收紧根级策略。')
-  if (value.hookRefs !== undefined && !isSafeComponentReferences(value.hookRefs)) errors.push('Hook 局部引用无效。')
-  if (value.commandRefs !== undefined && !isSafeComponentReferences(value.commandRefs)) errors.push('Command 局部引用无效。')
-  return errors
-}
-
-export function parseWorkspaceBindingConfig(content: string, agent: FullAgent): WorkspaceBindingConfig | undefined {
-  const lines = content.split(/\r?\n/)
-  if (lines.length !== 2 || lines[0] !== `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}` || !lines[1].startsWith('workspaceBinding: ')) return undefined
-  let value: unknown
-  try { value = JSON.parse(lines[1].slice('workspaceBinding: '.length)) } catch { return undefined }
-  if (!isRecord(value)) return undefined
-  const allowed = new Set(['workspaceId', 'instructions', 'ruleIds', 'skillIds', 'mcpIds', 'contextPolicy', 'outputProfileId', 'outputParameterBindings', 'orchestrationPolicy', 'hookRefs', 'commandRefs'])
-  if (Object.keys(value).some((key) => !allowed.has(key)) || 'memoryRevision' in value) return undefined
-  const payload = { kind: 'workspace-binding' as const, value }
-  return isAgentConfigPayload(payload) && !validateWorkspaceBindingConfig(agent, payload.value).length ? payload.value : undefined
-}
-
 export const agentRootConfigPaths = {
   identity: 'agent.yaml',
   instructions: 'instructions.md',
@@ -280,28 +202,22 @@ export const agentRootConfigPaths = {
   mcp: 'config/mcp.yaml',
   permissions: 'config/permissions.yaml',
   sop: 'config/sop.yaml',
-  orchestration: 'config/orchestration.yaml',
   hooks: 'config/hooks.yaml',
   commands: 'config/commands.yaml',
-} as const satisfies Record<Exclude<AgentConfigPayload['kind'], 'workspace-binding'>, string>
+} as const satisfies Record<AgentConfigPayload['kind'], string>
 
-export function getAgentConfigPath(payload: AgentConfigPayload): string | undefined {
-  return payload.kind === 'workspace-binding'
-    ? workspaceConfigPath(payload.value.workspaceId)
-    : agentRootConfigPaths[payload.kind]
+export function getAgentConfigPath(payload: AgentConfigPayload): string {
+  return agentRootConfigPaths[payload.kind]
 }
 
-export function snapshotAgentConfig(agent: FullAgent, kind: AgentConfigPayload['kind'], workspaceId?: string): AgentConfigPayload | undefined {
+export function snapshotAgentConfig(agent: FullAgent, kind: AgentConfigPayload['kind']): AgentConfigPayload {
   switch (kind) {
     case 'identity': return { kind, value: {
       schemaVersion: AGENT_PACKAGE_SCHEMA_VERSION,
       id: agent.id,
       name: agent.name,
-      roleId: agent.roleId,
       status: agent.status,
-      companyId: agent.companyId,
-      primaryDepartmentId: agent.primaryDepartmentId,
-      managerAgentId: agent.managerAgentId,
+      teamId: agent.teamId,
       avatarPath: agent.avatarPath,
       mission: agent.mission,
       responsibilities: agent.responsibilities,
@@ -318,27 +234,8 @@ export function snapshotAgentConfig(agent: FullAgent, kind: AgentConfigPayload['
     case 'mcp': return { kind, value: agent.mcpRefs }
     case 'permissions': return { kind, value: agent.permissions }
     case 'sop': return { kind, value: agent.sopRefs }
-    case 'orchestration': return { kind, value: agent.orchestrationPolicy }
     case 'hooks': return { kind, value: agent.hookRefs }
     case 'commands': return { kind, value: agent.commandRefs }
-    case 'workspace-binding': {
-      const value = agent.workspaceBindings.find((binding) => binding.workspaceId === workspaceId)
-      if (!value) return undefined
-      const config: WorkspaceBindingConfig = {
-        workspaceId: value.workspaceId,
-        instructions: value.instructions,
-        ruleIds: [...value.ruleIds],
-        skillIds: [...value.skillIds],
-        mcpIds: [...value.mcpIds],
-        contextPolicy: value.contextPolicy,
-        outputProfileId: value.outputProfileId,
-        outputParameterBindings: value.outputParameterBindings,
-        orchestrationPolicy: value.orchestrationPolicy,
-        hookRefs: value.hookRefs,
-        commandRefs: value.commandRefs,
-      }
-      return { kind, value: config }
-    }
   }
 }
 
@@ -352,20 +249,8 @@ export function applyAgentConfig(agent: FullAgent, payload: AgentConfigPayload):
     case 'mcp': return { ...agent, mcpRefs: [...payload.value] }
     case 'permissions': return { ...agent, permissions: { ...payload.value } }
     case 'sop': return { ...agent, sopRefs: [...payload.value] }
-    case 'orchestration': return validateOrchestrationPolicy(payload.value).length ? undefined : { ...agent, orchestrationPolicy: { ...payload.value } }
     case 'hooks': return { ...agent, hookRefs: payload.value.map((item) => ({ ...item, parameterBindings: [...item.parameterBindings] })) }
     case 'commands': return { ...agent, commandRefs: payload.value.map((item) => ({ ...item, parameterBindings: [...item.parameterBindings] })) }
-    case 'workspace-binding': {
-      if (validateWorkspaceBindingConfig(agent, payload.value).length) return undefined
-      const existing = agent.workspaceBindings.find((binding) => binding.workspaceId === payload.value.workspaceId)
-      const next: WorkspaceBinding = { ...payload.value, memoryRevision: existing?.memoryRevision ?? '' }
-      return {
-        ...agent,
-        workspaceBindings: existing
-          ? agent.workspaceBindings.map((binding) => binding.workspaceId === payload.value.workspaceId ? next : binding)
-          : [...agent.workspaceBindings, next],
-      }
-    }
   }
 }
 
@@ -377,11 +262,8 @@ export function serializeAgentConfig(agent: FullAgent, payload: AgentConfigPaylo
       `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}`,
       `id: ${quote(applied.id)}`,
       `name: ${quote(applied.name)}`,
-      ...(applied.roleId ? [`roleId: ${quote(applied.roleId)}`] : []),
       `status: ${quote(applied.status)}`,
-      ...(applied.companyId ? [`companyId: ${quote(applied.companyId)}`] : []),
-      ...(applied.primaryDepartmentId ? [`primaryDepartmentId: ${quote(applied.primaryDepartmentId)}`] : []),
-      ...(applied.managerAgentId ? [`managerAgentId: ${quote(applied.managerAgentId)}`] : []),
+      `teamId: ${quote(applied.teamId)}`,
       ...(applied.avatarPath ? [`avatarPath: ${quote(applied.avatarPath)}`] : []),
       `mission: ${quote(applied.mission)}`,
       'responsibilities:', yamlList(applied.responsibilities),
@@ -413,13 +295,10 @@ export function serializeAgentConfig(agent: FullAgent, payload: AgentConfigPaylo
       `  files: ${quote(applied.permissions.files)}`,
       `  commands: ${quote(applied.permissions.commands)}`,
       `  network: ${quote(applied.permissions.network)}`,
-      `  delegation: ${quote(applied.permissions.delegation)}`,
     ].join('\n')
     case 'sop': return `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}\nsop:\n${yamlList(applied.sopRefs)}`
-    case 'orchestration': return `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}\norchestration: ${JSON.stringify(applied.orchestrationPolicy)}`
     case 'hooks': return `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}\nhooks: ${JSON.stringify(applied.hookRefs)}`
     case 'commands': return `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}\ncommands: ${JSON.stringify(applied.commandRefs)}`
-    case 'workspace-binding': return `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}\nworkspaceBinding: ${JSON.stringify(payload.value)}`
   }
 }
 
@@ -435,17 +314,15 @@ export function describeAgentConfigFile(payload: AgentConfigPayload, evidence: E
     mcp: 'MCP 配置与引用',
     permissions: '长期权限边界',
     sop: 'SOP 配置与引用',
-    orchestration: '长期协作与委派边界',
     hooks: 'Hook 配置与引用',
     commands: 'Command 配置与引用',
-    'workspace-binding': '工作区专属配置',
   }
   return {
     path,
     type: descriptions[payload.kind],
     status: evidence === 'memory-only' ? '页面内存记录' : '预置演示资料',
     evidence,
-    scope: payload.kind === 'workspace-binding' ? { kind: 'workspace', workspaceId: payload.value.workspaceId } : rootScope,
+    scope: rootScope,
   }
 }
 
@@ -476,43 +353,14 @@ export function isAgentConfigPayload(value: unknown): value is AgentConfigPayloa
     && (payloadValue.outputProfileId === undefined || typeof payloadValue.outputProfileId === 'string')
     && (payloadValue.outputParameterBindings === undefined || (Array.isArray(payloadValue.outputParameterBindings)
       && payloadValue.outputParameterBindings.every(isParameterBinding)))
-  if (value.kind === 'orchestration') return typeof payloadValue.enabled === 'boolean'
-    && typeof payloadValue.maxDelegationDepth === 'number'
-    && isStringArray(payloadValue.allowedAgentIds)
-    && isStringArray(payloadValue.allowedRoleIds)
-    && isStringArray(payloadValue.allowedDepartmentIds)
-    && typeof payloadValue.requireWorkspaceBinding === 'boolean'
-    && typeof payloadValue.requireSopMatch === 'boolean'
-    && typeof payloadValue.requireServiceGrantForCrossDepartment === 'boolean'
-    && (payloadValue.escalationAgentId === undefined || typeof payloadValue.escalationAgentId === 'string')
-    && isStringArray(payloadValue.escalationConditions)
-    && isStringArray(payloadValue.prohibitions)
-    && validateOrchestrationPolicy(payloadValue as OrchestrationPolicy).length === 0
-  if (value.kind === 'permissions') return ['files', 'commands', 'network', 'delegation'].every((key) => typeof payloadValue[key] === 'string')
-  if (value.kind === 'workspace-binding') return Object.keys(payloadValue).every((key) => ['workspaceId', 'instructions', 'ruleIds', 'skillIds', 'mcpIds', 'contextPolicy', 'outputProfileId', 'outputParameterBindings', 'orchestrationPolicy', 'hookRefs', 'commandRefs'].includes(key))
-    && typeof payloadValue.workspaceId === 'string'
-    && workspaceConfigPath(payloadValue.workspaceId) !== undefined
-    && typeof payloadValue.instructions === 'string'
-    && isStringArray(payloadValue.ruleIds)
-    && isStringArray(payloadValue.skillIds)
-    && isStringArray(payloadValue.mcpIds)
-    && (payloadValue.contextPolicy === undefined || isContextPolicyOverride(payloadValue.contextPolicy))
-    && (payloadValue.outputProfileId === undefined || typeof payloadValue.outputProfileId === 'string')
-    && (payloadValue.outputParameterBindings === undefined || (Array.isArray(payloadValue.outputParameterBindings) && payloadValue.outputParameterBindings.every((binding) => isParameterBinding(binding) && isSafeComponentBinding(binding))))
-    && (payloadValue.orchestrationPolicy === undefined || isRecord(payloadValue.orchestrationPolicy))
-    && (payloadValue.hookRefs === undefined || isSafeComponentReferences(payloadValue.hookRefs))
-    && (payloadValue.commandRefs === undefined || isSafeComponentReferences(payloadValue.commandRefs))
+  if (value.kind === 'permissions') return ['files', 'commands', 'network'].every((key) => typeof payloadValue[key] === 'string')
   if (value.kind === 'identity') {
-    const organizationFields = ['roleId', 'companyId', 'primaryDepartmentId'] as const
-    const organizationCount = organizationFields.filter((key) => typeof payloadValue[key] === 'string' && payloadValue[key] !== '').length
     return payloadValue.schemaVersion === AGENT_PACKAGE_SCHEMA_VERSION
-      && ['id', 'name', 'mission'].every((key) => typeof payloadValue[key] === 'string')
+      && ['id', 'name', 'mission', 'teamId'].every((key) => typeof payloadValue[key] === 'string')
+      && isSafePathSegment(String(payloadValue.teamId))
       && !validateAgentName(String(payloadValue.name))
-      && (organizationCount === 0 || organizationCount === organizationFields.length)
-      && organizationFields.every((key) => payloadValue[key] === undefined || typeof payloadValue[key] === 'string')
       && ['active', 'inactive', 'archived'].includes(String(payloadValue.status))
       && ['responsibilities', 'deliverables', 'decisionBoundaries', 'escalationConditions', 'prohibitions', 'completionDefinition'].every((key) => isStringArray(payloadValue[key]))
-      && (payloadValue.managerAgentId === undefined || typeof payloadValue.managerAgentId === 'string')
       && (payloadValue.avatarPath === undefined || payloadValue.avatarPath === 'avatar.png')
   }
   return false

@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { expect } from '@wdio/globals'
+import { externalSentinelDirectory } from '../helpers/first-use-fixtures.js'
 import { appDataPath, sandboxHome } from '../helpers/paths.js'
-import { workspacePath } from '../helpers/first-use-fixtures.js'
 
 type JsonRecord = Record<string, unknown>
 type ToolSnapshot = {
@@ -24,7 +24,7 @@ const invoke = <T>(command: string, args: JsonRecord = {}) => browser.tauri.exec
   args,
 )
 
-const preservedWorkspaceFile = path.join(workspacePath, 'factory-reset-preserved.txt')
+const preservedExternalFile = path.join(externalSentinelDirectory, 'factory-reset-preserved.txt')
 const preservedClaudeFile = path.join(sandboxHome, '.claude', 'factory-reset-preserved.txt')
 
 async function configureToolsAndReviewGuide() {
@@ -63,7 +63,7 @@ async function verifyPersistenceAndReset() {
   expect(snapshot.selectedPlanId).toBe('review')
   expect(snapshot.plans.map((plan) => plan.id)).toEqual(['default', 'coding', 'review'])
 
-  await fs.writeFile(preservedWorkspaceFile, 'workspace preserved')
+  await fs.writeFile(preservedExternalFile, 'external file preserved')
   await fs.mkdir(path.dirname(preservedClaudeFile), { recursive: true })
   await fs.writeFile(preservedClaudeFile, 'claude preserved')
 
@@ -82,16 +82,16 @@ async function verifyPersistenceAndReset() {
     },
   })
   expect(result.requiresRestart).toBe(true)
-  await expect(fs.readFile(preservedWorkspaceFile, 'utf8')).resolves.toBe('workspace preserved')
+  await expect(fs.readFile(preservedExternalFile, 'utf8')).resolves.toBe('external file preserved')
   await expect(fs.readFile(preservedClaudeFile, 'utf8')).resolves.toBe('claude preserved')
 }
 
 async function verifyFreshStateAfterReset() {
-  await expect(browser.$('h1=先导入或创建一个长期 Agent')).toBeDisplayed()
+  await expect(browser.$('h1=先新建或导入一个长期 Agent')).toBeDisplayed()
   const snapshot = await invoke<ToolSnapshot>('load_tool_configuration')
   expect(snapshot.selectedPlanId).toBe('default')
   expect(snapshot.plans).toEqual([{ id: 'default', name: '默认方案', toolIds: [] }])
-  await expect(fs.readFile(preservedWorkspaceFile, 'utf8')).resolves.toBe('workspace preserved')
+  await expect(fs.readFile(preservedExternalFile, 'utf8')).resolves.toBe('external file preserved')
   await expect(fs.readFile(preservedClaudeFile, 'utf8')).resolves.toBe('claude preserved')
 }
 

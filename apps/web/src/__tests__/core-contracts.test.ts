@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import fixture from '../../../../packages/contracts/fixtures/core-contracts.valid.json'
-import memoryFixture from '../../../../packages/contracts/fixtures/memory-review.valid.json'
-import type { BaselineRefDto, CreateWorkspaceBindingRequest, Diagnostic, LocalServiceEvent, MemoryCandidateDto, MemoryRevisionDto, MemorySpaceDto, RecoverManagedAgentIdentityRequest, RestoreManagedAgentIdentityRequest, ReviewMemoryCandidateRequest, ReviewMemoryCandidateResult, SaveConfigRequest, SaveConfigResult, ValidationFailed } from '../contracts'
+import memoryFixture from '../../../../packages/contracts/fixtures/formal-memory-v3.valid.json'
+import type { BaselineRefDto, Diagnostic, LocalServiceEvent, MemoryCandidateDto, MemoryRevisionDto, MemorySpaceDto, RecoverManagedAgentIdentityRequest, RestoreManagedAgentIdentityRequest, ReviewMemoryCandidateRequest, ReviewMemoryCandidateResult, SaveConfigRequest, SaveConfigResult, ValidationFailed } from '../contracts'
 
 const hashPattern = /^sha256:[0-9a-f]{64}$/
 
@@ -51,13 +51,6 @@ describe('首切片核心共享合同', () => {
     const permissions = fixture.permissionsSaveRequest as SaveConfigRequest
     expect(permissions.change.kind).toBe('permissions')
     expect(permissions.expectedBaseline.assetId).toBe(permissions.assetId)
-    const workspaceBinding = fixture.workspaceBindingSaveRequest as SaveConfigRequest
-    expect(workspaceBinding.change.kind).toBe('workspace_binding')
-    expect(workspaceBinding.expectedBaseline.assetId).toBe(workspaceBinding.assetId)
-    expect(workspaceBinding.change.value).not.toContain('memoryRevision')
-    const createWorkspaceBinding = fixture.createWorkspaceBindingRequest as CreateWorkspaceBindingRequest
-    expect(createWorkspaceBinding.workspaceId).toBe('ws-1')
-    expect(createWorkspaceBinding.value).not.toContain('memoryRevision')
   })
 
   it('权限扩大确认绑定资产、内容哈希与过期时间', () => {
@@ -96,10 +89,10 @@ describe('首切片核心共享合同', () => {
     expect(space.scopeKey).toEqual({ kind: 'agent_long_term', agentId: 'zhouce' })
     expect(space.owner).toEqual({ kind: 'agent', agentId: 'zhouce' })
     expect(space.stewardAgentId).toBe('zhouce')
-    expect(space.storageProfileVersion).toBe('memory-v1')
+    expect(space.storageProfileVersion).toBe('memory-v3')
     expect(space.storageLocator.relativePath).toBe('memory/long-term.md')
     expect(candidate.spaceId).toBe(space.id)
-    expect(candidate.proposerAgentId).not.toBe(candidate.reviewPrincipal.kind === 'agent' ? candidate.reviewPrincipal.agentId : candidate.reviewPrincipal.companyId)
+    expect(candidate.proposerAgentId).not.toBe(candidate.reviewPrincipal.kind === 'agent' ? candidate.reviewPrincipal.agentId : candidate.reviewPrincipal.teamId)
     expect(candidate.proposedContentHash).toMatch(hashPattern)
     expect(request.decision).toBe('approve')
     expect(request.expectedBaseline.assetId).toBe(space.id)

@@ -22,6 +22,11 @@ describe('UiPreferences', () => {
     expect(result.shellLabel).toBe('我的工作台')
   })
 
+  it('保留圆润字体并回退未知字体', () => {
+    expect(parseUiPreferences({ version: 1, interfaceFont: 'rounded' }).interfaceFont).toBe('rounded')
+    expect(parseUiPreferences({ version: 1, interfaceFont: 'unknown' }).interfaceFont).toBe(DEFAULT_UI_PREFERENCES.interfaceFont)
+  })
+
   it('保存并加载隐藏的 Agent 上下文栏偏好', () => {
     const data = new Map<string, string>()
     const storage = {

@@ -3,7 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex, MutexGuard, OnceLock,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -20,10 +20,10 @@ const APP_TARGETS: &[(&str, &str, TargetKind)] = &[
     ("database", "bandi.db", TargetKind::File),
     ("databaseWal", "bandi.db-wal", TargetKind::File),
     ("databaseShm", "bandi.db-shm", TargetKind::File),
-    ("workspaceRegistry", "workspaces", TargetKind::Directory),
     ("sharedAssets", "shared-assets", TargetKind::Directory),
     ("backups", "backups", TargetKind::Directory),
     ("revisions", "revisions", TargetKind::Directory),
+    ("formalMemory", "memory", TargetKind::Directory),
     ("uiAssets", "ui-assets", TargetKind::Directory),
 ];
 
@@ -67,11 +67,20 @@ fn mutation_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+fn reset_committed() -> &'static AtomicBool {
+    static COMMITTED: AtomicBool = AtomicBool::new(false);
+    &COMMITTED
+}
+
 /// 本地数据写 command 与 Factory Reset commit 共用，避免重置期间重新创建数据。
 pub(crate) fn mutation_guard() -> Result<MutexGuard<'static, ()>, String> {
-    mutation_lock()
+    let guard = mutation_lock()
         .try_lock()
-        .map_err(|_| "FACTORY_RESET_BUSY: 另一项本地数据变更正在进行".into())
+        .map_err(|_| "FACTORY_RESET_BUSY: 另一项本地数据变更正在进行".to_string())?;
+    if reset_committed().load(Ordering::Acquire) {
+        return Err("FACTORY_RESET_RESTART_REQUIRED: 恢复已提交，请重启 Bandi".into());
+    }
+    Ok(guard)
 }
 
 #[derive(Debug, Deserialize)]
@@ -230,7 +239,9 @@ pub(crate) fn cleanup_committed_at(app_data_dir: &Path, home_dir: &Path) -> Resu
         remove_quarantine(&quarantine, target.kind)?;
     }
     fs::remove_file(marker_path)
-        .map_err(|_| "FACTORY_RESET_CLEANUP_FAILED: 无法移除已提交标记".into())
+        .map_err(|_| "FACTORY_RESET_CLEANUP_FAILED: 无法移除已提交标记".to_string())?;
+    reset_committed().store(false, Ordering::Release);
+    Ok(())
 }
 
 fn take_preview(preview_ref: &str) -> Result<PreviewRecord, String> {
@@ -421,6 +432,7 @@ where
             "FACTORY_RESET_ROLLBACK_FAILED: 无法记录提交状态且未能完整回滚".into()
         });
     }
+    reset_committed().store(true, Ordering::Release);
     Ok(FactoryResetResultDto {
         request_id: request_id.into(),
         preview_ref: preview_ref.into(),
@@ -537,13 +549,24 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let app = root.path().join("app");
         let home = root.path().join("home");
-        fs::create_dir_all(app.join("workspaces")).unwrap();
+        fs::create_dir_all(app.join("memory/projects/project-one/departments")).unwrap();
         fs::create_dir_all(home.join(".bandi/agents/agt_one")).unwrap();
         fs::write(app.join("bandi.db"), b"db").unwrap();
-        let workspace = root.path().join("customer-workspace");
+        fs::write(
+            app.join("memory/projects/project-one/public.md"),
+            b"project memory",
+        )
+        .unwrap();
+        fs::write(
+            app.join("memory/projects/project-one/departments/department-one.md"),
+            b"department memory",
+        )
+        .unwrap();
+        let project_directory = root.path().join("customer-project");
         let external = root.path().join("external-agent");
         let host = home.join(".claude/settings.json");
-        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&project_directory).unwrap();
+        fs::write(project_directory.join("keep.txt"), b"external project data").unwrap();
         fs::create_dir_all(&external).unwrap();
         fs::create_dir_all(host.parent().unwrap()).unwrap();
         fs::write(&host, b"{}").unwrap();
@@ -559,9 +582,19 @@ mod tests {
         .unwrap();
         assert!(result.requires_restart && app.join(MARKER_NAME).is_file());
         assert!(!app.join("bandi.db").exists());
-        assert!(workspace.exists() && external.exists() && host.exists());
+        assert!(!app.join("memory").exists());
+        assert!(result
+            .quarantined_target_ids
+            .contains(&"formalMemory".into()));
+        assert!(mutation_guard().unwrap_err().contains("RESTART_REQUIRED"));
+        assert_eq!(
+            fs::read(project_directory.join("keep.txt")).unwrap(),
+            b"external project data"
+        );
+        assert!(project_directory.exists() && external.exists() && host.exists());
         cleanup_committed_at(&app, &home).unwrap();
         assert!(!app.join(MARKER_NAME).exists());
+        assert!(mutation_guard().is_ok());
     }
 
     #[test]

@@ -1,86 +1,103 @@
-import { useMemo, useRef, useState, type Ref } from 'react'
-import { Check, FolderOpen, Plus, Trash2 } from 'lucide-react'
+import { useRef, useState, type Ref } from 'react'
+import { FolderOpen } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
-import { MockBoundaryNote, PageHeader } from '../../components/app/page'
-import type { FullAgent, ServiceGrant } from '../../domain'
+import { AppDialog } from '../../components/ui/dialog'
+import { MockBoundaryNote } from '../../components/app/page'
+import { ErrorNotice, errorFromCause, type UserFacingError } from '../../components/app/error-notice'
+import type { FullAgent } from '../../domain'
 import { useApp } from '../../state'
 import { useUnsavedChangesGuard } from '../../hooks/use-unsaved-changes-guard'
 import { AgentAvatarPicker } from '../../components/agents/agent-avatar-picker'
-import { commitManagedAgentCreation, importClaudeAgent, isDesktopRuntime, previewClaudeAgent, registerExternalAgent, selectClaudeAgentFile, selectDirectory } from '../../desktop-bridge'
+import { allocateAgentId, commitManagedAgentCreation, importClaudeAgent, isDesktopRuntime, previewClaudeAgent, selectClaudeAgentFile } from '../../desktop-bridge'
 import type { ClaudeAgentPreviewDto } from '../../contracts'
 import { getAgentConfigPath, normalizeAgentName, serializeAgentConfig, snapshotAgentConfig, validateAgentName, type AgentConfigPayload } from '../../agent-config-model'
 
-const lines = (value: string) => value.split('\n').map((item) => item.trim()).filter(Boolean)
+const agentTemplates = [
+  { id: '', name: '空白 Agent', description: '从空白定义开始。', mission: '', rolePrompt: '', workingConstraints: '' },
+  { id: 'code-review', name: '代码审查', description: '预填审查目标和工作方法，权限仍未授予。', mission: '审查代码的正确性、安全性与可维护性。', rolePrompt: '你是一名严格、务实的代码审查 Agent，负责在代码合入前识别可复现且影响明确的问题。', workingConstraints: '先确认变更范围和验证证据。\n按影响排序，说明问题位置、后果和最小修复方向。\n不要把个人偏好表达成代码缺陷。' },
+  { id: 'research', name: '研究助理', description: '预填研究目标和证据要求，权限仍未授予。', mission: '整理可靠信息并给出有依据的结论。', rolePrompt: '你是一名严谨的研究助理，围绕明确问题收集、比较并归纳信息。', workingConstraints: '区分事实、推断和未知项。\n保留来源和时间信息。\n证据冲突时明确说明，不编造结论。' },
+] as const
 
-export function AgentCreatePage() {
+type PersonalAgentCreateDialogProps = {
+  open: boolean
+  onClose: () => void
+}
+
+export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentCreateDialogProps> = {}) {
   const { state, dispatch } = useApp()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const requestedDepartmentId = params.get('department') ?? ''
-  const initialDepartment = state.departments.find((item) => item.id === requestedDepartmentId)
   const importMode = params.get('mode') === 'import'
-  const referenceMode = params.get('mode') === 'reference'
-  const guidedMode = importMode || referenceMode
-  const requestedWorkspaceId = params.get('workspace') ?? ''
-  const [step, setStep] = useState(1)
   const [externalPath, setExternalPath] = useState('')
   const [selectingDirectory, setSelectingDirectory] = useState(false)
   const [importPreview, setImportPreview] = useState<ClaudeAgentPreviewDto>()
-  const [generatedId] = useState(() => `agent-${crypto.randomUUID()}`)
+  const [requestId] = useState(() => `${importMode ? 'import' : 'create'}-agent-${crypto.randomUUID()}`)
+  const [generatedId, setGeneratedId] = useState(() => isDesktopRuntime() ? '' : `agent-${crypto.randomUUID()}`)
   const [name, setName] = useState('')
+  const [templateId, setTemplateId] = useState('')
   const [nameTouched, setNameTouched] = useState(false)
-  const [roleId, setRoleId] = useState('')
-  const [companyId, setCompanyId] = useState(initialDepartment?.companyId ?? '')
-  const [departmentId, setDepartmentId] = useState(initialDepartment?.id ?? '')
-  const [organizationAssociated, setOrganizationAssociated] = useState(Boolean(initialDepartment))
+  const teamId = state.currentTeamId ?? 'team-personal'
   const [mission, setMission] = useState('')
-  const [responsibilities, setResponsibilities] = useState('')
-  const [deliverables, setDeliverables] = useState('')
-  const [boundaries, setBoundaries] = useState('')
-  const [escalations, setEscalations] = useState('')
-  const [prohibitions, setProhibitions] = useState('')
-  const [completion, setCompletion] = useState('')
-  const [workspaceId, setWorkspaceId] = useState(state.workspaces.some((item) => item.id === requestedWorkspaceId) ? requestedWorkspaceId : '')
-  const [grants, setGrants] = useState<ServiceGrant[]>([])
+  const [rolePrompt, setRolePrompt] = useState('')
+  const [workingConstraints, setWorkingConstraints] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [committed, setCommitted] = useState(false)
   const [avatar, setAvatar] = useState<File>()
   const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string>()
+  const [saveError, setSaveError] = useState<UserFacingError>()
+  const [pendingTemplateId, setPendingTemplateId] = useState<string>()
+  const [discardOpen, setDiscardOpen] = useState(false)
   const allowNavigation = useRef(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
-  const companyInputRef = useRef<HTMLSelectElement>(null)
-  const departmentInputRef = useRef<HTMLSelectElement>(null)
-  const roleInputRef = useRef<HTMLSelectElement>(null)
   const desktop = isDesktopRuntime()
-  const dirty = !committed && Boolean(name || roleId || departmentId || mission || responsibilities || deliverables || boundaries || escalations || prohibitions || completion || workspaceId || grants.length || externalPath || avatar)
-  const departments = state.departments.filter((item) => item.companyId === companyId)
-  const roles = state.roles.filter((item) => item.companyId === companyId && item.status === 'active' && (!item.departmentId || item.departmentId === departmentId))
-  const selectedDepartment = departments.find((item) => item.id === departmentId)
-  const selectedRole = roles.find((item) => item.id === roleId)
+  const dirty = !committed && Boolean(name || mission || rolePrompt || workingConstraints || externalPath || avatar)
   const id = generatedId
-  const validExternalPath = !referenceMode || (desktop ? externalPath.startsWith('/') : /^(~\/|\/).+/.test(externalPath.trim()))
-  const organizationEnabled = guidedMode ? Boolean(companyId || departmentId || roleId) : organizationAssociated
-  const organizationValid = !organizationEnabled || Boolean(companyId && selectedDepartment && selectedRole)
+  const teamValid = state.teams.length === 0 || Boolean(state.teams.some((team) => team.id === teamId))
   const normalizedName = normalizeAgentName(name)
   const nameError = validateAgentName(name)
   const duplicateName = Boolean(normalizedName) && state.agents.some((item) => normalizeAgentName(item.name).toLocaleLowerCase() === normalizedName.toLocaleLowerCase())
-  const duplicateId = state.agents.some((item) => item.id === id)
+  const duplicateId = Boolean(id) && state.agents.some((item) => item.id === id)
   const duplicate = duplicateName || duplicateId
   const visibleNameError = (submitted || nameTouched) ? nameError ?? (duplicateName ? '已有同名 Agent，请使用其他名称。' : undefined) : undefined
-  const identityValid = Boolean(!nameError && id && validExternalPath && organizationValid && (!importMode || importPreview) && !duplicate)
-  const dutiesValid = true
-  const grantDepartments = departments.filter((item) => item.id !== departmentId)
-  const grantsValid = grants.every((grant) => grantDepartments.some((item) => item.id === grant.departmentId) && grant.capabilities.length > 0)
-  const canContinue = step === 1 ? identityValid : step === 2 ? dutiesValid : grantsValid
-  const manager = state.departments.find((item) => item.id === departmentId)?.managerAgentId
-  const preview = useMemo(() => ({ name, roleId, companyId, departmentId, mission }), [name, roleId, companyId, departmentId, mission])
+  const identityValid = Boolean(!nameError && teamValid && (!importMode || importPreview) && !duplicate)
   const unsavedChangesDialog = useUnsavedChangesGuard({
     dirty,
     resetDraft: () => setCommitted(true),
     shouldBlock: () => dirty && !allowNavigation.current,
   })
+
+  const applyTemplate = (nextTemplateId: string) => {
+    const template = agentTemplates.find((item) => item.id === nextTemplateId) ?? agentTemplates[0]
+    setTemplateId(template.id)
+    setMission(template.mission)
+    setRolePrompt(template.rolePrompt)
+    setWorkingConstraints(template.workingConstraints)
+    setPendingTemplateId(undefined)
+  }
+  const selectTemplate = (nextTemplateId: string) => {
+    if (nextTemplateId === templateId) return
+    const current = agentTemplates.find((item) => item.id === templateId) ?? agentTemplates[0]
+    const templateFieldsChanged = mission !== current.mission || rolePrompt !== current.rolePrompt || workingConstraints !== current.workingConstraints
+    if (templateFieldsChanged) setPendingTemplateId(nextTemplateId)
+    else applyTemplate(nextTemplateId)
+  }
+  const closePersonalDialog = () => {
+    if (saving) return
+    if (dirty) {
+      setDiscardOpen(true)
+      return
+    }
+    if (onClose) onClose()
+    else navigate('/agents', { replace: true })
+  }
+  const discardAndClose = () => {
+    allowNavigation.current = true
+    setCommitted(true)
+    setDiscardOpen(false)
+    if (onClose) onClose()
+    else navigate('/agents', { replace: true })
+  }
 
   const chooseImportFile = async () => {
     if (selectingDirectory) return
@@ -96,98 +113,72 @@ export function AgentCreatePage() {
       setMission(preview.description ?? '')
     } catch (error) {
       setImportPreview(undefined)
-      setSaveError(error instanceof Error ? error.message : String(error))
+      setSaveError(errorFromCause(
+        error,
+        '无法预览 Claude Agent',
+        '没有导入任何内容。请检查所选文件后重试。',
+      ))
     } finally {
       setSelectingDirectory(false)
     }
-  }
-  const chooseExternalDirectory = async () => {
-    if (selectingDirectory) return
-    setSelectingDirectory(true)
-    setSaveError(undefined)
-    try {
-      const selected = await selectDirectory()
-      if (selected) setExternalPath(selected)
-    } catch {
-      setSaveError('无法打开系统目录选择器，请重试。')
-    } finally {
-      setSelectingDirectory(false)
-    }
-  }
-  const addGrant = () => {
-    const target = grantDepartments[0]
-    if (!target) return
-    setGrants((items) => [...items, { id: `grant-${items.length + 1}`, departmentId: target.id, capabilities: ['配置审查'], workspaceIds: workspaceId ? [workspaceId] : [], prohibitions: ['不得扩大权限'], status: '有效' }])
-  }
-  const setOrganizationAssociation = (associated: boolean) => {
-    setOrganizationAssociated(associated)
-    if (associated) return
-    setCompanyId('')
-    setDepartmentId('')
-    setRoleId('')
-    setGrants([])
   }
   const focusFirstInvalidField = () => {
     if (nameError || duplicate) nameInputRef.current?.focus()
-    else if (organizationEnabled && !companyId) companyInputRef.current?.focus()
-    else if (organizationEnabled && !selectedDepartment) departmentInputRef.current?.focus()
-    else if (organizationEnabled && !selectedRole) roleInputRef.current?.focus()
   }
   const submit = async () => {
     setSubmitted(true)
     setNameTouched(true)
     setSaveError(undefined)
-    if (!identityValid || !dutiesValid || !grantsValid || saving) {
+    if (!identityValid || saving) {
       focusFirstInvalidField()
       return
     }
-    const department = state.departments.find((item) => item.id === departmentId)
-    const workspaceBindings = workspaceId ? [{ workspaceId, instructions: `${name} 在此工作区的专属配置。`, ruleIds: [], skillIds: [], mcpIds: [], memoryRevision: 'r0' }] : []
-    const effectiveMission = mission.trim() || ((importMode || referenceMode) ? '从已有 Agent 配置建立的长期受管记录。' : '')
+    let agentId = id
+    if (desktop && !agentId) {
+      try {
+        agentId = await allocateAgentId(requestId)
+        setGeneratedId(agentId)
+      } catch (error) {
+        setSaveError(errorFromCause(error, '无法创建 Agent', '系统无法分配 Agent ID。你的输入仍保留，请重试创建。'))
+        return
+      }
+    }
+    const effectiveMission = mission.trim() || (importMode ? '从已有 Agent 配置建立的长期受管记录。' : '')
     const agent: FullAgent = {
-      id,
+      id: agentId,
       name: normalizedName,
-      role: selectedRole?.name ?? roleId,
-      department: department?.name ?? '',
-      service: grants.map((item) => state.departments.find((dep) => dep.id === item.departmentId)?.name).filter(Boolean).join('、') || undefined,
       status: 'active',
-      roleId: roleId || undefined,
-      packageSchema: referenceMode ? { compatibility: 'unverified' } : { schemaVersion: 1, compatibility: 'current' },
-      workspaces: workspaceBindings.length,
+      packageSchema: { schemaVersion: 1, compatibility: 'current' },
       config: '配置完整',
       updated: '刚刚',
-      companyId: companyId || undefined,
-      primaryDepartmentId: departmentId || undefined,
-      managerAgentId: manager,
+      teamId: teamId || 'team-personal',
       mission: effectiveMission,
-      responsibilities: lines(responsibilities),
-      deliverables: lines(deliverables),
-      decisionBoundaries: lines(boundaries),
-      escalationConditions: lines(escalations),
-      prohibitions: lines(prohibitions),
-      completionDefinition: lines(completion),
-      serviceGrants: grants,
-      packagePath: referenceMode ? `${externalPath.trim().replace(/\/$/, '')}/` : `~/.bandi/agents/agt_${id}/`,
-      packageSource: referenceMode ? { kind: 'external-reference', externalPath: externalPath.trim(), strategy: 'reference-only' } : importMode && importPreview ? { kind: 'claude-agent-import', packageId: `agt_${id}`, strategy: 'managed-copy', sourcePath: importPreview.sourcePath, sourceBaselineHash: importPreview.sourceBaselineHash, importedAt: new Date().toISOString() } : desktop ? { kind: 'bandi-managed', packageId: `agt_${id}`, strategy: 'managed' } : { kind: 'bandi-demo', strategy: 'create-demo' },
+      responsibilities: [],
+      deliverables: [],
+      decisionBoundaries: [],
+      escalationConditions: [],
+      prohibitions: [],
+      completionDefinition: [],
+      packagePath: `~/.bandi/agents/agt_${agentId}/`,
+      packageSource: importMode && importPreview ? { kind: 'claude-agent-import', packageId: `agt_${agentId}`, strategy: 'managed-copy', sourcePath: importPreview.sourcePath, sourceBaselineHash: importPreview.sourceBaselineHash, importedAt: new Date().toISOString() } : desktop ? { kind: 'bandi-managed', packageId: `agt_${agentId}`, strategy: 'managed' } : { kind: 'bandi-demo', strategy: 'create-demo' },
       avatarPath: avatar ? 'avatar.png' : undefined,
-      instructions: referenceMode ? '外部主指令未读取；当前仅登记 AgentPackage 引用。' : importPreview?.instructions ?? [`你是${selectedRole?.name ?? '一个长期 Agent'}。`, effectiveMission, '遇到权限不足、目标冲突或跨部门依赖时及时升级。'].filter(Boolean).join('\n\n'),
+      instructions: importPreview?.instructions
+        ?? [rolePrompt.trim(), workingConstraints.trim()].filter(Boolean).join('\n\n'),
       skillRefs: [],
       ruleRefs: [],
       mcpRefs: [],
       contextPolicy: { enabled: false, triggerRatio: 0.8, targetRatio: 0.5, protectRecentTurns: 6, protectOpeningTurns: 2 },
       contextWindowTokens: 200_000,
       outputParameterBindings: [],
-      orchestrationPolicy: { enabled: false, maxDelegationDepth: 0, allowedAgentIds: [], allowedRoleIds: [], allowedDepartmentIds: [], requireWorkspaceBinding: true, requireSopMatch: true, requireServiceGrantForCrossDepartment: true, escalationConditions: [], prohibitions: [] },
       hookRefs: [],
       commandRefs: [],
-      permissions: { files: '未授予', commands: '未授予', network: '未授予', delegation: '未授予' },
-      workspaceBindings,
+      permissions: { files: '未授予', commands: '未授予', network: '未授予' },
       sopRefs: [],
       files: [],
     }
     setSaving(true)
     try {
-      if (desktop && !referenceMode) {
+      if (desktop) {
         const payloads: AgentConfigPayload[] = [
           snapshotAgentConfig(agent, 'identity'),
           snapshotAgentConfig(agent, 'instructions'),
@@ -197,10 +188,8 @@ export function AgentCreatePage() {
           snapshotAgentConfig(agent, 'mcp'),
           snapshotAgentConfig(agent, 'permissions'),
           snapshotAgentConfig(agent, 'sop'),
-          snapshotAgentConfig(agent, 'orchestration'),
           snapshotAgentConfig(agent, 'hooks'),
           snapshotAgentConfig(agent, 'commands'),
-          ...agent.workspaceBindings.map((value) => ({ kind: 'workspace-binding' as const, value })),
         ].filter((payload): payload is AgentConfigPayload => Boolean(payload))
         const files = payloads.flatMap((payload) => {
           const path = getAgentConfigPath(payload)
@@ -208,135 +197,147 @@ export function AgentCreatePage() {
           return path && content !== undefined ? [{ path, content }] : []
         })
         const result = importMode && importPreview
-          ? await importClaudeAgent(importPreview.sourcePath, importPreview.sourceBaselineHash, `import-agent-${id}`, agent, files, grants)
-          : await commitManagedAgentCreation(`create-agent-${id}`, agent, files, grants, avatar)
+          ? await importClaudeAgent(importPreview.sourcePath, importPreview.sourceBaselineHash, requestId, agent, files)
+          : await commitManagedAgentCreation(requestId, agent, files, avatar, teamId || undefined)
         dispatch({ type: 'SYNC_AGENT_RECOVERY', operation: result.operation, agent: result.agent })
         if (result.operation.status !== 'completed' || !result.agent) {
           throw new Error(result.operation.status === 'blocked'
-            ? 'AgentPackage 内容已发生变化，系统未自动覆盖；请从首页待处理项查看。'
-            : 'Agent 配置尚未完整保存，可从首页待处理项继续修复。')
+            ? 'Agent 配置已在外部发生变化，Bandi 没有覆盖当前文件；请从配置状态中的待处理项查看。'
+            : 'Agent 配置尚未完整保存，可从配置状态中的待处理项继续修复。')
         }
         dispatch({
           type: 'UPSERT_MANAGED_AGENT',
-          agent: { ...result.agent, serviceGrants: grants },
-          message: '已创建完整受管 AgentPackage 与组织关系',
+          agent: result.agent,
+          message: '受管 Agent 配置已创建',
         })
-      } else if (desktop && referenceMode) {
-        const reference = await registerExternalAgent(agent, externalPath.trim())
-        dispatch({ type: 'UPSERT_MANAGED_AGENT', agent: { ...agent, packagePath: `${reference.canonicalRoot.replace(/\/$/, '')}/`, packageSource: { kind: 'external-reference', externalPath: reference.canonicalRoot, strategy: 'reference-only' } }, message: '外部 AgentPackage 引用已登记；重启后仍会保留，目录内容不会被扫描、读取或修改' })
       } else {
         dispatch({ type: 'CREATE_AGENT', agent })
       }
-      if (!guidedMode) {
-        dispatch({
-          type: 'SHOW_NOTICE',
-          notice: desktop
+      dispatch({
+        type: 'SHOW_NOTICE',
+        notice: importMode
+          ? desktop
+            ? { tone: 'success', title: 'Agent 已导入', description: '已创建 Bandi 受管副本，原文件保持不变。' }
+            : { tone: 'success', title: 'Agent 已导入', description: '已添加到当前演示；未写入本机配置。' }
+          : desktop
             ? { tone: 'success', title: 'Agent 已创建', description: '长期配置已保存；任务使用与执行仍在 Claude Code 中完成。' }
             : { tone: 'success', title: 'Agent 已创建', description: '已添加到当前演示；未写入本机配置。' },
-        })
-      }
+      })
       allowNavigation.current = true
       setCommitted(true)
-      navigate(guidedMode ? `/agents/${id}?tab=overview&path=agent.yaml&view=preview` : `/agents/${id}`, { replace: true })
+      navigate(`/agents/${agentId}`, { replace: true })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (message.startsWith('INVALID_AGENT_ID')) {
-        setStep(1)
-        setSaveError(`系统生成的技术标识无效，请重试创建。技术详情：${message}`)
+        setSaveError(errorFromCause(
+          error,
+          '无法创建 Agent',
+          '系统生成的内部 ID 不可用。你的输入仍保留，请重试创建。',
+        ))
       } else {
-        setSaveError(message)
+        setSaveError(errorFromCause(
+          error,
+          importMode ? '无法导入 Agent' : '无法创建 Agent',
+          '你的输入仍保留。请检查本地服务后重试；若首页出现待处理项，请先从那里继续修复。',
+        ))
       }
     } finally {
       setSaving(false)
     }
   }
 
-  const pageTitle = importMode
-    ? '导入 Claude Agent'
-    : referenceMode
-      ? '仅登记外部引用'
-      : '创建个人 Agent'
-  const description = importMode
-    ? '选择 .claude/agents 下的单个文件，预览后创建 Bandi 受管副本；原文件不会被修改。'
-    : referenceMode
-      ? desktop
-        ? '只登记外部 AgentPackage 的位置和基本信息；不会扫描、读取、复制或修改目录内容。'
-        : '只在当前页面记录外部 AgentPackage 的演示位置；刷新后恢复初始状态。'
-      : desktop
-        ? '创建并管理一个长期 Agent 配置；任务使用与执行仍在 Claude Code 中完成。'
-        : '创建个人 Agent 的页面演示；不会写入本机配置。'
+  const personalDialog = <AppDialog
+    open={open}
+    onOpenChange={(nextOpen) => { if (!nextOpen) closePersonalDialog() }}
+    title="新建 Agent"
+    description="选择模板快速定义一个长期 Agent，所有预填内容都可以修改。"
+    size="lg"
+    footer={<>
+      <Button type="button" variant="outline" disabled={saving} onClick={closePersonalDialog}>取消</Button>
+      <Button type="submit" form="personal-agent-create-form" disabled={saving || !teamValid} aria-busy={saving}>{saving ? '正在创建…' : '创建 Agent'}</Button>
+    </>}
+  >
+    <form id="personal-agent-create-form" className="space-y-6" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+      <fieldset>
+        <legend className="text-sm font-semibold">套用模板</legend>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">一键预填描述、角色定位和工作方法；名称仍需自行填写。</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {agentTemplates.map((template) => <button key={template.id || 'blank'} type="button" aria-pressed={templateId === template.id} onClick={() => selectTemplate(template.id)} className={`min-h-11 rounded-full border px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${templateId === template.id ? 'border-foreground bg-foreground text-background' : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{template.name}</button>)}
+        </div>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{agentTemplates.find((template) => template.id === templateId)?.description}</p>
+      </fieldset>
+      <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError} help="用于列表、组织关系和 Claude Code 中识别这个 Agent。" />
+      <TextField label="一句话描述（可选）" value={mission} onChange={setMission} help="概括这个 Agent 是做什么的，将保存为长期使命摘要。" />
+      <TextArea label="角色定位（可选）" value={rolePrompt} onChange={setRolePrompt} help="说明它是谁、负责什么，以及应如何回应。" />
+      <TextArea label="工作方法与约束（可选）" value={workingConstraints} onChange={setWorkingConstraints} help="将写入主指令；不会创建 Rules 资产，也不会增加权限。" />
+      <details className="rounded-lg border border-border">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">更多设置（头像与 Team）</summary>
+        <div className="space-y-5 border-t border-border p-4">
+          <AgentAvatarPicker name={name} file={avatar} onChange={setAvatar} disabled={!desktop} help={desktop ? undefined : '头像上传仅在 Bandi Desktop 中可用；Web 演示使用名称首字符。'} />
+          <div className="rounded-lg bg-muted/60 p-3 text-sm"><b>所属 Team</b><p className="mt-1 text-muted-foreground">{state.teams.find((item) => item.id === teamId)?.name ?? '当前 Team 不可用'}</p></div>
+          {!teamValid && <p role="alert" className="text-sm text-danger">当前没有可用 Team，暂时无法创建 Agent。</p>}
+        </div>
+      </details>
+      <MockBoundaryNote>{desktop ? '创建后可在 Agent 详情中继续完善权限、项目和长期记忆；任务使用与执行仍在 Claude Code 中完成。' : '当前仅创建页面演示记录，不会写入本机配置。'}</MockBoundaryNote>
+      {saveError && <ErrorNotice error={saveError} />}
+    </form>
+  </AppDialog>
+
+  const importDialog = <AppDialog
+    open={open}
+    onOpenChange={(nextOpen) => { if (!nextOpen) closePersonalDialog() }}
+    title="导入 Agent"
+    description="从已有 Agent 文件创建 Bandi 受管副本，原文件不会被修改。"
+    size="lg"
+    footer={<>
+      <Button type="button" variant="outline" disabled={saving} onClick={closePersonalDialog}>取消</Button>
+      {importPreview && <Button type="button" disabled={saving || !teamValid} aria-busy={saving} onClick={() => void submit()}>{saving ? '正在导入…' : '导入 Agent'}</Button>}
+    </>}
+  >
+    <div className="space-y-5">
+      <button type="button" disabled={!desktop || selectingDirectory || saving} aria-busy={selectingDirectory} onClick={() => void chooseImportFile()} className="flex min-h-36 w-full flex-col items-center justify-center rounded-lg border border-dashed border-border px-5 py-6 text-center transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
+        <FolderOpen size={28} aria-hidden="true" />
+        <b className="mt-3 text-sm">{selectingDirectory ? '正在读取…' : importPreview ? '重新选择 Agent 文件' : '选择 Agent 文件'}</b>
+        <span className="mt-1 text-xs text-muted-foreground">当前支持 Claude Code 的 .claude/agents/*.md</span>
+      </button>
+      {!desktop && <p className="text-xs text-muted-foreground">本机文件选择仅在 Bandi Desktop 中可用。</p>}
+      {submitted && !importPreview && <p role="alert" className="text-xs text-danger">请选择并成功预览一个 Agent 文件。</p>}
+      {importPreview && <>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/35 p-4 text-sm">
+          <div className="min-w-0"><b className="block truncate">{importPreview.sourcePath.split(/[\\/]/).pop()}</b><span className="text-xs text-muted-foreground">文件已读取，可在导入前确认内容。</span></div>
+          <Button type="button" variant="outline" size="sm" disabled={selectingDirectory || saving} onClick={() => void chooseImportFile()}>重新选择</Button>
+        </div>
+        <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError ?? (submitted && duplicateId ? '系统生成的 Agent ID 已存在，请重试。' : undefined)} help="可在导入前修改；用于在 Bandi 和 AI 编程工具中识别这个 Agent。" />
+        <section className="rounded-lg border border-border p-4" aria-labelledby="import-description-title">
+          <h3 id="import-description-title" className="text-sm font-semibold">描述</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{importPreview.description || '来源文件未提供描述。'}</p>
+        </section>
+        <section className="rounded-lg border border-border p-4" aria-labelledby="import-instructions-title">
+          <h3 id="import-instructions-title" className="text-sm font-semibold">Instructions</h3>
+          <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">{importPreview.instructions}</pre>
+        </section>
+        <div className="rounded-lg bg-muted/60 p-4 text-sm">
+          <b>将添加到当前 Team：{state.teams.find((item) => item.id === teamId)?.name ?? '个人 Team'}</b>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">长期配置和权限可在导入后按需设置；初始不授予文件、命令或网络权限。</p>
+        </div>
+        <MockBoundaryNote>只复制名称、描述和 Instructions；不导入 Memory、Skills、Rules、MCP 或权限。</MockBoundaryNote>
+        {importPreview.ignoredFields.length > 0 && <details className="rounded-lg border border-border p-4 text-xs text-muted-foreground"><summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{importPreview.ignoredFields.length} 个来源字段不会导入</summary><p className="mt-2 break-words font-mono [overflow-wrap:anywhere]">{importPreview.ignoredFields.join('、')}</p></details>}
+      </>}
+      {saveError && <ErrorNotice error={saveError} />}
+    </div>
+  </AppDialog>
 
   return <>
-    <PageHeader title={pageTitle} description={description} backTo="/agents" backLabel="返回 Agent 列表" />
-    {!guidedMode ? <form className="mx-auto max-w-3xl panel overflow-hidden" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-      <div className="space-y-6 p-6 max-sm:p-4">
-        <div className="grid gap-5">
-          <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError} help="例如：董事长助理、产品经理、后端工程师。用于列表、组织关系和 Claude Code 中识别这个 Agent。" />
-          <AgentAvatarPicker name={name} file={avatar} onChange={setAvatar} disabled={!desktop} help={desktop ? undefined : '头像上传仅在 Bandi Desktop 中可用；Web 演示使用名称首字符。'} />
-        </div>
-        <section className="rounded-lg border border-border p-4 sm:p-5">
-          <label className="flex min-h-11 cursor-pointer items-start gap-3">
-            <input type="checkbox" className="mt-1" checked={organizationAssociated} disabled={!state.companies.length} onChange={(event) => setOrganizationAssociation(event.target.checked)} />
-            <span><b className="text-sm">关联组织（可选）</b><small className="mt-1 block leading-5 text-muted-foreground">{state.companies.length ? '需要设置部门归属和岗位时再关联。' : '尚未创建公司，可先创建个人 Agent。'}</small></span>
-          </label>
-          {organizationAssociated && <div className="mt-5 grid gap-5 sm:grid-cols-2">
-            <SelectField ref={companyInputRef} label="所属公司" value={companyId} onChange={(value) => { setCompanyId(value); setDepartmentId(''); setRoleId(''); setGrants([]) }} options={state.companies.map((item) => [item.id, item.name])} error={submitted && !companyId ? '请选择所属公司。' : undefined} />
-            <SelectField ref={departmentInputRef} label="所属部门" value={departmentId} onChange={(value) => { setDepartmentId(value); setRoleId(''); setGrants([]) }} options={departments.map((item) => [item.id, item.name])} error={submitted && !selectedDepartment ? '请选择所属部门。' : undefined} />
-            <SelectField ref={roleInputRef} label="岗位" value={roleId} onChange={setRoleId} options={roles.map((item) => [item.id, item.name])} error={submitted && !selectedRole ? '请选择有效岗位。' : undefined} />
-            <div className="rounded-lg bg-muted p-4 text-sm"><b>直属主管</b><p className="mt-1 text-muted-foreground">{state.agents.find((item) => item.id === manager)?.name ?? '所选部门尚未设置主管'}</p></div>
-          </div>}
-        </section>
-        {requestedWorkspaceId && <div className={`rounded-lg border p-4 text-sm ${workspaceId ? 'border-border bg-muted/30' : 'border-danger/30 bg-danger/5 text-danger'}`} role={workspaceId ? undefined : 'alert'}>{workspaceId ? <>将关联到工作区：<b>{state.workspaces.find((item) => item.id === workspaceId)?.name}</b></> : '预选工作区已不存在，没有使用其他工作区替代。'}</div>}
-        <MockBoundaryNote>{desktop ? '创建后可在 Agent 详情中继续完善长期配置；任务使用与执行仍在 Claude Code 中完成。' : '当前仅创建页面演示记录，不会写入本机配置。'}</MockBoundaryNote>
-      </div>
-      {saveError && <p role="alert" className="border-t border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">{saveError}</p>}
-      <div className="flex justify-end border-t border-border p-4"><Button type="submit" disabled={saving} aria-busy={saving}>{saving ? '正在创建…' : '创建 Agent'}</Button></div>
-    </form> : <div className="mx-auto max-w-4xl panel overflow-hidden">
-      <div className="grid grid-cols-3 border-b border-border">{['身份与组织', '职责与边界', '授权与确认'].map((label, index) => <div key={label} className={`border-b-2 px-3 py-4 text-center text-xs ${step === index + 1 ? 'border-foreground font-semibold text-foreground' : 'border-transparent text-muted-foreground'}`}>{index + 1} {label}</div>)}</div>
-      <div className="min-h-[420px] p-6 max-sm:p-4">
-        {step === 1 && <div className="grid gap-5 sm:grid-cols-2">
-          {importMode && <div className="sm:col-span-2"><label className="block text-sm font-medium">Claude Agent 文件</label><Button type="button" variant="outline" className="mt-2" disabled={!desktop || selectingDirectory} aria-busy={selectingDirectory} onClick={() => void chooseImportFile()}><FolderOpen size={16} aria-hidden="true" />{selectingDirectory ? '正在读取…' : importPreview ? '重新选择文件' : '选择 .md 文件'}</Button>{importPreview && <div className="mt-3 rounded-lg border border-border bg-muted/35 p-4 text-sm"><b>{importPreview.name}</b><p className="mt-1 text-muted-foreground">{importPreview.description || '无来源描述'}</p><p className="mt-2 text-xs text-muted-foreground">将创建受管副本；原始文件不会被修改。{importPreview.ignoredFields.length ? ` 未转换字段：${importPreview.ignoredFields.join('、')}` : ''}</p></div>}{submitted && !importPreview && <span className="mt-1 block text-xs text-danger">请选择并成功预览一个 Claude Agent 文件。</span>}</div>}
-          {referenceMode && (desktop ? <div className="sm:col-span-2"><label className="block text-sm font-medium">外部 Agent 目录</label><Button type="button" variant="outline" className="mt-2" disabled={selectingDirectory} aria-busy={selectingDirectory} onClick={() => void chooseExternalDirectory()}><FolderOpen size={16} aria-hidden="true" />{selectingDirectory ? '正在打开…' : externalPath ? '重新选择目录' : '选择目录'}</Button><div className="mt-2 min-h-10 rounded-md border border-border bg-muted/35 px-3 py-2 text-sm">{externalPath || '尚未选择目录'}</div>{submitted && !validExternalPath && <span className="mt-1 block text-xs text-danger">请选择一个本机目录。</span>}</div> : <TextField label="外部 Agent 演示路径" value={externalPath} onChange={setExternalPath} error={submitted && !validExternalPath ? '请输入以 / 或 ~/ 开头的演示路径。' : undefined} />)}
-          {!importMode && <AgentAvatarPicker name={name} file={avatar} onChange={setAvatar} disabled={!desktop} help={desktop ? undefined : '头像上传仅在 Bandi Desktop 中可用；Web 演示使用名称首字符。'} />}
-          <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError ?? (submitted && duplicateId ? '系统生成的 Agent ID 已存在，请重试。' : undefined)} help="例如：董事长助理、产品经理、后端工程师。用于列表、组织关系和 Claude Code 中识别这个 Agent。" />
-          <SelectField label="所属公司（高级治理，可选）" value={companyId} onChange={(value) => { setCompanyId(value); setDepartmentId(''); setRoleId('') }} options={state.companies.map((item) => [item.id, item.name])} optional />
-          <div><SelectField label="所属部门" value={departmentId} onChange={(value) => { setDepartmentId(value); setRoleId('') }} options={departments.map((item) => [item.id, item.name])} optional error={submitted && organizationEnabled && !departmentId ? '启用组织治理后请选择所属部门。' : undefined} /><p className="mt-2 text-xs text-muted-foreground">留空则作为个人 Agent 使用。</p></div>
-          <SelectField label="岗位" value={roleId} onChange={setRoleId} options={roles.map((item) => [item.id, item.name])} optional error={submitted && organizationEnabled && !selectedRole ? '启用组织治理后请选择有效岗位。' : undefined} />
-          <div className="rounded-lg bg-muted p-4 text-sm sm:col-span-2"><b>直属主管</b><p className="mt-1 text-muted-foreground">{state.agents.find((item) => item.id === manager)?.name ?? '由所选部门主管派生；当前未设置'}</p></div>
-        </div>}
-        {step === 2 && ((importMode || referenceMode) ? <div className="rounded-lg border border-border p-5"><b>{importMode ? '来源正文已进入受管副本' : '本次不读取外部职责与边界'}</b><p className="mt-2 text-sm leading-6 text-muted-foreground">{importMode ? '确认后只编辑 Bandi 受管副本，原始 Claude Agent 文件保持不变。' : '只登记外部位置，不读取、复制或修改目录内容。'}</p></div> : <div className="grid gap-5 sm:grid-cols-2"><TextArea label="使命" value={mission} onChange={setMission} error={submitted && !mission.trim() ? '请输入使命。' : undefined} /><TextArea label="主要职责（每行一项）" value={responsibilities} onChange={setResponsibilities} error={submitted && !responsibilities.trim() ? '至少填写一项职责。' : undefined} /><TextArea label="交付物" value={deliverables} onChange={setDeliverables} /><TextArea label="决策边界" value={boundaries} onChange={setBoundaries} error={submitted && !boundaries.trim() ? '请明确决策边界。' : undefined} /><TextArea label="升级条件" value={escalations} onChange={setEscalations} /><TextArea label="禁止事项" value={prohibitions} onChange={setProhibitions} error={submitted && !prohibitions.trim() ? '请明确禁止事项。' : undefined} /><TextArea label="完成定义" value={completion} onChange={setCompletion} /></div>)}
-        {step === 3 && <div className="space-y-5">
-          <SelectField label="初始工作区专属配置（可选）" value={workspaceId} onChange={setWorkspaceId} options={state.workspaces.map((item) => [item.id, item.name])} optional />
-          <div className="rounded-lg border border-border">
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <div><b>跨部门服务授权</b><p className="mt-1 text-xs text-muted-foreground">组织身份本身不会授予配置或系统权限。</p></div>
-              <Button variant="outline" size="sm" disabled={!grantDepartments.length} onClick={addGrant}><Plus size={14} />添加授权</Button>
-            </div>
-            {grants.length ? <div className="divide-y divide-border">{grants.map((grant) => <div key={grant.id} className="grid gap-3 p-4 sm:grid-cols-[1fr_1fr_auto]">
-              <SelectField label="目标部门" value={grant.departmentId} onChange={(value) => setGrants((items) => items.map((item) => item.id === grant.id ? { ...item, departmentId: value } : item))} options={grantDepartments.map((item) => [item.id, item.name])} error={submitted && !grantDepartments.some((item) => item.id === grant.departmentId) ? '请选择当前公司内的其他部门。' : undefined} />
-              <TextField label="允许能力" value={grant.capabilities.join('、')} onChange={(value) => setGrants((items) => items.map((item) => item.id === grant.id ? { ...item, capabilities: value.split('、').map((item) => item.trim()).filter(Boolean) } : item))} error={submitted && !grant.capabilities.length ? '请至少填写一项允许能力。' : undefined} />
-              <Button aria-label="移除服务授权" variant="ghost" size="icon" onClick={() => setGrants((items) => items.filter((item) => item.id !== grant.id))}><Trash2 size={16} /></Button>
-            </div>)}</div> : <p className="p-4 text-sm text-muted-foreground">{grantDepartments.length ? '没有跨部门服务授权。' : '当前公司没有其他可授权部门。'}</p>}
-          </div>
-          <div className="rounded-lg border border-success/30 bg-success/5 p-4">
-            <div className="flex gap-3"><Check className="text-success" aria-hidden="true" /><div>
-              <b>{preview.name || '未命名 Agent'} · {state.roles.find((item) => item.id === preview.roleId)?.name ?? '未设置岗位'}</b>
-              <p className="mt-1 text-sm text-muted-foreground">所属部门：{state.departments.find((item) => item.id === preview.departmentId)?.name ?? '未选择'} · 初始工作区：{state.workspaces.find((item) => item.id === workspaceId)?.name ?? '暂不设置'} · 跨部门授权：{grants.length} 项</p>
-              <p className="mt-1 text-sm text-muted-foreground">初始长期权限：文件、命令、网络与委派均未授予</p>
-              <p className="mt-2 text-xs text-muted-foreground">{desktop ? '技术标识' : '演示标识'}：{id}（由系统生成，创建后不可修改）</p>
-            </div></div>
-          </div>
-          {requestedWorkspaceId && !state.workspaces.some((item) => item.id === requestedWorkspaceId) && <p role="alert" className="text-sm text-danger">预选工作区已不存在，没有使用其他工作区替代。</p>}
-          <MockBoundaryNote>{importMode ? '只复制已预览的名称、描述和 Instructions；不导入正式记忆，不自动转换技能、规则或 MCP，也不授予文件、命令、网络或委派权限。' : referenceMode ? '只登记外部位置；不扫描、读取、复制或修改目录内容，也不授予任何权限。' : undefined}</MockBoundaryNote>
-        </div>}
-      </div>
-      {saveError && <p role="alert" className="border-t border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">{saveError}</p>}
-      <div className="flex justify-between border-t border-border p-4"><Button variant="outline" disabled={saving} onClick={() => step === 1 ? navigate('/agents') : setStep((value) => value - 1)}>返回</Button>{step < 3 ? <Button onClick={() => { setSubmitted(true); if (canContinue) { setSubmitted(false); setStep((value) => value + 1) } else focusFirstInvalidField() }}>继续</Button> : <Button disabled={saving} onClick={() => void submit()}>{saving ? importMode ? '正在导入…' : '正在登记…' : importMode ? '导入受管副本' : desktop ? '登记外部引用' : '添加页面引用'}</Button>}</div>
-    </div>}
+    {importMode ? importDialog : personalDialog}
+    <AppDialog open={pendingTemplateId !== undefined} onOpenChange={(nextOpen) => { if (!nextOpen) setPendingTemplateId(undefined) }} title="替换当前模板内容？" description="将覆盖一句话描述、角色定位和工作方法；名称、头像及 Team 不受影响。" size="sm" footer={<><Button variant="outline" onClick={() => setPendingTemplateId(undefined)}>继续编辑</Button><Button onClick={() => applyTemplate(pendingTemplateId ?? '')}>替换内容</Button></>}><p className="text-sm text-muted-foreground">你对当前模板内容的修改会被新模板预设替换。</p></AppDialog>
+    <AppDialog open={discardOpen} onOpenChange={setDiscardOpen} title="放弃未保存内容？" description="关闭后会丢弃当前 Agent 的创建内容。" size="sm" footer={<><Button variant="outline" onClick={() => setDiscardOpen(false)}>继续编辑</Button><Button variant="danger" onClick={discardAndClose}>放弃并关闭</Button></>}><p className="text-sm text-muted-foreground">当前内容尚未写入任何文件。</p></AppDialog>
     {unsavedChangesDialog}
   </>
 }
 
+export function PersonalAgentCreateDialog(props: PersonalAgentCreateDialogProps) {
+  return <AgentCreatePage {...props} />
+}
+
 function TextField({ ref, label, value, onChange, onBlur, error, help }: { ref?: Ref<HTMLInputElement>; label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; error?: string; help?: string }) { const id = `field-${label}`; const describedBy = [error && `${id}-error`, help && `${id}-help`].filter(Boolean).join(' ') || undefined; return <label htmlFor={id} className="block text-sm font-medium">{label}<input ref={ref} id={id} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} aria-invalid={Boolean(error)} aria-describedby={describedBy} className="mt-2 h-10 w-full px-3" />{help && <span id={`${id}-help`} className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">{help}</span>}{error && <span id={`${id}-error`} className="mt-1 block text-xs text-danger">{error}</span>}</label> }
-function TextArea({ label, value, onChange, error }: { label: string; value: string; onChange: (value: string) => void; error?: string }) { const id = `field-${label}`; return <label htmlFor={id} className="block text-sm font-medium">{label}<textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} className="mt-2 min-h-28 w-full p-3" />{error && <span id={`${id}-error`} className="mt-1 block text-xs text-danger">{error}</span>}</label> }
-function SelectField({ ref, label, value, onChange, options, error, optional }: { ref?: Ref<HTMLSelectElement>; label: string; value: string; onChange: (value: string) => void; options: string[][]; error?: string; optional?: boolean }) { const id = `field-${label}`; return <label htmlFor={id} className="block text-sm font-medium">{label}<select ref={ref} id={id} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} className="mt-2 h-10 w-full px-3"><option value="">{optional ? '暂不设置' : '请选择'}</option>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>{error && <span id={`${id}-error`} className="mt-1 block text-xs text-danger">{error}</span>}</label> }
+function TextArea({ label, value, onChange, error, help }: { label: string; value: string; onChange: (value: string) => void; error?: string; help?: string }) { const id = `field-${label}`; const describedBy = [error && `${id}-error`, help && `${id}-help`].filter(Boolean).join(' ') || undefined; return <label htmlFor={id} className="block text-sm font-medium">{label}<textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} aria-describedby={describedBy} className="mt-2 min-h-28 w-full p-3" />{help && <span id={`${id}-help`} className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">{help}</span>}{error && <span id={`${id}-error`} className="mt-1 block text-xs text-danger">{error}</span>}</label> }

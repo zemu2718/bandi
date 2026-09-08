@@ -2,45 +2,46 @@
 
 ## 产品与界面边界
 
-Bandi Desktop 的首要职责是以简单、明了、大气的界面，可视化管理多个长期 Agent 及其配置资产，包括 Instructions、Skills、Memory、Rules、MCP、权限、Agent × Workspace 专属配置和工作流（SOP）。
+Bandi Desktop 的首要职责是以简单、明了、大气的界面，可视化管理 Team、长期 Agent、可选的 Team-scoped TaskBrief 及其长期配置资产，包括 Instructions、Skills、Memory、Rules、MCP、权限和工作流（SOP）。
 
 ### 核心职责边界
 
-Bandi Desktop 管理长期配置资产及其可追溯版本；用户自己的 Claude Code CLI 负责当前任务的全部执行期交互。董事长可在终端直接联系任意启用的 Agent；董事长助理是复杂、多部门事项的默认协调入口，但不是强制中转层。任务下达、人员与部门协调、权限请求、执行冲突处理、审批、汇报和最终验收均留在终端。
+Bandi Desktop 管理长期配置资产及其可追溯版本；用户自己的 Claude Code CLI 负责当前任务的下达、参与 Agent 选择、协作、权限请求、冲突处理、汇报和验收。Bandi 不持久化任务参与关系或执行期状态。
 
 必须严格区分：
 
 - Desktop 中的“权限配置”是 Agent 的长期能力边界和默认策略；CLI 中的“权限请求与批准”是当前任务的执行期交互；
-- Desktop 中的“配置冲突保护”只处理文件基线、外部变化和并发写入；CLI 中的“任务冲突处理与审批”由董事长、助理和相关 Agent 在执行过程中完成；
-- 除非直接服务于长期配置管理与版本追溯，否则不得在 Desktop 中新增任务创建、人员调度、执行审批、权限申请、运行日志、Todo、聊天、Session 或监控流程。
+- Desktop 中的“配置冲突保护”只处理文件基线、外部变化和并发写入；CLI 中的“任务冲突处理与审批”由用户和相关 Agent 在执行过程中完成；
+- Desktop 可管理轻量 TaskBrief，但 TaskBrief 必须属于一个 Team，只记录目标、背景、约束和期望产出，不持久化 Agent；不得将其扩张为执行 Task，或新增人员调度、执行审批、权限申请、运行日志、Todo、聊天、Session、监控、汇报或验收流程。
 
 核心高频流程固定为：
 
 ```text
-选择 Agent → 查看配置 → 修改 → 保存 → 回到 Claude Code 使用
+选择 Team → 选择 Agent → 查看或修改长期配置、按需整理 TaskBrief → 保存 → 在外部 Claude Code 中继续
 ```
 
 设计与实现必须遵守：
 
 - 默认简单、按需展开，不增加用户的管理和理解负担；
-- 每个长期 Agent 使用基于稳定 `agent-id` 的独立 AgentPackage，目录不随部门移动；每个 Agent 最多一个主属部门，可通过限定目标部门、能力、Workspace 和禁止事项的明确服务授权服务多个部门，部门、岗位和服务授权只表达组织、职责与委派边界，不形成隐式配置继承或权限授予；
-- 组织管理支持多 Company 和树形 Department，以及部门上下级、主管、岗位、成员和委派边界；Workspace 可暂不关联组织，但首版最多归属一个 Company，其主责和协作部门必须来自该 Company；组织关系必须无环，移动、删除或更换 Workspace 所属 Company 不隐式修改或删除 AgentPackage；
-- 正式记忆固定为 Agent 长期、Agent × Workspace、Workspace 公共和 Department × Workspace 四类；每个已关联组织的 Workspace 只能有一个主责部门和默认项目负责人，可有多个协作部门；主责主管负责总体结果、公共记忆归口和跨部门汇总，各协作主管维护本部门交付与部门项目记忆，董事长助理只在自身长期/Workspace 记忆中沉淀与董事长和主管交互形成的总记忆与协调摘要；
-- Company / 全局配置只承载 Claude Code 底层公共配置、普通默认、显式共享资产和不可突破的安全边界；Agent 自有设置优先于普通默认，公共资产必须显式引用；共享资产首版以 Company 内共享为主，跨 Company 必须单独注册并授权；
-- Agent × Workspace 配置仍归对应 Agent 所有，不把 Workspace 设计成覆盖所有 Agent 的公共继承层；
+- 每个长期 Agent 必须且只能属于一个 Team，并使用基于稳定 `agent-id` 的独立 AgentPackage；
+- 稳定 ID 为 `team-personal` 的 Personal Team 始终存在且不可删除；
+- Memory 仅有 Agent 长期一种；每个 Agent 只维护自身长期 Memory；
+- Team / 全局配置只承载 Claude Code 底层公共配置、普通默认、显式共享资产和不可突破的安全边界；Agent 自有设置优先于普通默认，Team 内共享资产必须显式引用；
 - 普通配置直接保存，不引入通用的草稿、审批或发布流程；
 - 备份与恢复作为独立设置入口，不进入每次保存主线，也不能代替基线检查、原子写入和外部变化保护；
 - 首版备份以本地手动/自动快照、历史和按范围恢复为主，恢复前先保存当前状态；
-- Git 远程备份仅允许私有仓库，Bandi 自动创建的仓库固定为 Private；凭据、Token、钥匙串数据和执行过程永不备份，正式记忆远程备份需用户单独确认；
-- Agent 生命周期使用启用、停用和归档；停用或归档保留 AgentPackage、正式记忆和历史且不可接受新委派，永久删除必须独立高风险确认；
-- 权限与委派能力必须显式配置，身份和组织关系不自动授予；Agent 可自行收紧但不得自行扩大，缺少权限时向上报告；
+- Git 远程备份仅允许私有仓库，Bandi 自动创建的仓库固定为 Private；凭据、Token、钥匙串数据和执行过程永不备份，Agent 长期 Memory远程备份需用户单独确认；
+- Agent 生命周期使用启用、停用和归档；停用或归档保留 AgentPackage、长期 Memory 和历史，永久删除必须独立高风险确认；
+- Agent 长期权限必须显式配置，Team 归属不自动授予权限；当前任务的一次性权限批准只在 Claude Code CLI 中处理；
 - 来源关系、Diff、共享影响、冲突和高风险确认仅在真实需要时出现；
-- 所有任务相关交互，包括目标下达、方案确认、部门与员工分配、执行协作、阻塞处理、审批、汇报和最终验收，都在用户自己的 Claude Code CLI 中完成；董事长可直接联系任意 `active` Agent，董事长助理是复杂协作的默认入口；
-- 用户无需在 Desktop 中为每次任务选择参与部门或员工；经助理协调时，助理依据组织和配置按需委派部门主管，主管再选择本部门员工；董事长直接联系 Agent 不自动扩大该 Agent 的权限、WorkspaceBinding、服务授权或委派范围；
-- SOP 是供 Claude Code 中的助理和主管解析使用的配置定义，不是 Desktop 中的任务执行器；
+- 所有任务相关交互，包括目标下达、参与 Agent 选择、执行协作、阻塞处理、一次性权限批准、汇报和最终验收，都在用户自己的 Claude Code CLI 中完成；
+- SOP 等长期资产仅供 Claude Code CLI 中的 Agent 使用，Desktop 不执行或编排任务；
 - 实际执行及聊天、工具调用、Todo、日志、Agent View 等中间状态保留在用户自己的 Claude Code CLI；
 - Desktop 不提供任务创建、人员调度、流程推进、任务审批、汇报或验收界面，不内嵌终端，不建设完整运行监控台，不镜像 Claude Code 的执行过程；
-- 正式 `MemorySpace` 写入仍必须先形成 `MemoryCandidate`，经审核写入后生成 `MemoryRevision`；
+- Agent 长期 Memory 通过受限目标、baseline 检查、原子写入和重读验证直接保存，成功后生成 `MemoryRevision`，失败时进入明确的 recovery；
+- 检测到旧非零开发数据库时，不迁移、不双读、不生成兼容投影，只提示恢复出厂并重新启动；恢复出厂仅清理 Bandi 自有数据；
+- Bandi 不接受、访问、扫描、修改或删除任意用户目录；删除与恢复只处理 Bandi 自有数据；
+- Client Launch v3 仅准备由稳定 `teamId / agentId / taskId?` 标识的上下文，不打开目录、不启动终端或命令，也不管理 Session；
 - 新增页面、导航、状态或流程前，必须确认其是否直接服务于多 Agent 配置管理；
 - 页面应减少导航层级、默认信息密度、技术术语和主操作数量，优先保证配置关系一眼可懂、编辑直接、保存结果明确。
 

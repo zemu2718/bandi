@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 4,
+  "teams": [
+    {
+      "id": "team-acme",
+      "name": "示例团队",
+      "mark": "示例",
+      "color": "#2563eb",
+      "mission": "维护长期配置资产。",
+      "boundary": "Team 关系不自动授予权限。",
+      "memberAgentIds": ["agent-owner"],
+      "sharedAssetIds": []
+    }
+  ],
+  "taskBriefs": [
+    {
+      "id": "brief-contracts",
+      "teamId": "team-acme",
+      "title": "演进共享合同",
+      "brief": "建立 v4 合同，不保留旧组织字段。"
+    }
+  ]
+}

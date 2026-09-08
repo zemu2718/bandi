@@ -1,12 +1,11 @@
 import path from 'node:path'
-import { appDataPath, sandboxHome } from './paths.js'
+import { sandboxHome } from './paths.js'
 export { appDataPath } from './paths.js'
 
-export const workspaceId = 'workspace-first-project'
-export const workspaceName = '首次项目'
-export const workspacePath = path.join(sandboxHome, 'projects', 'first-project')
-export const companyId = 'company-first'
-export const companyName = '首次公司'
+export const teamId = 'team-first'
+export const teamName = '首次团队'
+export const taskBriefId = 'task-brief-first'
+export const externalSentinelDirectory = path.join(sandboxHome, 'external-user-directory')
 export const departmentId = 'department-engineering'
 export const departmentName = '研发部'
 export const managerAgentId = 'manager'
@@ -15,47 +14,31 @@ export const workerAgentId = 'worker'
 export const workerAgentName = '执行 Agent'
 export const managedAgentsPath = path.join(sandboxHome, '.bandi', 'agents')
 
-export const workspace = {
-  id: workspaceId,
-  name: workspaceName,
-  path: workspacePath,
-  collaboratorDepartmentIds: [],
-  config: '未验证',
-  health: '未验证',
-  agentIds: [],
-  assetIds: [],
-  publicMemorySpaceId: `mem-ws-${workspaceId}`,
-  departmentMemorySpaceIds: [],
-  files: [],
-  recentEdits: [],
-}
-
-export const company = {
-  id: companyId,
-  name: companyName,
+export const team = {
+  id: teamId,
+  name: teamName,
   mission: '以可验证配置支持长期协作。',
   boundary: '组织身份不自动授予技术权限。',
+  memberAgentIds: [],
   departmentIds: [],
-  workspaceIds: [workspaceId],
   sharedAssetIds: [],
 }
 
 export const department = {
   id: departmentId,
+  teamId,
   name: departmentName,
-  companyId,
   mission: '维护可靠的软件配置。',
-  members: 0,
   responsibilities: ['配置实现与验证'],
   boundaries: ['不得扩大权限'],
   delegationDepth: 2,
-  memberAgentIds: [],
+  memberAgentIds: [managerAgentId, workerAgentId],
   ownedSopIds: [],
 }
 
 export const role = {
   id: 'role-engineer',
-  companyId,
+  teamId,
   departmentId,
   name: '配置工程师',
   status: 'active',
@@ -81,7 +64,7 @@ function agentManifest({ id, name, managerAgentId }: AgentOptions) {
     `name: ${JSON.stringify(name)}`,
     `roleId: ${JSON.stringify(role.id)}`,
     'status: "active"',
-    `companyId: ${JSON.stringify(companyId)}`,
+    `teamId: ${JSON.stringify(teamId)}`,
     `primaryDepartmentId: ${JSON.stringify(departmentId)}`,
     `managerAgentId: ${JSON.stringify(managerAgentId ?? '')}`,
     `mission: ${JSON.stringify('维护长期配置并提供验证证据。')}`,
@@ -116,13 +99,13 @@ const context = [
 const permissions = [
   'schemaVersion: 1',
   'permissions:',
-  '  files: "仅当前工作区"',
-  '  commands: "构建与测试"',
-  '  network: "禁止"',
-  '  delegation: "禁止"',
+  '  files: "未授予"',
+  '  commands: "未授予"',
+  '  network: "未授予"',
+  '  delegation: "未授予"',
 ].join('\n')
 
-const orchestration = 'schemaVersion: 1\norchestration: {"enabled":false,"maxDelegationDepth":0,"allowedAgentIds":[],"allowedRoleIds":[],"allowedDepartmentIds":[],"requireWorkspaceBinding":true,"requireSopMatch":true,"requireServiceGrantForCrossDepartment":true,"escalationConditions":[],"prohibitions":[]}'
+const orchestration = 'schemaVersion: 1\norchestration: {"enabled":false,"maxDelegationDepth":0,"allowedAgentIds":[],"allowedRoleIds":[],"allowedDepartmentIds":[],"requireSopMatch":true,"requireServiceGrantForCrossDepartment":true,"escalationConditions":[],"prohibitions":[]}'
 
 export function managedAgent(options: AgentOptions) {
   const { id, name } = options
@@ -134,10 +117,9 @@ export function managedAgent(options: AgentOptions) {
     status: 'active',
     roleId: role.id,
     packageSchema: { schemaVersion: 1, compatibility: 'current' },
-    companyId,
+    teamId,
     primaryDepartmentId: departmentId,
     managerAgentId: options.managerAgentId,
-    workspaces: 0,
     config: '配置完整',
     updated: '刚刚',
     mission: '维护长期配置并提供验证证据。',
@@ -163,7 +145,6 @@ export function managedAgent(options: AgentOptions) {
       allowedAgentIds: [],
       allowedRoleIds: [],
       allowedDepartmentIds: [],
-      requireWorkspaceBinding: true,
       requireSopMatch: true,
       requireServiceGrantForCrossDepartment: true,
       escalationConditions: [],
@@ -171,8 +152,7 @@ export function managedAgent(options: AgentOptions) {
     },
     hookRefs: [],
     commandRefs: [],
-    permissions: { files: '仅当前工作区', commands: '构建与测试', network: '禁止', delegation: '禁止' },
-    workspaceBindings: [],
+    permissions: { files: '未授予', commands: '未授予', network: '未授予', delegation: '未授予' },
     sopRefs: [],
     files: [],
   }

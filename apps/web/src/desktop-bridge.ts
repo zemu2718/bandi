@@ -1,8 +1,6 @@
 import type { AppCommandId } from './app-commands'
-import type { RequestClientHandoff } from './client-adapters'
 import type { FullAgent } from './domain'
-import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, CommitManagedAgentDeletionRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, CreateMemoryCandidateRequest, CreateWorkspaceBindingRequest, DiscoveryRequest, DiscoveryResult, DiscoverEligibleMemorySpacesRequest, EligibleMemorySpacesResult, ExternalAgentReferenceDto, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, MemoryReviewBundleDto, OrganizationSnapshot, PersistedServiceGrant, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RecoverMemoryRevisionRequest, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, ReviewMemoryCandidateRequest, ReviewMemoryCandidateResult, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult } from './contracts'
-import type { Company, FullDepartment, FullWorkspace, Role, ServiceGrant } from './domain'
+import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, DiscoveryRequest, DiscoveryResult, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, OrganizationSnapshotV3, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, TaskBriefDto, TeamDto } from './contracts'
 
 const commandEvent = 'bandi://app-command'
 
@@ -32,21 +30,11 @@ export type DesktopCommand = AppCommandId
 export type UiAssetSlot = 'logo' | 'background'
 
 export type CapabilityStatus = 'supported' | 'degraded' | 'unavailable' | 'not_checked'
-export type ClientHandoffOutcome = 'accepted' | 'manual_required' | 'rejected' | 'not_attempted'
-
 export type CapabilityFactDto = {
   status: CapabilityStatus
   reason: string
   evidence: string[]
   remediation: string[]
-}
-
-export type { RequestClientHandoff } from './client-adapters'
-
-export type ClientHandoffResult = RequestClientHandoff & {
-  capability: CapabilityFactDto
-  outcome: ClientHandoffOutcome
-  acceptedAt?: string
 }
 
 export type FactoryResetTargetDto = {
@@ -97,8 +85,8 @@ async function invokeDesktop<T>(command: string, args: Record<string, unknown>):
   return invoke<T>(command, args)
 }
 
-export async function requestClientHandoff(input: RequestClientHandoff): Promise<ClientHandoffResult> {
-  return invokeDesktop<ClientHandoffResult>('request_client_handoff', { request: input })
+export async function requestClientLaunchV3(input: RequestClientLaunchV3): Promise<ClientLaunchResultV3> {
+  return invokeDesktop<ClientLaunchResultV3>('request_client_launch_v3', { request: input })
 }
 
 export async function loadToolConfiguration(): Promise<ToolConfigurationSnapshotDto> {
@@ -147,74 +135,42 @@ export async function selectDirectory(): Promise<string | null> {
   return open({ directory: true, multiple: false })
 }
 
-export const selectWorkspaceDirectory = selectDirectory
-
 export async function selectClaudeAgentFile(): Promise<string | null> {
   if (!isDesktopRuntime()) throw new Error('该系统功能仅在 Bandi Desktop 中可用')
   const { open } = await import('@tauri-apps/plugin-dialog')
   return open({ directory: false, multiple: false, filters: [{ name: 'Claude Agent', extensions: ['md'] }] })
 }
 
-export async function createWorkspace(requestId: string, selectedPath: string, workspace: FullWorkspace): Promise<FullWorkspace> {
-  return invokeDesktop('create_workspace', { request: { requestId, selectedPath, workspace } })
+export async function loadLongTermDomainSnapshotV3(): Promise<OrganizationSnapshotV3> {
+  return invokeDesktop('load_long_term_domain_snapshot_v3', {})
 }
 
-export async function loadOrganizationSnapshot(): Promise<OrganizationSnapshot> {
-  return invokeDesktop('load_organization_snapshot', {})
+export async function saveTeamV2(team: TeamDto): Promise<TeamDto> {
+  return invokeDesktop('save_team_v2', { team })
 }
 
-export async function saveCompany(company: Company): Promise<Company> {
-  return invokeDesktop('save_company', { request: { company } })
+export async function removeTeamV2(teamId: string): Promise<void> {
+  return invokeDesktop('remove_team_v2', { request: { teamId } })
 }
 
-export async function saveDepartment(department: FullDepartment): Promise<FullDepartment> {
-  return invokeDesktop('save_department', { request: { department } })
+export async function saveTaskBriefV2(taskBrief: TaskBriefDto): Promise<TaskBriefDto> {
+  return invokeDesktop('save_task_brief_v2', { taskBrief })
 }
 
-export async function saveRole(role: Role): Promise<Role> {
-  return invokeDesktop('save_role', { request: { role } })
+export async function removeTaskBriefV2(taskBriefId: string): Promise<void> {
+  return invokeDesktop('remove_task_brief_v2', { request: { taskBriefId } })
 }
 
-export async function saveWorkspace(workspace: FullWorkspace): Promise<FullWorkspace> {
-  return invokeDesktop('save_workspace', { request: { workspace } })
-}
-
-export async function removeWorkspace(workspaceId: string): Promise<void> {
-  return invokeDesktop('remove_workspace', { request: { workspaceId } })
-}
-
-export async function saveServiceGrants(agentId: string, grants: ServiceGrant[]): Promise<PersistedServiceGrant[]> {
-  return invokeDesktop('save_service_grants', {
-    request: { agentId, grants: grants.map((grant) => ({ ...grant, agentId })) },
-  })
-}
-
-export async function generateEntityId(prefix: 'company' | 'department' | 'role' | 'workspace', name: string): Promise<string> {
+export async function generateEntityId(prefix: 'team' | 'task', name: string): Promise<string> {
   return invokeDesktop('generate_entity_id', { prefix, name })
 }
 
-export async function discoverEligibleMemorySpaces(input: DiscoverEligibleMemorySpacesRequest): Promise<EligibleMemorySpacesResult> {
-  return invokeDesktop('discover_eligible_memory_spaces', { request: input })
+export async function allocateAgentId(requestId: string): Promise<string> {
+  return invokeDesktop('allocate_agent_id', { requestId })
 }
 
-export async function createMemoryCandidate(input: CreateMemoryCandidateRequest): Promise<MemoryReviewBundleDto> {
-  return invokeDesktop('create_memory_candidate', { request: input })
-}
-
-export async function listMemoryReviews(requestId: string, agentId: string): Promise<MemoryReviewBundleDto[]> {
-  return invokeDesktop('list_memory_reviews', { requestId, agentId })
-}
-
-export async function loadMemoryReview(requestId: string, candidateId: string): Promise<MemoryReviewBundleDto> {
-  return invokeDesktop('load_memory_review', { requestId, candidateId })
-}
-
-export async function reviewMemoryCandidate(input: ReviewMemoryCandidateRequest): Promise<ReviewMemoryCandidateResult> {
-  return invokeDesktop('review_memory_candidate', { request: input })
-}
-
-export async function recoverMemoryRevision(input: RecoverMemoryRevisionRequest): Promise<ReviewMemoryCandidateResult> {
-  return invokeDesktop('recover_memory_revision', { request: input })
+export async function saveMemory(input: SaveMemoryRequest): Promise<SaveMemoryResult> {
+  return invokeDesktop('save_memory', { request: input })
 }
 
 export async function listMemoryRevisions(input: ListMemoryRevisionsRequest): Promise<MemoryRevisionDto[]> {
@@ -251,10 +207,6 @@ export async function listConfigRevisions(assetId: string): Promise<ConfigRevisi
 
 export async function readConfigRevisionContent(revisionId: string): Promise<string> {
   return invokeDesktop('read_config_revision_content', { revisionId })
-}
-
-export async function createWorkspaceBinding(input: CreateWorkspaceBindingRequest): Promise<SaveConfigResult> {
-  return invokeDesktop('create_workspace_binding', { request: input })
 }
 
 export async function saveConfig(input: SaveConfigRequest): Promise<SaveConfigResult> {
@@ -302,7 +254,6 @@ export async function importClaudeAgent(
   requestId: string,
   agent: FullAgent,
   files: AgentPackageFileInput[],
-  grants: ServiceGrant[],
 ): Promise<AgentCommitResultDto> {
   return invokeDesktop('import_claude_agent', {
     request: {
@@ -312,34 +263,18 @@ export async function importClaudeAgent(
       commit: {
         requestId,
         create: { agentId: agent.id, agent, files },
-        organization: agentOrganization(agent, grants),
+        teamId: agent.teamId,
       },
     },
   })
-}
-
-function persistedGrants(agentId: string, grants: ServiceGrant[]) {
-  return {
-    agentId,
-    grants: grants.map((grant) => ({ ...grant, agentId })),
-  }
-}
-
-function agentOrganization(agent: FullAgent, grants: ServiceGrant[]) {
-  if (!agent.companyId && !agent.primaryDepartmentId && !agent.roleId) return undefined
-  return {
-    companyId: agent.companyId,
-    primaryDepartmentId: agent.primaryDepartmentId,
-    grants: persistedGrants(agent.id, grants),
-  }
 }
 
 export async function commitManagedAgentCreation(
   requestId: string,
   agent: FullAgent,
   files: AgentPackageFileInput[],
-  grants: ServiceGrant[],
   avatar?: File,
+  teamId?: string,
 ): Promise<AgentCommitResultDto> {
   return invokeDesktop('commit_managed_agent_creation', {
     request: {
@@ -352,7 +287,7 @@ export async function commitManagedAgentCreation(
           ? Array.from(new Uint8Array(await avatar.arrayBuffer()))
           : undefined,
       },
-      organization: agentOrganization(agent, grants),
+      teamId: teamId ?? agent.teamId,
     },
   })
 }
@@ -367,7 +302,6 @@ export async function commitManagedAgentIdentity(
   manifest: string,
   expectedBaseline: BaselineRefDto,
   baseContent: string,
-  grants: ServiceGrant[],
   avatar: { kind: 'keep' } | { kind: 'remove' } | { kind: 'replace'; file: File },
 ): Promise<AgentCommitResultDto> {
   return invokeDesktop('commit_managed_agent_identity', {
@@ -386,7 +320,7 @@ export async function commitManagedAgentIdentity(
             }
           : avatar,
       },
-      organization: agentOrganization(agent, grants),
+      teamId: agent.teamId,
     },
   })
 }
@@ -409,12 +343,6 @@ export async function restoreManagedAgentIdentity(
   input: RestoreManagedAgentIdentityRequest,
 ): Promise<SaveManagedAgentIdentityResult> {
   return invokeDesktop('restore_managed_agent_identity', { request: input })
-}
-
-export async function registerExternalAgent(agent: FullAgent, selectedRoot: string): Promise<ExternalAgentReferenceDto> {
-  return invokeDesktop('register_external_agent', {
-    request: { agentId: agent.id, selectedRoot, metadata: agent },
-  })
 }
 
 export async function listAgents(): Promise<AgentListResult> {

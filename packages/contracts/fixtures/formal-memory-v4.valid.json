@@ -1,0 +1,93 @@
+{
+  "space": {
+    "id": "memory-agent-zhouce",
+    "scopeType": "agent_long_term",
+    "scopeKey": {
+      "kind": "agent_long_term",
+      "agentId": "zhouce"
+    },
+    "owner": {
+      "kind": "agent",
+      "agentId": "zhouce"
+    },
+    "stewardAgentId": "zhouce",
+    "visibilityPolicy": "agent_private",
+    "storageProfileVersion": "memory-v4",
+    "state": "active",
+    "storageLocator": {
+      "rootKind": "managed",
+      "displayPath": "memory/long-term.md",
+      "relativePath": "memory/long-term.md"
+    },
+    "currentRevisionId": "memory-revision-17",
+    "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "updatedAt": "2026-09-01T00:00:00Z"
+  },
+  "saveRequest": {
+    "requestId": "memory-save-18",
+    "spaceId": "memory-agent-zhouce",
+    "expectedOwner": {
+      "kind": "agent",
+      "agentId": "zhouce"
+    },
+    "content": "# 长期记忆\n\n交付必须附验证证据。\n",
+    "expectedBaseline": {
+      "id": "memory-baseline-17",
+      "assetId": "memory-agent-zhouce",
+      "containerId": "memory-agent-zhouce",
+      "assetContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "containerContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "baseContent": "# 长期记忆\n"
+  },
+  "savedResult": {
+    "kind": "saved",
+    "requestId": "memory-save-18",
+    "space": {
+      "id": "memory-agent-zhouce",
+      "scopeType": "agent_long_term",
+      "scopeKey": {
+        "kind": "agent_long_term",
+        "agentId": "zhouce"
+      },
+      "owner": {
+        "kind": "agent",
+        "agentId": "zhouce"
+      },
+      "stewardAgentId": "zhouce",
+      "visibilityPolicy": "agent_private",
+      "storageProfileVersion": "memory-v4",
+      "state": "active",
+      "storageLocator": {
+        "rootKind": "managed",
+        "displayPath": "memory/long-term.md",
+        "relativePath": "memory/long-term.md"
+      },
+      "currentRevisionId": "memory-revision-18",
+      "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "updatedAt": "2026-09-01T00:02:00Z"
+    },
+    "revision": {
+      "id": "memory-revision-18",
+      "spaceId": "memory-agent-zhouce",
+      "parentRevisionId": "memory-revision-17",
+      "sourceContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "storageLocator": {
+        "rootKind": "managed",
+        "displayPath": "memory/long-term.md",
+        "relativePath": "memory/long-term.md"
+      },
+      "writeReceiptId": "memory-write-18",
+      "writtenAt": "2026-09-01T00:02:00Z"
+    },
+    "writeReceipt": {
+      "id": "memory-write-18",
+      "containerId": "memory-agent-zhouce",
+      "previousContainerHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "writtenContainerHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "verifiedAt": "2026-09-01T00:02:00Z",
+      "atomicReplace": true
+    }
+  }
+}

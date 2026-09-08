@@ -1,0 +1,10 @@
+{
+  "clientId": "claude-code",
+  "adapterId": "claude-code-terminal-v1",
+  "terminalId": "terminal",
+  "intent": "start_with_context",
+  "teamId": "team-acme",
+  "agentId": "agent-owner",
+  "taskId": "brief-contracts",
+  "projectId": "project-bandi"
+}

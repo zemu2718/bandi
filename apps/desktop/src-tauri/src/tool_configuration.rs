@@ -4,38 +4,6 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
-pub(crate) const MIGRATION_V11: &str = "BEGIN IMMEDIATE;
-CREATE TABLE IF NOT EXISTS tool_configuration_plans (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS custom_tools (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS tool_configuration_plan_tools (
-  plan_id TEXT NOT NULL REFERENCES tool_configuration_plans(id) ON DELETE CASCADE,
-  tool_id TEXT NOT NULL,
-  position INTEGER NOT NULL CHECK(position >= 0),
-  PRIMARY KEY(plan_id, tool_id),
-  UNIQUE(plan_id, position)
-);
-INSERT OR IGNORE INTO tool_configuration_plans (id, name, created_at, updated_at)
-VALUES ('default', '默认方案', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS tool_configuration_state (
-  singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
-  selected_plan_id TEXT NOT NULL REFERENCES tool_configuration_plans(id) ON DELETE RESTRICT,
-  revision INTEGER NOT NULL CHECK(revision >= 0)
-);
-INSERT OR IGNORE INTO tool_configuration_state (singleton, selected_plan_id, revision)
-VALUES (1, 'default', 0);
-PRAGMA user_version = 11;
-COMMIT;";
-
 const BUILT_IN_TOOL_IDS: [&str; 9] = [
     "claude-code",
     "claude-desktop",
