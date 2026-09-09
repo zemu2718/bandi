@@ -40,7 +40,7 @@ beforeEach(() => {
   bridge.previewClaudeAgent.mockReset()
   bridge.selectClaudeAgentFile.mockReset()
   bridge.selectClaudeAgentFile.mockResolvedValue('/tmp/.claude/agents/reviewer.md')
-  bridge.previewClaudeAgent.mockResolvedValue({ sourcePath: '/tmp/.claude/agents/reviewer.md', sourceBaselineHash: 'sha256:source', name: 'Reviewer', description: 'Reviews code', instructions: 'Review carefully.', recognizedFields: ['name', 'description'], ignoredFields: [] })
+  bridge.previewClaudeAgent.mockResolvedValue({ toolId: 'claude-code', sourcePath: '/tmp/.claude/agents/reviewer.md', sourceFileName: 'reviewer.md', sourceBaselineHash: 'sha256:source', name: 'Reviewer', description: 'Reviews code', instructions: 'Review carefully.', recognizedFields: ['name', 'description'], ignoredFields: [] })
 })
 
 afterEach(() => {
@@ -144,7 +144,11 @@ describe('Agent 创建页', () => {
     expect(agent.instructions).toContain('先确认变更范围和验证证据')
     expect(agent.responsibilities).toEqual([])
     expect(agent.ruleRefs).toEqual([])
-    expect(agent.permissions).toEqual({ files: '未授予', commands: '未授予', network: '未授予' })
+    expect(agent.permissions).toEqual({ files: '未授予', commands: '未授予', network: '未授予', delegation: '未授予' })
+    expect(bridge.commitManagedAgentCreation.mock.calls[0][2]).toContainEqual({
+      path: 'config/permissions.yaml',
+      content: 'schemaVersion: 1\npermissions:\n  files: "未授予"\n  commands: "未授予"\n  network: "未授予"\n  delegation: "未授予"',
+    })
   })
 
   it('修改模板字段后切换模板需要确认，且不覆盖名称', () => {
@@ -192,7 +196,8 @@ describe('Agent 创建页', () => {
     const { router } = renderPage(initialState, '/agents/new?mode=import')
 
     expect(screen.getByRole('dialog', { name: '导入 Agent' })).toBeInTheDocument()
-    expect(screen.getByText(/当前支持 Claude Code 的 \.claude\/agents\/\*\.md/)).toBeInTheDocument()
+    expect(screen.getByText(/当前仅支持导入 Claude Code 的 \.claude\/agents\/\*\.md 文件/)).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Codex（暂不支持导入）' })).toBeDisabled()
     expect(screen.queryByText('1 身份与组织')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '导入 Agent' })).not.toBeInTheDocument()
 
@@ -218,7 +223,7 @@ describe('Agent 创建页', () => {
 
   it('导入名称不合格时允许就地修正后继续', async () => {
     bridge.desktop = true
-    bridge.previewClaudeAgent.mockResolvedValue({ sourcePath: '/tmp/.claude/agents/reviewer.md', sourceBaselineHash: 'sha256:source', name: '123456', description: 'Reviews code', instructions: 'Review carefully.', recognizedFields: ['name'], ignoredFields: [] })
+    bridge.previewClaudeAgent.mockResolvedValue({ toolId: 'claude-code', sourcePath: '/tmp/.claude/agents/reviewer.md', sourceFileName: 'reviewer.md', sourceBaselineHash: 'sha256:source', name: '123456', description: 'Reviews code', instructions: 'Review carefully.', recognizedFields: ['name'], ignoredFields: [] })
     renderPage(initialState, '/agents/new?mode=import')
 
     fireEvent.click(screen.getByRole('button', { name: /选择 Agent 文件/ }))

@@ -53,15 +53,15 @@ describe('AI 编程工具界面', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('无 TaskBrief 时仍可打开上下文面板', async () => {
+  it('无需求时仍可打开上下文面板', async () => {
     renderLaunch(['claude-code'])
 
     fireEvent.click(screen.getByRole('button', { name: '在 Claude Code 中继续' }))
 
     expect(screen.getByRole('dialog', { name: '在 Claude Code 中继续' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: '跳过任务简报' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '添加任务简报' }))
-    expect(screen.getByRole('option', { name: '跳过任务简报' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: '不附加需求' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '添加需求' }))
+    expect(screen.getByRole('option', { name: '不附加需求' })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: '复制上下文' })).toBeEnabled()
   })
 

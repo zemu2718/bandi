@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AiClientLaunchAction } from './components/ai-clients'
+import { PageHeaderTargetProvider } from './components/app/page'
 import { Button } from './components/ui/button'
 import { Tooltip } from './components/ui/tooltip'
 import { GlobalSheets } from './sheets'
@@ -32,9 +33,9 @@ import { resolveMainMenuLayout } from './navigation-layout'
 import { resolveTeamIdentity } from './team-identity'
 
 const nav = [
-  ['/tasks', '任务简报', ClipboardList],
+  ['/tasks', '需求池', ClipboardList],
   ['/agents', 'Agent', Bot],
-  ['/assets', '资产', Workflow],
+  ['/assets', '配置资产', Workflow],
 ] as const
 
 const settingsNav = ['/settings', '设置', Settings] as const
@@ -113,10 +114,12 @@ function RailNavigation({ expanded }: { expanded: boolean }) {
 
 export function Shell() {
   const { state, dispatch, effectiveUiPreferences, effectiveTheme, uiPreviewAssets } = useApp()
+  const resetTerminal = ['committed', 'restarting', 'manual-restart-required'].includes(state.factoryReset.status)
   const isWideViewport = useMediaQuery('(min-width: 1280px)')
   const canFitExpandedMenu = useMediaQuery('(min-width: 960px)')
   const [savedAssets, setSavedAssets] = useState<{ logo?: string; background?: string }>({})
   const [primaryMenuExpanded, setPrimaryMenuExpanded] = useState(isWideViewport)
+  const [pageHeaderTarget, setPageHeaderTarget] = useState<HTMLDivElement | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
   const startupRedirectEligible = useRef(location.pathname === '/')
@@ -129,9 +132,6 @@ export function Shell() {
   })
   const title = metadata.title
   const configurationStatus = getConfigurationStatusSummary(state)
-  const runtimeLabel = isDesktopRuntime()
-    ? 'Bandi Desktop · 本机配置管理'
-    : '浏览器演示 · 不读取本机配置 · 更改仅在当前页面有效'
   const teamAgents = getAvailableAgents(state, state.currentTeamId)
   const recentOrder = new Map(
     state.recentAgentIds.map((id, index) => [id, index]),
@@ -150,12 +150,10 @@ export function Shell() {
   const logoUrl = uiPreviewAssets?.logo === null ? undefined : uiPreviewAssets?.logo ?? savedAssets.logo
   const backgroundUrl = uiPreviewAssets?.background === null ? undefined : uiPreviewAssets?.background ?? savedAssets.background
   const agentMenuExpanded = mainMenuLayout === 'expanded'
-  const runCommand = useCallback((command: AppCommandId) => executeAppCommand(command, {
-    navigate,
-    dispatch,
-    editor,
-    effectiveTheme,
-  }), [dispatch, editor, effectiveTheme, navigate])
+  const runCommand = useCallback((command: AppCommandId) => {
+    if (resetTerminal) return
+    executeAppCommand(command, { navigate, dispatch, editor, effectiveTheme })
+  }, [dispatch, editor, effectiveTheme, navigate, resetTerminal])
 
   useEffect(() => {
     if (!isDesktopRuntime()) return
@@ -196,11 +194,18 @@ export function Shell() {
   }, [title])
 
   useEffect(() => {
-    if (metadata.agentId) dispatch({ type: 'RECORD_RECENT_AGENT', agentId: metadata.agentId })
-  }, [dispatch, location.key, metadata.agentId])
+    if (!resetTerminal && metadata.agentId) dispatch({ type: 'RECORD_RECENT_AGENT', agentId: metadata.agentId })
+  }, [dispatch, location.key, metadata.agentId, resetTerminal])
 
   useEffect(() => {
-    if (startupRouteDecided.current) return
+    if (state.factoryReset.status !== 'legacy-database-required') return
+    if (`${location.pathname}${location.search}` !== '/settings?section=recovery&tab=reset') {
+      navigate('/settings?section=recovery&tab=reset', { replace: true })
+    }
+  }, [location.pathname, location.search, navigate, state.factoryReset.status])
+
+  useEffect(() => {
+    if (resetTerminal || startupRouteDecided.current) return
     if (location.pathname !== '/') {
       startupRedirectEligible.current = false
       startupRouteDecided.current = true
@@ -211,9 +216,10 @@ export function Shell() {
     if (startupRedirectEligible.current && configurationStatus.phase === 'healthy' && state.agents.length) {
       navigate('/agents', { replace: true })
     }
-  }, [configurationStatus.phase, location.pathname, navigate, state.agents.length])
+  }, [configurationStatus.phase, location.pathname, navigate, resetTerminal, state.agents.length])
 
   useEffect(() => {
+    if (resetTerminal) return
     let disposed = false
     let unlisten: () => void = () => undefined
     void listenForDesktopCommands((payload) => {
@@ -226,9 +232,10 @@ export function Shell() {
       disposed = true
       unlisten()
     }
-  }, [runCommand])
+  }, [resetTerminal, runCommand])
 
   useEffect(() => {
+    if (resetTerminal) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return
       if (event.key === ',') {
@@ -243,7 +250,21 @@ export function Shell() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [editor?.canSave, runCommand])
+  }, [editor?.canSave, resetTerminal, runCommand])
+
+  if (resetTerminal) {
+    const resetState = state.factoryReset
+    const manual = resetState.status === 'manual-restart-required'
+    const technicalDetails = manual ? resetState.technicalDetails : undefined
+    return <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground">
+      <section className="panel w-full max-w-xl p-6 sm:p-10" role={manual ? 'alert' : 'status'} aria-live={manual ? 'assertive' : 'polite'}>
+        <div className="label">Bandi 已重置</div>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight">{manual ? '请重新打开 Bandi' : 'Bandi 正在重新打开…'}</h1>
+        <p className="mt-4 text-sm leading-7 text-muted-foreground">{manual ? '未能自动重新打开。请关闭当前窗口，然后重新打开 Bandi。当前窗口已停止所有编辑和操作。' : '正在完成安全清理并回到首次使用页面，请稍候。'}</p>
+        {technicalDetails && <details className="mt-4 text-xs text-muted-foreground"><summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看技术详情</summary><p className="mt-2 break-words font-mono [overflow-wrap:anywhere]">{technicalDetails}</p></details>}
+      </section>
+    </main>
+  }
 
   return (
     <div className="relative min-h-screen text-foreground">
@@ -259,6 +280,7 @@ export function Shell() {
           </div>
           <RailNavigation expanded={primaryMenuExpanded} />
           <div className="mt-auto flex w-full flex-col gap-2 border-t border-border pt-2">
+            {primaryMenuExpanded ? <AiClientLaunchAction variant="ghost" compact className="w-full justify-start px-3 text-muted-foreground hover:text-foreground" /> : <Tooltip content="选择 AI 工具" side="right" triggerClassName="w-full"><AiClientLaunchAction variant="ghost" compact className="w-full px-0 text-muted-foreground hover:text-foreground [&_span]:hidden" /></Tooltip>}
             <Tooltip content={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'} side="right" triggerClassName="w-full">
               <Button variant="ghost" className={cn('min-h-10 w-full gap-3 px-3 text-muted-foreground hover:text-foreground', !primaryMenuExpanded && 'justify-center')} onClick={() => runCommand('theme.toggle')} aria-label={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'}>
                 {effectiveTheme === 'light' ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
@@ -319,18 +341,11 @@ export function Shell() {
         </aside>}
 
         <div className="min-w-0 flex-1 bg-background/90">
-          <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-border bg-background/94 px-6 py-2 backdrop-blur max-[1280px]:px-4">
-            <div className="min-w-0">
-              <h1 className="truncate font-semibold">{title}</h1>
-              <p className="text-[11px] text-muted-foreground">长期配置管理</p>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {location.pathname !== '/' && (configurationStatus.phase === 'pending' || configurationStatus.phase === 'failed') && <Button asChild variant="outline" size="sm"><Link to="/"><CircleAlert size={16} aria-hidden="true" />{configurationStatus.phase === 'failed' ? '配置读取失败' : `配置状态 · ${configurationStatus.items.length} 项`}</Link></Button>}
-              <div className="hidden rounded-md border border-border bg-card px-2.5 py-1.5 text-[11px] text-muted-foreground min-[1180px]:block">{runtimeLabel}</div>
-              <AiClientLaunchAction className="max-[700px]:px-2.5" />
-            </div>
+          <header className="sticky top-0 z-20 flex min-h-20 flex-wrap items-center gap-4 border-b border-border bg-background/94 px-6 py-3 backdrop-blur max-[1280px]:px-4">
+            <div ref={setPageHeaderTarget} className="flex min-w-0 flex-1 flex-wrap items-center gap-4" />
+            {location.pathname !== '/' && (configurationStatus.phase === 'pending' || configurationStatus.phase === 'failed') && <Button asChild variant="outline" size="sm"><Link to="/"><CircleAlert size={16} aria-hidden="true" />{configurationStatus.phase === 'failed' ? '配置读取失败' : `配置状态 · ${configurationStatus.items.length} 项`}</Link></Button>}
           </header>
-          <main className="shell-main mx-auto max-w-[1420px]"><Outlet /></main>
+          <main className="shell-main mx-auto max-w-[1420px]"><PageHeaderTargetProvider target={pageHeaderTarget}><Outlet /></PageHeaderTargetProvider></main>
         </div>
       </div>
 

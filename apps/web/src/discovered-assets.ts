@@ -14,6 +14,8 @@ export type DiscoveredAssetRow = {
   label: string
   source: string
   nodeType: 'config' | 'shared'
+  teamId: string
+  agentId?: string
   kind: string
   scope: SourceAssetSummaryDto['officialScope']
   path: string
@@ -36,8 +38,51 @@ export type DiscoveryIssueGroup = {
   diagnostics: Diagnostic[]
 }
 
+export type AssetCategory = 'overview' | 'skills' | 'mcp' | 'rules' | 'sop' | 'other'
+export type AssetCategoryCounts = Record<Exclude<AssetCategory, 'overview'>, number>
+
+export type DiscoveredAssetFilters = {
+  teamId: string
+  category: AssetCategory
+  query?: string
+  owner?: string
+  scope?: string
+  health?: string
+  agentNames?: ReadonlyMap<string, string>
+  teamName?: string
+}
+
+const assetCategories: Exclude<AssetCategory, 'overview'>[] = ['skills', 'mcp', 'rules', 'sop', 'other']
+
+export function assetCategoryForKind(kind: string): Exclude<AssetCategory, 'overview'> {
+  if (kind === 'skill' || kind === 'skills') return 'skills'
+  if (kind === 'mcp') return 'mcp'
+  if (kind === 'rule' || kind === 'rules') return 'rules'
+  if (kind === 'sop') return 'sop'
+  return 'other'
+}
+
+export function countDiscoveredAssetCategories(rows: DiscoveredAssetRow[]): AssetCategoryCounts {
+  const counts = Object.fromEntries(assetCategories.map((category) => [category, 0])) as AssetCategoryCounts
+  for (const row of rows) counts[assetCategoryForKind(row.kind)] += 1
+  return counts
+}
+
+export function filterDiscoveredAssets(rows: DiscoveredAssetRow[], filters: DiscoveredAssetFilters): DiscoveredAssetRow[] {
+  const query = filters.query?.trim().toLocaleLowerCase() ?? ''
+  return rows.filter((row) => {
+    if (row.teamId !== filters.teamId) return false
+    if (filters.category !== 'overview' && assetCategoryForKind(row.kind) !== filters.category) return false
+    const ownerName = row.agentId ? filters.agentNames?.get(row.agentId) ?? '' : filters.teamName ?? ''
+    const searchable = `${row.label} ${row.kind} ${ownerName} ${row.agentId ?? ''} ${row.id} ${row.path}`.toLocaleLowerCase()
+    return (!query || searchable.includes(query))
+      && (!filters.owner || row.agentId === filters.owner)
+      && (!filters.scope || row.scope === filters.scope)
+      && (!filters.health || row.parseStatus === filters.health)
+  })
+}
+
 const pathName = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path
-const sourceFromPath = (path: string) => path.match(/^(agt_[^/]+)/)?.[1] ?? '受管 Agent 配置'
 const sharedKindMap: Partial<Record<SharedAssetNodeDto['kind'], AssetKind>> = {
   rule: 'Rules', skill: 'Skill', mcp: 'MCP', sop: 'SOP', hook: 'Hook', command: 'Command', output_profile: 'OutputProfile',
 }
@@ -99,11 +144,12 @@ export function projectDiscoveredAssets(result: DiscoveryResult): DiscoveredAsse
       label: pathName(path),
       source: '共享资产',
       nodeType: 'shared',
+      teamId: asset.teamId,
       kind: asset.kind,
       scope: 'bandi',
       path,
       writable: false,
-      readOnlyReason: '共享资产本体当前仅提供可信只读索引',
+      readOnlyReason: '当前只能查看此共享资产，不能在这里修改。',
       parseStatus: asset.parseStatus,
       profileVersion: 'shared-asset-v1',
       diagnostics: asset.diagnostics,
@@ -150,19 +196,21 @@ function projectAsset(
   profileVersion: string,
   references: AssetReferenceDto[],
 ): DiscoveredAssetRow {
-  const path = container?.locator.relativePath ?? container?.locator.displayPath ?? '来源容器缺失'
+  const path = container?.locator.relativePath ?? container?.locator.displayPath ?? '配置来源缺失'
   const missingContainer: Diagnostic[] = container ? [] : [{
     code: 'asset_container_missing',
     severity: 'error',
-    message: '资产来源容器不存在',
+    message: '无法确定此配置资产的来源',
     field: 'containerId',
-    remediation: '重新刷新受管配置索引',
+    remediation: '刷新配置资产后重试',
   }]
   return {
     id: asset.id,
     label: pathName(path),
-    source: sourceFromPath(path),
+    source: '受管 Agent 配置',
     nodeType: 'config',
+    teamId: asset.teamId,
+    agentId: asset.agentId,
     kind: asset.kind,
     scope: asset.officialScope,
     path,

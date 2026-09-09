@@ -7,6 +7,8 @@ import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { Shell } from '../shell'
 import { EditorSessionProvider } from '../editor-session'
 import { NotFoundPage } from '../pages/not-found-page'
+import { PageHeader } from '../components/app/page'
+import { Button } from '../components/ui/button'
 import { AppProvider, initialState, type State } from '../state'
 import type { MainMenuLayoutPreference } from '../navigation-layout'
 
@@ -72,7 +74,7 @@ function renderShell(
               <Route path="agents" element={<div>Agents 内容<Link to="/agents/zhouce">进入周策</Link><Link to="/">查看配置状态</Link></div>} />
               <Route path="agents/:id" element={<div>Agent 详情</div>} />
               <Route path="organization" element={<div>组织内容</div>} />
-              <Route path="tasks" element={<div>任务内容</div>} />
+              <Route path="tasks" element={<><PageHeader title="需求池" description="任务说明" action={<Button>新建需求</Button>} /><div>任务内容</div></>} />
               <Route path="assets" element={<div>资产内容</div>} />
               <Route path="settings" element={<div>设置内容</div>} />
               <Route path="*" element={<NotFoundPage />} />
@@ -124,13 +126,13 @@ describe('应用壳导航布局', () => {
     expect(switcher).toHaveAttribute('aria-haspopup', 'menu')
   })
 
-  it('一级菜单以任务简报为首项，不显示概览和项目', () => {
+  it('一级菜单以需求池为首项，不显示概览和项目', () => {
     createMatchMedia(1440)
     renderShell('expanded')
     const rail = screen.getByLabelText('Bandi 配置管理')
     const navigation = within(rail).getByRole('navigation', { name: '一级导航' })
 
-    for (const name of ['任务简报', 'Agent', '资产']) {
+    for (const name of ['需求池', 'Agent', '配置资产']) {
       expect(within(navigation).getByRole('link', { name })).toBeInTheDocument()
     }
     expect(within(navigation).queryByRole('link', { name: '组织治理' })).not.toBeInTheDocument()
@@ -138,6 +140,17 @@ describe('应用壳导航布局', () => {
     expect(within(navigation).queryByRole('link', { name: '项目' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toBeInTheDocument()
     expect(within(rail).getByRole('button', { name: '切换到深色' })).toBeInTheDocument()
+  })
+
+  it('页面标题和主操作进入顶栏，正文不重复', () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/tasks')
+
+    const header = screen.getByRole('banner')
+    expect(within(header).getByRole('heading', { level: 1, name: '需求池' })).toBeInTheDocument()
+    expect(within(header).getByText('任务说明')).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: '新建需求' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 
   it('待处理配置只从顶栏进入，不加入一级菜单', () => {
@@ -167,7 +180,9 @@ describe('应用壳导航布局', () => {
     createMatchMedia(1440)
     renderShell('expanded', 'light', '/projects')
 
-    expect(screen.getByRole('heading', { name: '页面不存在' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '页面不存在' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.queryByText('长期配置管理')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回配置状态' })).toHaveAttribute('href', '/')
   })
 
@@ -182,7 +197,7 @@ describe('应用壳导航布局', () => {
     expect(collapseButton).toHaveAttribute('aria-expanded', 'true')
     expect(collapseButton.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toHaveTextContent('星河科技')
-    expect(within(rail).getByText('任务简报')).toBeInTheDocument()
+    expect(within(rail).getByText('需求池')).toBeInTheDocument()
 
     fireEvent.click(within(rail).getByRole('button', { name: '收起侧栏' }))
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'compact')
@@ -335,10 +350,54 @@ describe('应用壳导航布局', () => {
     await waitFor(() => expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'expanded'))
   })
 
-  it('浏览器能力边界只在 Header 显示一次', () => {
+  it('AI 工具入口位于全局侧栏而非页面顶栏', () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/', ['zhouce'])
-    expect(screen.getAllByText(/浏览器演示/)).toHaveLength(1)
-    expect(screen.getByText(/不读取本机配置/)).toBeInTheDocument()
+    renderShell('expanded', 'light', '/tasks', ['zhouce'])
+
+    const rail = screen.getByLabelText('Bandi 配置管理')
+    expect(within(rail).getByRole('button', { name: 'Claude Code' })).toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).queryByRole('button', { name: /Claude Code|AI 工具/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/浏览器演示|本机配置管理/)).not.toBeInTheDocument()
+  })
+
+  it.each(['committed', 'restarting'] as const)('%s 时只显示重新打开终态', (status) => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/tasks', ['zhouce'], {
+      factoryReset: { status },
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent('Bandi 正在重新打开')
+    expect(screen.queryByText('任务内容')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Bandi 配置管理')).not.toBeInTheDocument()
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument()
+  })
+
+  it('自动重新打开失败时只显示手动兜底和技术详情', () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/tasks', ['zhouce'], {
+      factoryReset: {
+        status: 'manual-restart-required',
+        technicalDetails: 'restart failed',
+      },
+    })
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Bandi 已重置')
+    expect(alert).toHaveTextContent('请重新打开 Bandi')
+    expect(alert).toHaveTextContent('restart failed')
+    expect(screen.queryByText('任务内容')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Bandi 配置管理')).not.toBeInTheDocument()
+  })
+
+  it('旧开发数据库状态直达重置 Bandi 页签', async () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/', [], {
+      factoryReset: {
+        status: 'legacy-database-required',
+        technicalDetails: 'LEGACY_DATABASE_RESET_REQUIRED: old database',
+      },
+    })
+
+    await waitFor(() => expect(screen.getByText('设置内容')).toBeInTheDocument())
   })
 })

@@ -28,6 +28,22 @@ pub(crate) enum ClientAdapterId {
     PiTerminalV1,
 }
 
+impl BuiltInClientId {
+    pub(crate) const fn adapter_id(self) -> ClientAdapterId {
+        match self {
+            Self::ClaudeCode => ClientAdapterId::ClaudeCodeTerminalV1,
+            Self::ClaudeDesktop => ClientAdapterId::ClaudeDesktopConfigV1,
+            Self::Codex => ClientAdapterId::CodexTerminalV1,
+            Self::GeminiCli => ClientAdapterId::GeminiCliTerminalV1,
+            Self::GrokBuild => ClientAdapterId::GrokBuildConfigV1,
+            Self::Opencode => ClientAdapterId::OpencodeTerminalV1,
+            Self::Openclaw => ClientAdapterId::OpenclawTerminalV1,
+            Self::Hermes => ClientAdapterId::HermesTerminalV1,
+            Self::Pi => ClientAdapterId::PiTerminalV1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum TerminalId {
@@ -106,6 +122,9 @@ pub(crate) fn prepare_context(
     request: ClientLaunchRequestV3,
     validate_context: impl FnOnce(ClientLaunchValidationInput<'_>) -> Result<(), String>,
 ) -> Result<ClientLaunchResultV3, String> {
+    if request.client_id.adapter_id() != request.adapter_id {
+        return Err("INVALID_CLIENT_ADAPTER: 客户端与适配器不匹配".into());
+    }
     validate_context(ClientLaunchValidationInput {
         team_id: &request.team_id,
         agent_id: &request.agent_id,
@@ -143,6 +162,50 @@ mod tests {
             agent_id: "agent-1".into(),
             task_id: Some("brief-1".into()),
         }
+    }
+
+    #[test]
+    fn all_builtin_clients_have_their_static_adapter() {
+        let pairs = [
+            (
+                BuiltInClientId::ClaudeCode,
+                ClientAdapterId::ClaudeCodeTerminalV1,
+            ),
+            (
+                BuiltInClientId::ClaudeDesktop,
+                ClientAdapterId::ClaudeDesktopConfigV1,
+            ),
+            (BuiltInClientId::Codex, ClientAdapterId::CodexTerminalV1),
+            (
+                BuiltInClientId::GeminiCli,
+                ClientAdapterId::GeminiCliTerminalV1,
+            ),
+            (
+                BuiltInClientId::GrokBuild,
+                ClientAdapterId::GrokBuildConfigV1,
+            ),
+            (
+                BuiltInClientId::Opencode,
+                ClientAdapterId::OpencodeTerminalV1,
+            ),
+            (
+                BuiltInClientId::Openclaw,
+                ClientAdapterId::OpenclawTerminalV1,
+            ),
+            (BuiltInClientId::Hermes, ClientAdapterId::HermesTerminalV1),
+            (BuiltInClientId::Pi, ClientAdapterId::PiTerminalV1),
+        ];
+        assert!(pairs
+            .into_iter()
+            .all(|(client, adapter)| client.adapter_id() == adapter));
+    }
+
+    #[test]
+    fn launch_v3_rejects_mismatched_adapter_before_context_validation() {
+        let mut invalid = request();
+        invalid.adapter_id = ClientAdapterId::CodexTerminalV1;
+        let error = prepare_context(invalid, |_| panic!("错配不应进入领域校验")).unwrap_err();
+        assert_eq!(error, "INVALID_CLIENT_ADAPTER: 客户端与适配器不匹配");
     }
 
     #[test]

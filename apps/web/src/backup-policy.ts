@@ -25,14 +25,14 @@ export function buildBackupPreview(context: BackupContext, scope: BackupScope): 
   if (scope.kind === 'agent' && !context.agents.some((item) => item.id === scope.agentId)) return undefined
   if (scope.kind === 'files' && !scope.paths.length) return undefined
   const includes = scope.kind === 'files'
-    ? [...scope.paths, '正式 Memory（若选中文件包含）']
+    ? [...scope.paths, 'Agent 长期记忆（若选中文件包含）']
     : [
         ...(scope.kind === 'all' ? ['Bandi 配置方案元数据'] : []),
         'Agent 配置',
         '组织关系',
         '项目与目录授权信息',
         '共享资产',
-        '正式记忆',
+        'Agent 长期记忆',
       ]
   return { scope, label: describeBackupScope(scope, context), includes, excludes: [...NEVER_BACKED_UP], includesFormalMemory: true }
 }

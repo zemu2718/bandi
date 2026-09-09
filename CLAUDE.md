@@ -2,11 +2,11 @@
 
 ## 产品与界面边界
 
-Bandi Desktop 的首要职责是以简单、明了、大气的界面，作为 9 个内置 AI 编程工具的长期 Agent / 配置管理器，可视化管理 Team、长期 Agent、可选的 Team-scoped TaskBrief 及其长期配置资产，包括 Instructions、Skills、Memory、Rules、MCP、权限和工作流（SOP）。内置工具固定为 Claude Code、Claude Desktop、Codex、Gemini、Grok、OpenCode、OpenClaw、Hermes 和 Pi。
+Bandi Desktop 的首要职责是以简单、明了、大气的界面，可视化管理不同 AI Agent 各自的长期配置。用户按 Team 组织多个不同职责的长期 Agent；每个 Agent 都有独立的 AgentPackage、长期 Memory 和可追溯版本，并可维护 Instructions、Skills、Rules、MCP、权限和工作流（SOP）等长期配置资产。用户在所选外部 AI 编程工具中使用这些 Agent；Bandi 也可按需整理 Team-scoped TaskBrief（界面称“需求池 / 需求”），但不承担任务执行。当前内置工具固定为 Claude Code、Claude Desktop、Codex、Gemini、Grok、OpenCode、OpenClaw、Hermes 和 Pi。
 
 ### 核心职责边界
 
-Bandi Desktop 管理长期配置资产及其可追溯版本；用户自己的 Claude Code CLI 负责当前任务的下达、参与 Agent 选择、协作、权限请求、冲突处理、汇报和验收。Bandi 不持久化任务参与关系或执行期状态。
+Bandi Desktop 管理长期配置资产及其可追溯版本；用户选择的外部 AI 编程工具负责当前任务的下达、参与 Agent 选择、协作、权限请求、冲突处理、汇报和验收。Bandi 不持久化任务参与关系或执行期状态。
 
 必须严格区分：
 
@@ -17,7 +17,7 @@ Bandi Desktop 管理长期配置资产及其可追溯版本；用户自己的 Cl
 核心高频流程固定为：
 
 ```text
-选择 Team → 选择 Agent → 查看或修改长期配置、按需整理 TaskBrief → 保存 → 在外部 Claude Code 中继续
+选择 Team → 选择 Agent → 查看或修改长期配置、按需整理 TaskBrief → 保存 → 在所选 AI 编程工具中继续
 ```
 
 设计与实现必须遵守：
@@ -26,21 +26,24 @@ Bandi Desktop 管理长期配置资产及其可追溯版本；用户自己的 Cl
 - 每个长期 Agent 必须且只能属于一个 Team，并使用基于稳定 `agent-id` 的独立 AgentPackage；
 - 稳定 ID 为 `team-personal` 的 Personal Team 始终存在且不可删除；
 - Memory 仅有 Agent 长期一种；每个 Agent 只维护自身长期 Memory；
-- Team / 全局配置只承载 Claude Code 底层公共配置、普通默认、显式共享资产和不可突破的安全边界；Agent 自有设置优先于普通默认，Team 内共享资产必须显式引用；
+- Team / 全局配置只承载内置工具的公共集成元数据、普通默认、显式共享资产和不可突破的安全边界；Agent 自有设置优先于普通默认，Team 内共享资产必须显式引用；
 - 普通配置直接保存，不引入通用的草稿、审批或发布流程；
 - 备份与恢复作为独立设置入口，不进入每次保存主线，也不能代替基线检查、原子写入和外部变化保护；
 - 首版备份以本地手动/自动快照、历史和按范围恢复为主，恢复前先保存当前状态；
 - Git 远程备份仅允许私有仓库，Bandi 自动创建的仓库固定为 Private；凭据、Token、钥匙串数据和执行过程永不备份，Agent 长期 Memory远程备份需用户单独确认；
 - Agent 生命周期使用启用、停用和归档；停用或归档保留 AgentPackage、长期 Memory 和历史，永久删除必须独立高风险确认；
-- Agent 长期权限必须显式配置，Team 归属不自动授予权限；当前任务的一次性权限批准只在 Claude Code CLI 中处理；
+- Agent 长期权限必须显式配置，Team 归属不自动授予权限；当前任务的一次性权限批准只在所选 AI 编程工具中处理；
 - 来源关系、Diff、共享影响、冲突和高风险确认仅在真实需要时出现；
-- 所有任务相关交互，包括目标下达、参与 Agent 选择、执行协作、阻塞处理、一次性权限批准、汇报和最终验收，都在用户自己的 Claude Code CLI 中完成；
-- SOP 等长期资产仅供 Claude Code CLI 中的 Agent 使用，Desktop 不执行或编排任务；
-- 实际执行及聊天、工具调用、Todo、日志、Agent View 等中间状态保留在用户自己的 Claude Code CLI；
-- Desktop 不提供任务创建、人员调度、流程推进、任务审批、汇报或验收界面，不内嵌终端，不建设完整运行监控台，不镜像 Claude Code 的执行过程；
+- 所有任务相关交互，包括目标下达、参与 Agent 选择、执行协作、阻塞处理、一次性权限批准、汇报和最终验收，都在用户选择的外部 AI 编程工具中完成；
+- SOP 等长期资产仅供所选 AI 编程工具中的 Agent 使用，Desktop 不执行或编排任务；
+- 实际执行及聊天、工具调用、Todo、日志、Agent View 等中间状态保留在用户选择的外部 AI 编程工具中；
+- Desktop 不提供任务创建、人员调度、流程推进、任务审批、汇报或验收界面，不内嵌终端，不建设完整运行监控台，不镜像外部 AI 编程工具的执行过程；
 - Agent 长期 Memory 通过受限目标、baseline 检查、原子写入和重读验证直接保存，成功后生成 `MemoryRevision`，失败时进入明确的 recovery；
 - 检测到旧非零开发数据库时，不迁移、不双读、不生成兼容投影，只提示恢复出厂并重新启动；恢复出厂仅清理 Bandi 自有数据；
-- Bandi 不接受、访问、扫描、修改或删除任意用户目录；删除与恢复只处理 Bandi 自有数据；
+- Bandi 应用内只读取和展示 Bandi 自有受管配置，不接受任意路径，不枚举、不扫描、不读取宿主配置内容；删除与恢复只处理 Bandi 自有数据；
+- 唯一宿主目录例外是用户在独立 Host Integration 界面显式触发的固定 allowlist 原生入口安装或目录 reveal：前端只提交稳定工具 ID 与 `install | reveal`，目标由后端固定映射；不得暴露通用 opener、文件 API、Shell、脚本或可执行参数；
+- 九工具入口基线固定为：Claude Code plugin；Claude Desktop MCPB（转到官方 UI 安装，能力降级）；Codex `~/.agents/skills`；Gemini `~/.gemini/extensions`；Grok `~/.grok/skills`；OpenCode `~/.config/opencode/skills`；OpenClaw `~/.agents/skills` 或 `~/.openclaw/skills`（由固定平台规则选择）；Hermes `~/.hermes/skills`；Pi `~/.pi/agent/skills`；
+- Host Integration 独立于 Client Launch v3，工具方案不自动安装；未经真实 smoke 的运行态必须明确为 `not_checked`，部分链路可用时为 `degraded`；
 - Client Launch v3 仅准备由稳定 `teamId / agentId / taskId?` 标识的上下文，不打开目录、不启动终端或命令，也不管理 Session；
 - 新增页面、导航、状态或流程前，必须确认其是否直接服务于多 Agent 配置管理；
 - 页面应减少导航层级、默认信息密度、技术术语和主操作数量，优先保证配置关系一眼可懂、编辑直接、保存结果明确。
@@ -62,5 +65,8 @@ Bandi Desktop 管理长期配置资产及其可追溯版本；用户自己的 Cl
 - `docs/页面低保真线框图.md`
 - `docs/技术架构.md`
 - `docs/本地服务与前端联调契约.md`
+- `docs/客户端文案体验审查.md`：用户可见文案、术语分层、错误与状态表达规则。
+
+实现新的配置能力前，先查阅 `docs/GitHub竞品与实现参考.md`，优先复用成熟项目已经验证的交互、格式转换和安全机制，避免重复开发。该文档只提供局部实现参考，不能覆盖上述产品与技术契约；竞品中的宿主目录扫描、任意路径、直接覆盖、任务执行、调度、聊天和 Session 管理不得带入 Bandi。引用或改编外部代码前必须重新核验当前版本、目标文件许可证和兼容边界；未知或自定义许可证项目只能参考行为，不复制代码。
 
 除非用户明确要求，不修改 `docs/archive/*` 中的历史归档文档。

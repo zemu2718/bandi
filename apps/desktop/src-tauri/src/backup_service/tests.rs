@@ -12,7 +12,11 @@ fn fixture(name: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf, String)
     let managed = root.path().join("agents");
     let package = managed.join("agt_alpha");
     fs::create_dir_all(&package).unwrap();
-    fs::write(package.join("agent.yaml"), "schemaVersion: 1\nid: alpha\n").unwrap();
+    fs::write(
+        package.join("agent.yaml"),
+        "schemaVersion: 1\nid: alpha\nteamId: team-personal\n",
+    )
+    .unwrap();
     fs::write(package.join("instructions.md"), "# Alpha\n").unwrap();
     let discovery = local_service::discover_at(
         &managed,

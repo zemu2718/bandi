@@ -129,9 +129,12 @@ describe('Agent 配置模型', () => {
 
   it('解析自身生成的规范 Permissions YAML', () => {
     const content = serializeAgentConfig(agent, { kind: 'permissions', value: agent.permissions })!
+    expect(content).toContain(`  delegation: "${agent.permissions.delegation}"`)
     expect(parseAgentPermissions(content)).toEqual(agent.permissions)
     expect(parseAgentPermissions(content.replace('schemaVersion: 1', 'schemaVersion: 2'))).toBeUndefined()
     expect(parseAgentPermissions(content.replace('  files:', '  unknown:'))).toBeUndefined()
+    expect(parseAgentPermissions(content.replace(`\n  delegation: "${agent.permissions.delegation}"`, ''))).toBeUndefined()
+    expect(isAgentConfigPayload({ kind: 'permissions', value: { files: '未授予', commands: '未授予', network: '未授予' } })).toBe(false)
     expect(parseAgentPermissions(`${content}\nextra: true`)).toBeUndefined()
   })
 

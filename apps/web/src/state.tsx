@@ -89,11 +89,18 @@ export type OnboardingState = {
 
 export type HydrationStatus = 'idle' | 'loading' | 'succeeded' | 'failed'
 export type HydrationKey = 'managedAgents' | 'organization' | 'sharedAssets' | 'agentRecovery' | 'toolConfiguration'
+export type FactoryResetLifecycle =
+  | { status: 'idle' }
+  | { status: 'legacy-database-required'; technicalDetails: string }
+  | { status: 'committed' }
+  | { status: 'restarting' }
+  | { status: 'manual-restart-required'; technicalDetails?: string }
 
 export type State = {
   runtime: 'web' | 'desktop'
   hydration: Record<HydrationKey, HydrationStatus>
   hydrationErrors: Partial<Record<HydrationKey, string>>
+  factoryReset: FactoryResetLifecycle
   agentDiagnostics: Diagnostic[]
   agentRecoveryOperations: AgentRecoveryOperationSummaryDto[]
   onboarding: OnboardingState
@@ -134,6 +141,10 @@ export type Action =
   | { type: 'UPSERT_MANAGED_AGENT'; agent: FullAgent; message?: string }
   | { type: 'REMOVE_MANAGED_AGENT'; agentId: string }
   | { type: 'START_DESKTOP_HYDRATION' }
+  | { type: 'FACTORY_RESET_LEGACY_REQUIRED'; technicalDetails: string }
+  | { type: 'FACTORY_RESET_COMMITTED' }
+  | { type: 'FACTORY_RESET_RESTARTING' }
+  | { type: 'FACTORY_RESET_MANUAL_RESTART_REQUIRED'; technicalDetails?: string }
   | { type: 'HYDRATE_MANAGED_AGENTS'; agents: FullAgent[]; diagnostics: Diagnostic[] }
   | { type: 'FAIL_MANAGED_AGENTS_HYDRATION'; message: string }
   | { type: 'HYDRATE_AGENT_RECOVERY'; operations: AgentRecoveryOperationSummaryDto[] }
@@ -207,6 +218,7 @@ export const initialState: State = {
   runtime: 'web',
   hydration: { managedAgents: 'idle', organization: 'idle', sharedAssets: 'idle', agentRecovery: 'idle', toolConfiguration: 'idle' },
   hydrationErrors: {},
+  factoryReset: { status: 'idle' },
   agentDiagnostics: [],
   agentRecoveryOperations: [],
   onboarding: { status: 'active' },
@@ -396,6 +408,22 @@ export function reducer(state: State, action: Action): State {
         hydration: { managedAgents: 'loading', organization: 'loading', sharedAssets: 'loading', agentRecovery: 'loading', toolConfiguration: 'loading' },
         hydrationErrors: {},
       }
+    case 'FACTORY_RESET_LEGACY_REQUIRED':
+      return state.factoryReset.status === 'idle' || state.factoryReset.status === 'legacy-database-required'
+        ? { ...state, factoryReset: { status: 'legacy-database-required', technicalDetails: action.technicalDetails } }
+        : state
+    case 'FACTORY_RESET_COMMITTED':
+      return state.factoryReset.status === 'idle' || state.factoryReset.status === 'legacy-database-required'
+        ? { ...state, factoryReset: { status: 'committed' }, dialog: null, notice: undefined }
+        : state
+    case 'FACTORY_RESET_RESTARTING':
+      return state.factoryReset.status === 'committed'
+        ? { ...state, factoryReset: { status: 'restarting' } }
+        : state
+    case 'FACTORY_RESET_MANUAL_RESTART_REQUIRED':
+      return state.factoryReset.status === 'committed' || state.factoryReset.status === 'restarting'
+        ? { ...state, factoryReset: { status: 'manual-restart-required', technicalDetails: action.technicalDetails } }
+        : state
     case 'UPSERT_MANAGED_AGENT': {
       const exists = state.agents.some((item) => item.id === action.agent.id)
       const agents = exists
@@ -536,7 +564,7 @@ export function reducer(state: State, action: Action): State {
       return {
         ...state,
         taskBriefs: state.taskBriefs.filter((item) => item.id !== action.taskBriefId),
-        notice: notice('success', '任务简报已删除'),
+        notice: notice('success', '需求已删除'),
       }
     case 'UPDATE_AGENT': {
       const agents = state.agents.map((item) => item.id === action.agentId ? { ...item, ...action.changes, updated: '刚刚' } : item)
@@ -551,7 +579,7 @@ export function reducer(state: State, action: Action): State {
     case 'SAVE_INSTRUCTIONS':
       return saveAgentConfig(state, action.agentId ?? 'zhouce', { kind: 'instructions', value: action.text }, '保存主指令演示配置')
     case 'SAVE_AGENT_CONFIG': {
-      if (state.runtime === 'desktop') return { ...state, notice: notice('warning', '未保存配置', 'Desktop 正式配置必须通过本地服务保存。') }
+      if (state.runtime === 'desktop') return { ...state, notice: notice('warning', '未保存配置', '请通过 Bandi Desktop 保存此配置。') }
       const { agentId, ...payload } = action.input
       return saveAgentConfig(state, agentId, payload, action.summary ?? `保存 ${payload.kind} 演示配置`)
     }
@@ -562,7 +590,7 @@ export function reducer(state: State, action: Action): State {
       return {
         ...state,
         memorySpaces: state.memorySpaces.map((item) => item.id === action.spaceId ? { ...item, content: action.content, revision: nextRevision } : item),
-        notice: notice('success', '长期记忆已保存', `${nextRevision} · ${state.runtime === 'desktop' ? '已写入受管 Memory' : '仅在当前页面有效'}`),
+        notice: notice('success', 'Agent 长期记忆已保存', state.runtime === 'desktop' ? '已保存并生成新版本' : '仅在当前页面有效'),
       }
     }
     case 'RESTORE_CONFIG_REVISION': {
@@ -595,7 +623,7 @@ export function reducer(state: State, action: Action): State {
       const configRevisions = appended.revisions
       if (target.ownerType === 'asset') {
         const asset = state.assets.find((item) => item.id === target.ownerId)
-        if (!asset || asset.kind === 'Memory') return { ...state, notice: notice('warning', '无法恢复配置版本', '正式记忆使用独立的记忆版本') }
+        if (!asset || asset.kind === 'Memory') return { ...state, notice: notice('warning', '无法恢复配置版本', 'Agent 长期记忆需要从自己的版本历史中恢复') }
         let changes: Partial<FullAsset> = { content: target.content }
         if (asset.kind === 'SOP') {
           try {
@@ -645,7 +673,7 @@ export function reducer(state: State, action: Action): State {
       const next = applyPluginAction(installation, action.action, action.version)
       if (!next) return { ...state, notice: notice('warning', '当前插件状态不支持此操作', '未修改安装记录或 Agent 组件使用位置') }
       const labels: Record<PluginAction, string> = { install: '安装', update: '更新', rollback: '回滚', uninstall: '卸载' }
-      return { ...state, pluginInstallations: state.pluginInstallations.map((item) => item.pluginId === action.pluginId ? next : item), notice: notice('success', `插件已模拟${labels[action.action]}`, '仅更新当前页面中的插件安装记录 · 未探测、下载、执行安装脚本或写入文件 · 未自动增删 Agent 组件使用位置') }
+      return { ...state, pluginInstallations: state.pluginInstallations.map((item) => item.pluginId === action.pluginId ? next : item), notice: notice('success', `插件已模拟${labels[action.action]}`, '仅更新当前页面中的插件安装记录 · 未检查电脑、下载、运行安装脚本或写入文件 · 未自动更改 Agent 的使用位置') }
     }
     case 'UPDATE_BACKUP_SETTINGS':
       return { ...state, backupSettings: { ...state.backupSettings, ...action.changes }, notice: notice('info', '备份演示策略已更新', '仅在当前页面有效 · 未连接 Git、上传文件或读取凭据') }
@@ -676,7 +704,7 @@ export function reducer(state: State, action: Action): State {
       const duplicate = state.aiClients.some((item) => item.id === action.client.id || item.name.trim().toLowerCase() === normalizedName.toLowerCase())
       if (!normalizedName || duplicate) return state
       const client = { ...action.client, name: normalizedName, persistence: 'memory-only' as const }
-      return { ...state, aiClients: [...state.aiClients, client], notice: notice('info', `${client.name}已添加`, '仅添加到当前页面 · 未探测本机 · 未写入磁盘') }
+      return { ...state, aiClients: [...state.aiClients, client], notice: notice('info', `${client.name} 已添加`, '仅添加到当前页面 · 未检查电脑或写入文件') }
     }
     case 'SAVE_CONFIGURATION_ENVIRONMENT': {
       const environment = normalizeConfigurationEnvironment(action.environment)
@@ -762,21 +790,28 @@ export function AppProvider({ children, initialState: providedState }: { childre
     if (providedState || !isDesktopRuntime()) return
     dispatch({ type: 'START_DESKTOP_HYDRATION' })
     const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
+    const hydrationFailure = (error: unknown, action: Action) => {
+      const message = errorMessage(error)
+      if (message.startsWith('LEGACY_DATABASE_RESET_REQUIRED:')) {
+        dispatch({ type: 'FACTORY_RESET_LEGACY_REQUIRED', technicalDetails: message })
+      }
+      dispatch(action)
+    }
     void listAgents()
       .then(({ agents, diagnostics }) => dispatch({ type: 'HYDRATE_MANAGED_AGENTS', agents, diagnostics }))
-      .catch((error) => dispatch({ type: 'FAIL_MANAGED_AGENTS_HYDRATION', message: errorMessage(error) }))
+      .catch((error) => hydrationFailure(error, { type: 'FAIL_MANAGED_AGENTS_HYDRATION', message: errorMessage(error) }))
     void loadLongTermDomainSnapshotV4()
       .then((snapshot) => dispatch({ type: 'HYDRATE_ORGANIZATION', snapshot }))
-      .catch((error) => dispatch({ type: 'FAIL_ORGANIZATION_HYDRATION', message: errorMessage(error) }))
+      .catch((error) => hydrationFailure(error, { type: 'FAIL_ORGANIZATION_HYDRATION', message: errorMessage(error) }))
     void discoverConfig({ requestId: 'hydrate-shared-assets', includeClaudeUserRoot: false })
       .then(({ sharedAssets }) => dispatch({ type: 'HYDRATE_SHARED_ASSETS', assets: projectSharedAssets(sharedAssets) }))
-      .catch((error) => dispatch({ type: 'FAIL_SHARED_ASSETS_HYDRATION', message: errorMessage(error) }))
+      .catch((error) => hydrationFailure(error, { type: 'FAIL_SHARED_ASSETS_HYDRATION', message: errorMessage(error) }))
     void listAgentRecoveryOperations()
       .then((operations) => dispatch({ type: 'HYDRATE_AGENT_RECOVERY', operations }))
-      .catch((error) => dispatch({ type: 'FAIL_AGENT_RECOVERY_HYDRATION', message: errorMessage(error) }))
+      .catch((error) => hydrationFailure(error, { type: 'FAIL_AGENT_RECOVERY_HYDRATION', message: errorMessage(error) }))
     void loadToolConfiguration()
       .then((snapshot) => dispatch({ type: 'HYDRATE_TOOL_CONFIGURATION', snapshot }))
-      .catch((error) => dispatch({ type: 'FAIL_TOOL_CONFIGURATION_HYDRATION', message: errorMessage(error) }))
+      .catch((error) => hydrationFailure(error, { type: 'FAIL_TOOL_CONFIGURATION_HYDRATION', message: errorMessage(error) }))
   }, [providedState])
 
   useEffect(() => {
@@ -808,12 +843,13 @@ export function AppProvider({ children, initialState: providedState }: { childre
   }, [effectiveTheme, effectiveUiPreferences])
 
   useEffect(() => {
+    if (['committed', 'restarting', 'manual-restart-required'].includes(state.factoryReset.status)) return
     try {
       saveUiPreferences(localStorage, state.uiPreferences)
     } catch {
       /* 本机偏好写入失败时仍保留当前会话效果 */
     }
-  }, [state.uiPreferences])
+  }, [state.factoryReset.status, state.uiPreferences])
 
   const value = useMemo<AppContextValue>(() => ({
     state,

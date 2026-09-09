@@ -16,8 +16,8 @@ describe('route metadata', () => {
     })).toEqual({ section: 'agents', title: '设计 Agent', agentId: 'agent-a' })
   })
 
-  it('保留任务简报窗口标题', () => {
-    expect(resolveRouteMetadata('/tasks')).toEqual({ section: 'tasks', title: '任务简报' })
+  it('保留需求池窗口标题', () => {
+    expect(resolveRouteMetadata('/tasks')).toEqual({ section: 'tasks', title: '需求池' })
   })
 
   it('将旧备份兼容路径归入设置', () => {

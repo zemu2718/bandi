@@ -2,6 +2,60 @@ export type Id = string
 export type ContentHash = `sha256:${string}`
 export type Timestamp = string
 
+export type HostIntegrationStatus = 'not_checked' | 'degraded'
+export type HostIntegrationInstallationState =
+  | 'not_installed'
+  | 'installed'
+  | 'update_available'
+  | 'foreign_collision'
+  | 'unsupported'
+  | 'unknown'
+
+export type HostIntegrationDto = {
+  toolId: import('./client-adapters').BuiltInClientId
+  targetId: Id
+  status: HostIntegrationStatus
+  installationState: HostIntegrationInstallationState
+  canInstall: boolean
+  canUninstall: boolean
+  canReveal: boolean
+  reason: string
+}
+
+export type HostIntegrationRequest = {
+  toolId: import('./client-adapters').BuiltInClientId
+  targetId: Id
+  requestId: Id
+}
+
+export type HostIntegrationPreviewDto = HostIntegrationRequest & {
+  previewRef: Id
+  action: 'install' | 'uninstall'
+  status: HostIntegrationStatus
+  installationState: HostIntegrationInstallationState
+  canCommit: boolean
+  requiresConfirmation: boolean
+  reason: string
+}
+
+export type HostIntegrationCommitRequest = HostIntegrationRequest & {
+  previewRef: Id
+  confirmation: boolean
+}
+
+export type HostIntegrationResultDto = HostIntegrationRequest & {
+  status: HostIntegrationStatus
+  installationState: HostIntegrationInstallationState
+  changed: boolean
+  reason: string
+}
+
+export type RevealHostDirectoryResultDto = HostIntegrationRequest & {
+  status: HostIntegrationStatus
+  revealed: boolean
+  reason: string
+}
+
 export type BaselineRefDto = {
   id: Id
   assetId: Id
@@ -218,6 +272,8 @@ export type SourceContainerDto = {
 export type SourceAssetSummaryDto = {
   id: Id
   containerId: Id
+  agentId: Id
+  teamId: Id
   kind: 'instructions' | 'context' | 'rules' | 'skills' | 'mcp' | 'permissions' | 'sop' | 'hooks' | 'commands'
   officialScope: OfficialScope
   assetContentHash: ContentHash
@@ -228,7 +284,9 @@ export type SourceAssetSummaryDto = {
 }
 
 export type ClaudeAgentPreviewDto = {
+  toolId: import('./client-adapters').BuiltInClientId
   sourcePath: string
+  sourceFileName: string
   sourceBaselineHash: ContentHash
   name: string
   description?: string

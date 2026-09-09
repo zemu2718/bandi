@@ -44,6 +44,8 @@ const discovery: DiscoveryResult = {
   assets: [{
     id: 'asset-instructions-1',
     containerId: 'container-1',
+    agentId: 'zhouce',
+    teamId: 'team-personal',
     kind: 'instructions',
     officialScope: 'managed',
     assetContentHash: hash,
@@ -89,10 +91,10 @@ describe('Desktop Backup 面板', () => {
   it('准确说明快照只包含 Bandi 发现并选中的受管配置文件', async () => {
     render(<DesktopBackupPanel />)
 
-    expect(await screen.findByText(/保存所选受管配置文件/)).toBeInTheDocument()
+    expect(await screen.findByText(/保存你选择的 Bandi 配置文件/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('查看安全范围'))
-    expect(screen.getByText(/只包含 Bandi 当前发现并由你选中的可写受管配置文件/)).toBeInTheDocument()
-    expect(screen.getByText(/不包含 Team、TaskBrief、项目目录记录和其他领域数据或正式记忆文件/)).toBeInTheDocument()
+    expect(screen.getByText(/只包含 Bandi 当前可查看且由你选中的可写配置文件/)).toBeInTheDocument()
+    expect(screen.getByText(/不包含 Team、需求、项目目录记录、其他 Bandi 数据或 Agent 长期记忆文件/)).toBeInTheDocument()
     expect(screen.getByText(/凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入/)).toBeInTheDocument()
   })
 
@@ -149,7 +151,7 @@ describe('Desktop Backup 面板', () => {
 
     const restoreButton = screen.getByRole('button', { name: '确认恢复' })
     expect(restoreButton).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox', { name: /我确认恢复这些配置资产/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我确认恢复这些配置/ }))
     fireEvent.click(restoreButton)
 
     await screen.findByText('恢复完成')
@@ -178,7 +180,7 @@ describe('Desktop Backup 面板', () => {
     fireEvent.click(screen.getByRole('button', { name: '预览恢复' }))
     fireEvent.click(screen.getByRole('button', { name: '校验并预览' }))
 
-    expect(await screen.findByText('完整性失败')).toBeInTheDocument()
+    expect(await screen.findByText('内容校验失败')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '确认恢复' })).toBeDisabled()
   })
 
@@ -201,12 +203,12 @@ describe('Desktop Backup 面板', () => {
     fireEvent.click(screen.getByRole('button', { name: '预览恢复' }))
     fireEvent.click(screen.getByRole('button', { name: '校验并预览' }))
     await screen.findByText('可恢复')
-    fireEvent.click(screen.getByRole('checkbox', { name: /我确认恢复这些配置资产/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /我确认恢复这些配置/ }))
     fireEvent.click(screen.getByRole('button', { name: '确认恢复' }))
 
     expect(await screen.findByText('恢复失败')).toBeInTheDocument()
     expect(screen.getByText('保存失败')).toBeInTheDocument()
-    expect(screen.getByText(/目标文件已写入，但版本记录尚未完成/)).toBeInTheDocument()
+    expect(screen.getByText(/配置文件已写入，但版本记录尚未完成/)).toBeInTheDocument()
     expect(screen.getByText(/recovery-1/)).toBeInTheDocument()
     expect(screen.getByText(/不可直接重试/)).toBeInTheDocument()
     expect(screen.queryByText(/保持原状/)).not.toBeInTheDocument()

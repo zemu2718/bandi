@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bandi.local/contracts/host-integration-install.schema.json",
+  "title": "Bandi Host Integration Install v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["toolId", "targetId", "requestId", "previewRef", "action", "status", "installationState", "canCommit", "requiresConfirmation", "reason"],
+  "properties": {
+    "toolId": { "enum": ["claude-code", "claude-desktop", "codex", "gemini-cli", "grok-build", "opencode", "openclaw", "hermes", "pi"] },
+    "targetId": { "type": "string", "minLength": 1 }, "requestId": { "type": "string", "minLength": 1 }, "previewRef": { "type": "string", "minLength": 1 },
+    "action": { "const": "install" }, "status": { "enum": ["not_checked", "degraded"] },
+    "installationState": { "enum": ["not_installed", "installed", "update_available", "foreign_collision", "unsupported", "unknown"] },
+    "canCommit": { "type": "boolean" }, "requiresConfirmation": { "const": true }, "reason": { "type": "string", "minLength": 1 }
+  }
+}

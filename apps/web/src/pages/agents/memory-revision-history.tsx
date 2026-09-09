@@ -36,24 +36,24 @@ export function MemoryRevisionHistory({ spaceId, currentRevisionId }: MemoryRevi
 
   return <>
     <Button variant="ghost" size="sm" onClick={showHistory}>
-      <History size={14} aria-hidden="true" />正式版本历史
+      <History size={14} aria-hidden="true" />版本历史
     </Button>
     <AppDialog
       open={open}
       onOpenChange={setOpen}
       title="长期记忆版本历史"
-      description="每次直接保存都会生成不可变版本，与普通配置版本分开记录。"
+      description="长期记忆的内容发生变化时会生成不可修改的新版本，并与其他配置的版本分开记录。"
       size="xl"
       footer={<Button variant="outline" onClick={() => setOpen(false)}>关闭</Button>}
     >
-      {loading && <p role="status" className="text-sm text-muted-foreground">正在加载正式版本历史…</p>}
+      {loading && <p role="status" className="text-sm text-muted-foreground">正在加载版本历史…</p>}
       {!loading && error && <div role="alert" className="rounded-lg border border-danger/30 bg-danger/5 p-4 text-sm text-danger">{error}</div>}
-      {!loading && !error && revisions.length === 0 && <p className="text-sm text-muted-foreground">当前记忆范围暂无正式版本。</p>}
-      {!loading && !error && revisions.length > 0 && <div className="space-y-3" role="list" aria-label="正式记忆版本历史">
+      {!loading && !error && revisions.length === 0 && <p className="text-sm text-muted-foreground">长期记忆暂无历史版本。</p>}
+      {!loading && !error && revisions.length > 0 && <div className="space-y-3" role="list" aria-label="长期记忆版本历史">
         {revisions.map((revision) => <article key={revision.id} role="listitem" className="rounded-lg border border-border p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0"><b className="block text-sm">{formatDisplayTimestamp(revision.writtenAt)}</b></div>
-            <StatusBadge tone={revision.id === currentRevisionId ? 'success' : 'neutral'}>{revision.id === currentRevisionId ? '当前正式版本' : '历史正式版本'}</StatusBadge>
+            <StatusBadge tone={revision.id === currentRevisionId ? 'success' : 'neutral'}>{revision.id === currentRevisionId ? '当前版本' : '历史版本'}</StatusBadge>
           </div>
           <details className="mt-3"><summary className="cursor-pointer text-xs font-medium text-muted-foreground">版本详情</summary><dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
             <div><dt className="text-muted-foreground">版本 ID</dt><dd className="mt-1 font-mono break-all">{revision.id}</dd></div>

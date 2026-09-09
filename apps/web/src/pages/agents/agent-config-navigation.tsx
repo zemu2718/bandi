@@ -5,7 +5,7 @@ import { StatusBadge, toneForStatus } from '../../components/app/page'
 const managementGroups: Array<{ label: string; items: Array<{ id: Exclude<AgentConfigSection, 'package'>; label: string }> }> = [
   { label: '核心定义', items: [{ id: 'overview', label: '概览' }, { id: 'identity', label: '身份与职责' }, { id: 'instructions', label: '主指令' }] },
   { label: '能力与知识', items: [{ id: 'context', label: '上下文' }, { id: 'skills', label: '技能' }, { id: 'memory', label: '长期记忆' }, { id: 'rules', label: '规则' }, { id: 'mcp', label: '工具连接' }] },
-  { label: '能力边界', items: [{ id: 'permissions', label: '权限' }] },
+  { label: '权限设置', items: [{ id: 'permissions', label: '权限' }] },
   { label: '流程', items: [{ id: 'sop', label: '标准流程' }] },
 ]
 

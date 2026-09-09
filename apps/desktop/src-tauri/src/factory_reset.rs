@@ -1,19 +1,22 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Mutex, MutexGuard, OnceLock,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(not(test))]
+use std::sync::atomic::AtomicBool;
+
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const CONFIRMATION_TEXT: &str = "恢复出厂状态";
+const CONFIRMATION_TEXT: &str = "重置 Bandi";
 const PREVIEW_TTL: Duration = Duration::from_secs(5 * 60);
 const MARKER_NAME: &str = ".factory-reset-committed.json";
 const APP_TARGETS: &[(&str, &str, TargetKind)] = &[
@@ -67,9 +70,40 @@ fn mutation_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-fn reset_committed() -> &'static AtomicBool {
-    static COMMITTED: AtomicBool = AtomicBool::new(false);
-    &COMMITTED
+#[cfg(not(test))]
+static RESET_COMMITTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(not(test))]
+fn is_reset_committed() -> bool {
+    RESET_COMMITTED.load(Ordering::Acquire)
+}
+
+#[cfg(not(test))]
+fn set_reset_committed(value: bool) {
+    RESET_COMMITTED.store(value, Ordering::Release);
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_COMMITTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn is_reset_committed() -> bool {
+    TEST_COMMITTED.get()
+}
+
+#[cfg(test)]
+fn set_reset_committed(value: bool) {
+    TEST_COMMITTED.set(value);
+}
+
+pub(crate) fn database_open_guard() -> Result<(), String> {
+    if is_reset_committed() {
+        Err("FACTORY_RESET_RESTART_REQUIRED: 重置已提交，请重新打开 Bandi".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// 本地数据写 command 与 Factory Reset commit 共用，避免重置期间重新创建数据。
@@ -77,9 +111,7 @@ pub(crate) fn mutation_guard() -> Result<MutexGuard<'static, ()>, String> {
     let guard = mutation_lock()
         .try_lock()
         .map_err(|_| "FACTORY_RESET_BUSY: 另一项本地数据变更正在进行".to_string())?;
-    if reset_committed().load(Ordering::Acquire) {
-        return Err("FACTORY_RESET_RESTART_REQUIRED: 恢复已提交，请重启 Bandi".into());
-    }
+    database_open_guard()?;
     Ok(guard)
 }
 
@@ -211,37 +243,89 @@ pub(crate) fn commit_at(
     )
 }
 
-pub(crate) fn cleanup_committed_at(app_data_dir: &Path, home_dir: &Path) -> Result<(), String> {
-    let marker_path = app_data_dir.join(MARKER_NAME);
-    let bytes = match fs::read(&marker_path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(_) => return Err("FACTORY_RESET_CLEANUP_FAILED: 无法读取已提交标记".into()),
-    };
-    let metadata = fs::symlink_metadata(&marker_path)
-        .map_err(|_| "FACTORY_RESET_CLEANUP_FAILED: 无法检查已提交标记")?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err("FACTORY_RESET_CLEANUP_REJECTED: 已提交标记必须是普通文件".into());
+pub(crate) fn restart_guard_at(app_data_dir: &Path, home_dir: &Path) -> Result<(), String> {
+    if !is_reset_committed() {
+        return Err("FACTORY_RESET_RESTART_NOT_ALLOWED: 当前进程未提交重置".into());
     }
-    let marker: CommittedMarker = serde_json::from_slice(&bytes)
-        .map_err(|_| "FACTORY_RESET_CLEANUP_REJECTED: 已提交标记已损坏")?;
-    if !valid_suffix(&marker.suffix) {
-        return Err("FACTORY_RESET_CLEANUP_REJECTED: 已提交标记引用无效".into());
-    }
-    let managed = home_dir.join(".bandi").join("agents");
-    let known = targets(app_data_dir, &managed);
+    let (marker, known) = read_committed_marker(
+        app_data_dir,
+        home_dir,
+        "FACTORY_RESET_RESTART_MARKER_INVALID",
+    )?
+    .ok_or_else(|| "FACTORY_RESET_RESTART_MARKER_INVALID: 已提交标记不存在".to_string())?;
     for id in &marker.target_ids {
         let target = known
             .iter()
             .find(|target| target.id == id)
-            .ok_or_else(|| "FACTORY_RESET_CLEANUP_REJECTED: 已提交标记包含未知目标".to_string())?;
-        let quarantine = quarantine_path(target, &marker.suffix)?;
-        remove_quarantine(&quarantine, target.kind)?;
+            .expect("已提交标记的目标已验证");
+        inspect_quarantine(
+            &quarantine_path(target, &marker.suffix)?,
+            target.kind,
+            "FACTORY_RESET_RESTART_MARKER_INVALID",
+            false,
+        )?;
     }
-    fs::remove_file(marker_path)
-        .map_err(|_| "FACTORY_RESET_CLEANUP_FAILED: 无法移除已提交标记".to_string())?;
-    reset_committed().store(false, Ordering::Release);
     Ok(())
+}
+
+pub(crate) fn cleanup_committed_at(app_data_dir: &Path, home_dir: &Path) -> Result<(), String> {
+    let Some((marker, known)) =
+        read_committed_marker(app_data_dir, home_dir, "FACTORY_RESET_CLEANUP_REJECTED")?
+    else {
+        return Ok(());
+    };
+    for id in &marker.target_ids {
+        let target = known
+            .iter()
+            .find(|target| target.id == id)
+            .expect("已提交标记的目标已验证");
+        remove_quarantine(&quarantine_path(target, &marker.suffix)?, target.kind)?;
+    }
+    fs::remove_file(app_data_dir.join(MARKER_NAME))
+        .map_err(|_| "FACTORY_RESET_CLEANUP_FAILED: 无法移除已提交标记".to_string())?;
+    set_reset_committed(false);
+    Ok(())
+}
+
+fn read_committed_marker(
+    app_data_dir: &Path,
+    home_dir: &Path,
+    error_code: &str,
+) -> Result<Option<(CommittedMarker, Vec<Target>)>, String> {
+    let marker_path = app_data_dir.join(MARKER_NAME);
+    let metadata = match fs::symlink_metadata(&marker_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(format!("{error_code}: 无法检查已提交标记")),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(format!("{error_code}: 已提交标记必须是普通文件"));
+    }
+    let bytes = fs::read(&marker_path).map_err(|_| format!("{error_code}: 无法读取已提交标记"))?;
+    let marker: CommittedMarker =
+        serde_json::from_slice(&bytes).map_err(|_| format!("{error_code}: 已提交标记已损坏"))?;
+    if !valid_suffix(&marker.suffix) {
+        return Err(format!("{error_code}: 已提交标记引用无效"));
+    }
+    let managed = home_dir.join(".bandi").join("agents");
+    let known = targets(app_data_dir, &managed);
+    let mut unique = HashSet::new();
+    for id in &marker.target_ids {
+        let target = known
+            .iter()
+            .find(|target| target.id == id)
+            .ok_or_else(|| format!("{error_code}: 已提交标记包含未知目标"))?;
+        if !unique.insert(id) {
+            return Err(format!("{error_code}: 已提交标记包含重复目标"));
+        }
+        inspect_quarantine(
+            &quarantine_path(target, &marker.suffix)?,
+            target.kind,
+            error_code,
+            true,
+        )?;
+    }
+    Ok(Some((marker, known)))
 }
 
 fn take_preview(preview_ref: &str) -> Result<PreviewRecord, String> {
@@ -432,7 +516,7 @@ where
             "FACTORY_RESET_ROLLBACK_FAILED: 无法记录提交状态且未能完整回滚".into()
         });
     }
-    reset_committed().store(true, Ordering::Release);
+    set_reset_committed(true);
     Ok(FactoryResetResultDto {
         request_id: request_id.into(),
         preview_ref: preview_ref.into(),
@@ -462,19 +546,34 @@ fn quarantine_path(target: &Target, suffix: &str) -> Result<PathBuf, String> {
         .join(format!(".bandi-reset-{suffix}-{}", target.id)))
 }
 
-fn remove_quarantine(path: &Path, kind: TargetKind) -> Result<(), String> {
+fn inspect_quarantine(
+    path: &Path,
+    kind: TargetKind,
+    error_code: &str,
+    allow_absent: bool,
+) -> Result<(), String> {
     let metadata = match fs::symlink_metadata(path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(_) => return Err("FACTORY_RESET_CLEANUP_FAILED: 无法检查隔离目标".into()),
+        Ok(metadata) => metadata,
+        Err(error) if allow_absent && error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(format!("{error_code}: 隔离目标缺失或无法检查")),
     };
     let valid = !metadata.file_type().is_symlink()
         && match kind {
             TargetKind::File => metadata.is_file(),
             TargetKind::Directory => metadata.is_dir(),
         };
-    if !valid {
-        return Err("FACTORY_RESET_CLEANUP_REJECTED: 隔离目标类型无效".into());
+    if valid {
+        Ok(())
+    } else {
+        Err(format!("{error_code}: 隔离目标类型无效"))
+    }
+}
+
+fn remove_quarantine(path: &Path, kind: TargetKind) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("FACTORY_RESET_CLEANUP_FAILED: 无法检查隔离目标".into()),
+        Ok(_) => inspect_quarantine(path, kind, "FACTORY_RESET_CLEANUP_REJECTED", false)?,
     }
     match kind {
         TargetKind::File => fs::remove_file(path),
@@ -587,14 +686,54 @@ mod tests {
             .quarantined_target_ids
             .contains(&"formalMemory".into()));
         assert!(mutation_guard().unwrap_err().contains("RESTART_REQUIRED"));
+        assert!(restart_guard_at(&app, &home).is_ok());
+        let database_error = crate::domain_store::open_at(&app.join("bandi.db")).unwrap_err();
+        assert!(database_error.starts_with("FACTORY_RESET_RESTART_REQUIRED:"));
+        cleanup_committed_at(&app, &home).unwrap();
+
+        assert!(!app.join("bandi.db").exists());
+        assert!(!app.join("bandi.db-wal").exists());
+        assert!(!app.join("bandi.db-shm").exists());
         assert_eq!(
             fs::read(project_directory.join("keep.txt")).unwrap(),
             b"external project data"
         );
         assert!(project_directory.exists() && external.exists() && host.exists());
-        cleanup_committed_at(&app, &home).unwrap();
         assert!(!app.join(MARKER_NAME).exists());
         assert!(mutation_guard().is_ok());
+        assert!(restart_guard_at(&app, &home)
+            .unwrap_err()
+            .starts_with("FACTORY_RESET_RESTART_NOT_ALLOWED:"));
+
+        let marker_path = app.join(MARKER_NAME);
+        assert!(read_committed_marker(&app, &home, "MARKER_INVALID")
+            .unwrap()
+            .is_none());
+        fs::write(&marker_path, b"not-json").unwrap();
+        assert!(matches!(
+            read_committed_marker(&app, &home, "MARKER_INVALID"),
+            Err(error) if error.contains("MARKER_INVALID")
+        ));
+        for marker in [
+            CommittedMarker {
+                suffix: "invalid".into(),
+                target_ids: vec!["database".into()],
+            },
+            CommittedMarker {
+                suffix: "a".repeat(64),
+                target_ids: vec!["unknown".into()],
+            },
+            CommittedMarker {
+                suffix: "a".repeat(64),
+                target_ids: vec!["database".into(), "database".into()],
+            },
+        ] {
+            fs::write(&marker_path, serde_json::to_vec(&marker).unwrap()).unwrap();
+            assert!(matches!(
+                read_committed_marker(&app, &home, "MARKER_INVALID"),
+                Err(error) if error.contains("MARKER_INVALID")
+            ));
+        }
     }
 
     #[test]

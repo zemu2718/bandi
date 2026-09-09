@@ -9,7 +9,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const DATABASE_SCHEMA_VERSION: i64 = 17;
-const LEGACY_DATABASE_RESET_MESSAGE: &str = "检测到旧版开发数据库；请恢复出厂状态并重新启动 Bandi";
+const LEGACY_DATABASE_RESET_MESSAGE: &str =
+    "LEGACY_DATABASE_RESET_REQUIRED: 检测到旧版开发数据库；请重置 Bandi";
 const LONG_TERM_DOMAIN_SCHEMA_VERSION: u64 = 4;
 const PERSONAL_TEAM_ID: &str = "team-personal";
 
@@ -119,6 +120,7 @@ fn parse_json<T: for<'de> Deserialize<'de>>(value: String) -> rusqlite::Result<T
 }
 
 pub(crate) fn open_at(path: &Path) -> Result<Connection, String> {
+    crate::factory_reset::database_open_guard()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|_| "无法创建本地领域数据目录".to_string())?;
     }
@@ -330,7 +332,7 @@ fn agent_facts_at(
         return Err("AgentPackage 必须是受管根内普通目录".into());
     }
     let manifest_path = package.join("agent.yaml");
-    let (manifest_agent_id, _) = local_service::manifest_facts(&manifest_path)
+    let (manifest_agent_id, _, _) = local_service::manifest_facts(&manifest_path)
         .map_err(|diagnostic| format!("无法读取 Agent 事实：{}", diagnostic.message))?;
     if manifest_agent_id != agent_id {
         return Err("AgentPackage 稳定标识不一致".into());
@@ -348,7 +350,7 @@ fn agent_facts_from_metadata(metadata: &Value) -> Result<(String, String), Strin
             .get("teamId")
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| "Agent 缺少 teamId；请恢复出厂状态后重新创建或导入 Agent".to_string())?
+            .ok_or_else(|| "Agent 缺少 teamId；请重置 Bandi 后重新创建或导入 Agent".to_string())?
             .to_string(),
         metadata
             .get("status")

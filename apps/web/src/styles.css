@@ -24,8 +24,9 @@ button,a { cursor:pointer; }
 .agent-table-scroll::-webkit-scrollbar-thumb { min-width:36px; border-radius:999px; background:color-mix(in srgb,var(--muted-foreground) 55%,transparent); }
 .agent-table-scroll:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .shell-main { padding:calc(1.5rem * var(--ui-space)); }
+.first-use-empty { min-height:calc(100vh - 8rem); padding-bottom:min(10vh,6rem); }
 @media (max-width:1280px) { .shell-main { padding:calc(1.25rem * var(--ui-space)); } }
-@media (max-width:700px) { .shell-main { padding:calc(1rem * var(--ui-space)); } }
+@media (max-width:700px) { .shell-main { padding:calc(1rem * var(--ui-space)); } .first-use-empty { min-height:calc(100vh - 7rem); padding-bottom:5vh; } }
 .label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
 .status { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
 .status::before { content:""; width:6px; height:6px; border-radius:999px; background:currentColor; }

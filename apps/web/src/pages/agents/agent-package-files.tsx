@@ -16,12 +16,13 @@ export function AgentPackageBrowser({ agent, context, path, view, onSelect, onVi
   const compatibilityTone = agent.packageSchema.compatibility === 'current' ? 'success' : 'warning'
   const sourceDetails = {
     'bandi-managed': { label: 'Bandi Desktop 创建', note: '目录来自 Bandi Desktop 已加载的受管配置。' },
-    'claude-agent-import': { label: 'Claude Agent 受管副本', note: '目录是导入后的 Bandi 受管副本；原始 Claude Agent 文件保持只读。' },
+    'managed-agent-import': { label: '已导入的 Agent 受管副本', note: '目录是导入后的 Bandi 受管副本；原始 Agent 文件保持不变。' },
+    'claude-agent-import': { label: 'Claude Agent 受管副本（旧记录）', note: '目录是导入后的 Bandi 受管副本；原始 Claude Agent 文件保持不变。' },
     'bandi-demo': { label: '当前页面演示', note: '目录只展示当前页面中的文件记录，不读取或写入本机文件。' },
     'external-reference': { label: '历史外部只读引用', note: '这里只展示历史记录，未读取对应目录内容，也不再支持添加。' },
   }[agent.packageSource.kind]
   if (!agent.files.length) {
-    const managed = agent.packageSource.kind === 'bandi-managed' || agent.packageSource.kind === 'claude-agent-import'
+    const managed = agent.packageSource.kind === 'bandi-managed' || agent.packageSource.kind === 'managed-agent-import' || agent.packageSource.kind === 'claude-agent-import'
     const empty = agent.packageSource.kind === 'external-reference'
       ? { title: '历史外部目录未被读取', description: '此记录仅展示历史引用位置。Bandi 不扫描该目录，也不再支持添加，因此不会显示文件树。' }
       : agent.packageSource.kind === 'bandi-demo'

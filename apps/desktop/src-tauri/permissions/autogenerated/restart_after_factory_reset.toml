@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restart-after-factory-reset"
+description = "Enables the restart_after_factory_reset command without any pre-configured scope."
+commands.allow = ["restart_after_factory_reset"]
+
+[[permission]]
+identifier = "deny-restart-after-factory-reset"
+description = "Denies the restart_after_factory_reset command without any pre-configured scope."
+commands.deny = ["restart_after_factory_reset"]

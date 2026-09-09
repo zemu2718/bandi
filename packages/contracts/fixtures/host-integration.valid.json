@@ -1,0 +1,4 @@
+[
+  {"toolId":"claude-code","targetId":"claude-code-user-skill-v1","status":"not_checked","installationState":"not_installed","canInstall":true,"canUninstall":false,"canReveal":false,"reason":"仅检查固定入口文件；宿主加载状态尚未验证"},
+  {"toolId":"claude-desktop","targetId":"claude-desktop-extension-v1","status":"degraded","installationState":"unsupported","canInstall":false,"canUninstall":false,"canReveal":false,"reason":"该工具需在官方界面安装扩展"}
+]

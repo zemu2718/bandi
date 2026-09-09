@@ -43,6 +43,7 @@ export type ConfigurationEnvironment = {
 export type AgentPackageSource =
   | { kind: 'bandi-demo'; strategy: 'create-demo' }
   | { kind: 'bandi-managed'; packageId: string; strategy: 'managed'; identityBaseline?: string }
+  | { kind: 'managed-agent-import'; packageId: string; strategy: 'managed-copy'; toolId: import('./client-adapters').BuiltInClientId; sourceFileName: string; sourceBaselineHash: string; importedAt: string }
   | { kind: 'claude-agent-import'; packageId: string; strategy: 'managed-copy'; sourcePath: string; sourceBaselineHash: string; importedAt: string }
   | { kind: 'external-reference'; externalPath: string; strategy: 'reference-only' }
 
@@ -81,7 +82,7 @@ export type FullAgent = Omit<Agent, 'status'> & {
   outputParameterBindings: ParameterBinding[]
   hookRefs: ComponentReference[]
   commandRefs: ComponentReference[]
-  permissions: { files: string; commands: string; network: string }
+  permissions: { files: string; commands: string; network: string; delegation: string }
   sopRefs: string[]
   files: AgentFile[]
 }
@@ -230,7 +231,7 @@ const baseAgent = (agent: Agent, details: Partial<FullAgent>): FullAgent => ({
   contextWindowTokens: 200_000, outputProfileId: 'output-verifiable-delivery',
   outputParameterBindings: [{ parameterId: 'include-summary', type: 'boolean', value: true }],
   hookRefs: [], commandRefs: [],
-  permissions: { files: '仅当前工作区', commands: '构建、测试与版本控制', network: '仅已配置 MCP' },
+  permissions: { files: '仅当前工作区', commands: '构建、测试与版本控制', network: '仅已配置 MCP', delegation: '仅明确服务授权范围' },
   sopRefs: ['sop-delivery'], files: defaultFiles(agent.id), ...details,
 })
 

@@ -13,6 +13,7 @@ type Props = {
   children: ReactNode
   footer?: ReactNode
   size?: DialogSize
+  dismissible?: boolean
 }
 
 const sizes: Record<DialogSize, string> = {
@@ -30,15 +31,21 @@ export function AppDialog({
   children,
   footer,
   size = 'md',
+  dismissible = true,
 }: Props) {
   const triggerRef = useRef<HTMLElement | null>(null)
   if (open && !triggerRef.current && document.activeElement instanceof HTMLElement) triggerRef.current = document.activeElement
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root open={open} onOpenChange={(next) => {
+      if (next || dismissible) onOpenChange(next)
+    }}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px] data-[state=open]:animate-fade" />
         <DialogPrimitive.Content
+          onEscapeKeyDown={(event) => { if (!dismissible) event.preventDefault() }}
+          onPointerDownOutside={(event) => { if (!dismissible) event.preventDefault() }}
+          onInteractOutside={(event) => { if (!dismissible) event.preventDefault() }}
           onCloseAutoFocus={(event) => {
             if (!triggerRef.current?.isConnected) return
             event.preventDefault()
@@ -59,12 +66,12 @@ export function AppDialog({
                 </DialogPrimitive.Description>
               )}
             </div>
-            <DialogPrimitive.Close
+            {dismissible && <DialogPrimitive.Close
               className="grid size-10 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:size-11"
               aria-label="关闭"
             >
               <X size={18} aria-hidden="true" />
-            </DialogPrimitive.Close>
+            </DialogPrimitive.Close>}
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto p-6 max-sm:p-4">{children}</div>
           {footer && (

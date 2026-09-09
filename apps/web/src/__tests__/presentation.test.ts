@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetKindLabel, assetParseStatusLabel, assetScopeLabel, formatDisplayTimestamp, formatRelativeExpiry, localizeDomainText, memoryScopeLabel } from '../presentation'
+import { assetKindLabel, assetParseStatusLabel, assetScopeLabel, formatDisplayTimestamp, formatRelativeExpiry, memoryScopeLabel } from '../presentation'
 
 describe('界面展示格式', () => {
   const utc = { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' } satisfies Intl.DateTimeFormatOptions
@@ -19,12 +19,11 @@ describe('界面展示格式', () => {
     expect(formatRelativeExpiry('未知时间', now)).toBe('有效期未知')
   })
 
-  it('将界面领域词和枚举映射为中文', () => {
-    expect(localizeDomainText('删除 3 项 ConfigRevision；独立 Backup 不变')).toBe('删除 3 项 配置版本；独立 备份 不变')
+  it('按明确的类型和枚举映射界面文案', () => {
     expect(memoryScopeLabel('agent_long_term')).toBe('Agent 长期记忆')
     expect(assetKindLabel('unknown')).toBe('未知资产类型')
     expect(memoryScopeLabel('unknown')).toBe('未知记忆范围')
-    expect(assetParseStatusLabel('parsed')).toBe('已读取')
+    expect(assetParseStatusLabel('parsed')).toBe('正常')
     expect(assetParseStatusLabel('unknown')).toBe('未知状态')
     expect(assetScopeLabel('公司共享')).toBe('Team 共享')
     expect(assetScopeLabel('Agent 自有')).toBe('Agent 自有')

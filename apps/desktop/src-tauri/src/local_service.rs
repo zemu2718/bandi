@@ -66,6 +66,8 @@ pub(crate) struct SourceContainerDto {
 pub(crate) struct SourceAssetSummaryDto {
     pub(crate) id: String,
     pub(crate) container_id: String,
+    pub(crate) agent_id: String,
+    pub(crate) team_id: String,
     pub(crate) kind: String,
     pub(crate) official_scope: String,
     pub(crate) asset_content_hash: String,
@@ -538,7 +540,7 @@ fn contains_rejected_agent_field(object: &serde_json::Map<String, serde_json::Va
         .any(|field| object.contains_key(*field))
 }
 
-pub(crate) fn manifest_facts(path: &Path) -> Result<(String, u64), Box<DiagnosticDto>> {
+pub(crate) fn manifest_facts(path: &Path) -> Result<(String, String, u64), Box<DiagnosticDto>> {
     let content = fs::read_to_string(path).map_err(|_| {
         Box::new(diagnostic(
             "manifest_unreadable",
@@ -591,6 +593,19 @@ pub(crate) fn manifest_facts(path: &Path) -> Result<(String, u64), Box<Diagnosti
                 Some("补充与目录身份一致的稳定 id"),
             ))
         })?;
+    let team_id = manifest
+        .get("teamId")
+        .and_then(serde_yaml::Value::as_str)
+        .filter(|team_id| validate_identifier(team_id))
+        .ok_or_else(|| {
+            Box::new(diagnostic(
+                "manifest_team_id_invalid",
+                "error",
+                "agent.yaml 缺少有效的 Team 稳定标识",
+                Some("agent.yaml".into()),
+                Some("补充有效的 teamId 后重新发现"),
+            ))
+        })?;
     let version = manifest
         .get("schemaVersion")
         .and_then(serde_yaml::Value::as_u64)
@@ -603,7 +618,7 @@ pub(crate) fn manifest_facts(path: &Path) -> Result<(String, u64), Box<Diagnosti
                 Some("使用受支持的 AgentPackage v1 manifest"),
             ))
         })?;
-    Ok((id.into(), version))
+    Ok((id.into(), team_id.into(), version))
 }
 
 fn validate_context_document(content: &str) -> Result<(), Box<DiagnosticDto>> {
@@ -1003,6 +1018,7 @@ fn discover_missing_managed_yaml_asset(
     discovered: &mut Vec<DiscoveredAsset>,
     package_path: &Path,
     agent_id: &str,
+    team_id: &str,
     relative_path: &str,
     kind: &str,
     content: &str,
@@ -1031,6 +1047,8 @@ fn discover_missing_managed_yaml_asset(
         summary: SourceAssetSummaryDto {
             id: asset_id,
             container_id,
+            agent_id: agent_id.into(),
+            team_id: team_id.into(),
             kind: kind.into(),
             official_scope: "managed".into(),
             asset_content_hash: hash.clone(),
@@ -1058,6 +1076,7 @@ fn discover_managed_yaml_asset(
     diagnostics: &mut Vec<DiagnosticDto>,
     package_path: &Path,
     agent_id: &str,
+    team_id: &str,
     relative_path: &str,
     kind: &str,
     current: bool,
@@ -1072,6 +1091,7 @@ fn discover_managed_yaml_asset(
                     discovered,
                     package_path,
                     agent_id,
+                    team_id,
                     relative_path,
                     kind,
                     content,
@@ -1153,6 +1173,8 @@ fn discover_managed_yaml_asset(
     let summary = SourceAssetSummaryDto {
         id: asset_id,
         container_id: container_id.clone(),
+        agent_id: agent_id.into(),
+        team_id: team_id.into(),
         kind: kind.into(),
         official_scope: "managed".into(),
         asset_content_hash: hash.clone(),
@@ -1289,7 +1311,7 @@ pub(crate) fn project_managed_agent_at(
     }
 
     let manifest_path = package_path.join("agent.yaml");
-    let (manifest_id, schema_version) = manifest_facts(&manifest_path)
+    let (manifest_id, manifest_team_id, schema_version) = manifest_facts(&manifest_path)
         .map_err(|issue| format!("AGENT_CANONICAL_INVALID: {}", issue.message))?;
     if manifest_id != agent_id || schema_version != CURRENT_SCHEMA_VERSION {
         return Err("AGENT_CANONICAL_INVALID: agent.yaml 身份不一致或版本不受支持".into());
@@ -1321,6 +1343,7 @@ pub(crate) fn project_managed_agent_at(
             agent.remove(*field);
         }
     }
+    agent.insert("teamId".into(), manifest_team_id.into());
     agent.insert(
         "packageSchema".into(),
         serde_json::json!({ "schemaVersion": schema_version, "compatibility": "current" }),
@@ -1447,13 +1470,14 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             }
             continue;
         }
-        let (agent_id, schema_version) = match manifest_facts(&package_path.join("agent.yaml")) {
-            Ok(value) => value,
-            Err(error) => {
-                diagnostics.push(*error);
-                continue;
-            }
-        };
+        let (agent_id, team_id, schema_version) =
+            match manifest_facts(&package_path.join("agent.yaml")) {
+                Ok(value) => value,
+                Err(error) => {
+                    diagnostics.push(*error);
+                    continue;
+                }
+            };
         let expected_directory = format!("agt_{agent_id}");
         if entry.file_name().to_string_lossy() != expected_directory {
             diagnostics.push(diagnostic(
@@ -1553,6 +1577,8 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
         let summary = SourceAssetSummaryDto {
             id: asset_id,
             container_id: container_id.clone(),
+            agent_id: agent_id.clone(),
+            team_id: team_id.clone(),
             kind: "instructions".into(),
             official_scope: "managed".into(),
             asset_content_hash: hash.clone(),
@@ -1585,6 +1611,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/context.yaml",
             "context",
             current,
@@ -1595,6 +1622,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/rules.yaml",
             "rules",
             current,
@@ -1605,6 +1633,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/skills.yaml",
             "skills",
             current,
@@ -1615,6 +1644,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/mcp.yaml",
             "mcp",
             current,
@@ -1625,6 +1655,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/permissions.yaml",
             "permissions",
             current,
@@ -1635,6 +1666,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/sop.yaml",
             "sop",
             current,
@@ -1645,6 +1677,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/hooks.yaml",
             "hooks",
             current,
@@ -1655,6 +1688,7 @@ fn discover_managed_assets(managed_root: &Path) -> (Vec<DiscoveredAsset>, Vec<Di
             &mut diagnostics,
             &package_path,
             &agent_id,
+            &team_id,
             "config/commands.yaml",
             "commands",
             current,
@@ -2981,6 +3015,52 @@ mod tests {
         index.insert("id".into(), serde_json::json!("alpha"));
         index.insert("serviceGrants".into(), serde_json::json!([]));
         assert!(contains_rejected_agent_field(&index));
+    }
+
+    #[test]
+    fn manifest_facts_require_canonical_team_id() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = root.path().join("agent.yaml");
+        fs::write(&manifest, "schemaVersion: 1\nid: alpha\nteamId: team-one\n").unwrap();
+        assert_eq!(
+            manifest_facts(&manifest).unwrap(),
+            ("alpha".into(), "team-one".into(), 1)
+        );
+
+        fs::write(&manifest, "schemaVersion: 1\nid: alpha\n").unwrap();
+        assert_eq!(
+            manifest_facts(&manifest).unwrap_err().code,
+            "manifest_team_id_invalid"
+        );
+        fs::write(&manifest, "schemaVersion: 1\nid: alpha\nteamId: ../other\n").unwrap();
+        assert_eq!(
+            manifest_facts(&manifest).unwrap_err().code,
+            "manifest_team_id_invalid"
+        );
+    }
+
+    #[test]
+    fn managed_asset_branches_preserve_owner() {
+        let root = tempfile::tempdir().unwrap();
+        let package = root.path().join("agt_alpha");
+        fs::create_dir_all(package.join("config")).unwrap();
+        fs::write(
+            package.join("agent.yaml"),
+            "schemaVersion: 1\nid: alpha\nteamId: team-one\n",
+        )
+        .unwrap();
+        fs::write(package.join("instructions.md"), "# Alpha\n").unwrap();
+        fs::write(package.join("config/context.yaml"), "not: valid context\n").unwrap();
+
+        let (assets, _) = discover_managed_assets(root.path());
+        for kind in ["instructions", "context", "rules"] {
+            let asset = assets
+                .iter()
+                .find(|item| item.summary.kind == kind)
+                .unwrap();
+            assert_eq!(asset.summary.agent_id, "alpha");
+            assert_eq!(asset.summary.team_id, "team-one");
+        }
     }
 
     #[test]

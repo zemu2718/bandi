@@ -61,6 +61,13 @@ afterEach(() => {
 })
 
 describe('Agent 双模式配置工作台', () => {
+  it('使用 Agent 名称作为唯一页面一级标题', () => {
+    renderAgent()
+
+    expect(screen.getByRole('heading', { level: 1, name: '周策' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+
   it.each([
     ['外部引用', { kind: 'external-reference' as const, externalPath: '/tmp/external', strategy: 'reference-only' as const }, { compatibility: 'unverified' as const }],
     ['旧版受管包', { kind: 'bandi-managed' as const, packageId: 'agt_zhouce', strategy: 'managed' as const }, { schemaVersion: 0, compatibility: 'legacy' as const }],
@@ -216,7 +223,7 @@ describe('Agent 双模式配置工作台', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Bandi 不会覆盖当前文件')
     expect(screen.getByDisplayValue('周策更新')).toBeInTheDocument()
     expect(screen.getByText('name: "磁盘更新"')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '基于当前内容重新编辑' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '使用文件当前内容继续编辑' })).toBeEnabled()
   })
 
   it('Desktop 受管身份读取历史并恢复为新版本', async () => {
@@ -328,14 +335,14 @@ describe('Agent 双模式配置工作台', () => {
     })
 
     renderAgent('/agents/zhouce?tab=memory', state)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Memory 正文' }), { target: { value: '更新后的长期事实' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '长期记忆正文' }), { target: { value: '更新后的长期事实' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
       spaceId: space.id,
       content: '更新后的长期事实',
     })))
-    expect(await screen.findByRole('status')).toHaveTextContent('memory-revision-19')
+    expect(await screen.findByRole('status')).toHaveTextContent('Agent 长期记忆已保存')
   })
 
   it('Desktop 受管 Instructions 通过发现、加载与真实保存闭环', async () => {
@@ -348,7 +355,7 @@ describe('Agent 双模式配置工作台', () => {
       } : item),
     }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
-    const asset = { id: 'asset-1', containerId: 'container-1', kind: 'instructions', officialScope: 'managed', assetContentHash: `sha256:${'a'.repeat(64)}`, containerContentHash: `sha256:${'a'.repeat(64)}`, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'asset-1', containerId: 'container-1', kind: 'instructions', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: `sha256:${'a'.repeat(64)}`, containerContentHash: `sha256:${'a'.repeat(64)}`, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const discovery: DiscoveryResult = { requestId: 'discover-zhouce', profileVersion: 'agent-package-v1', containers: [{ id: 'container-1', locator: { rootKind: 'managed', displayPath: '/tmp/instructions.md', relativePath: 'agt_zhouce/instructions.md' }, format: 'markdown', contentHash: asset.containerContentHash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] }
     const loaded: LoadEditorResult = { requestId: 'load-zhouce', asset, canonicalContent: '# Disk\n', redacted: false, baselineRef: { id: 'base-1', assetId: asset.id, containerId: asset.containerId, assetContentHash: asset.assetContentHash, containerContentHash: asset.containerContentHash }, diagnostics: [] }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue(discovery)
@@ -370,7 +377,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'c'.repeat(64)}` as const
-    const asset = { id: 'asset-1', containerId: 'container-1', kind: 'instructions', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'asset-1', containerId: 'container-1', kind: 'instructions', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const loaded: LoadEditorResult = { requestId: 'load-history', asset, canonicalContent: '# Current\n', redacted: false, baselineRef: { id: 'base-1', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }, diagnostics: [] }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-history', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/instructions.md', relativePath: 'agt_zhouce/instructions.md' }, format: 'markdown', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
     vi.spyOn(desktopBridge, 'loadConfigEditor').mockResolvedValue(loaded)
@@ -394,7 +401,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'b'.repeat(64)}` as const
-    const asset = { id: 'asset-1', containerId: 'container-1', kind: 'instructions', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'asset-1', containerId: 'container-1', kind: 'instructions', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-zhouce', profileVersion: 'agent-package-v1', containers: [{ id: 'container-1', locator: { rootKind: 'managed', displayPath: '/tmp/instructions.md', relativePath: 'agt_zhouce/instructions.md' }, format: 'markdown', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
     vi.spyOn(desktopBridge, 'loadConfigEditor').mockResolvedValue({ requestId: 'load-zhouce', asset, canonicalContent: '# Base\n', redacted: false, baselineRef: { id: 'base-1', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }, diagnostics: [] })
     vi.spyOn(desktopBridge, 'saveConfig').mockResolvedValue({ kind: 'baseline_changed', requestId: 'save-zhouce', assetId: asset.id, containerId: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/instructions.md' }, base: { content: '# Base\n', assetContentHash: hash, containerContentHash: hash, redacted: false }, current: { content: '# Current\n', assetContentHash: hash, containerContentHash: hash, redacted: false }, proposed: { content: '# Proposed\n', assetContentHash: hash, containerContentHash: hash, redacted: false }, diagnostics: [{ code: 'baseline_changed', severity: 'warning', message: '已发生外部变化' }] })
@@ -411,7 +418,7 @@ describe('Agent 双模式配置工作台', () => {
     expect(screen.getByText('# Base')).toBeInTheDocument()
     expect(screen.getByText('# Current')).toBeInTheDocument()
     expect(screen.getAllByText('# Proposed')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: '基于当前内容重新编辑' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '使用文件当前内容继续编辑' })).toBeEnabled()
   })
 
   it('纯 Web Context 保持页面内存保存到当前页面边界', async () => {
@@ -433,7 +440,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'4'.repeat(64)}` as const
-    const asset = { id: 'context-asset', containerId: 'context-container', kind: 'context', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'context-asset', containerId: 'context-container', kind: 'context', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const base = 'schemaVersion: 1\ncontextPolicy:\n  enabled: true\n  triggerRatio: 0.8\n  targetRatio: 0.5\n  protectRecentTurns: 6\n  protectOpeningTurns: 2\noutputProfileId: ""\noutputParameterBindings: []'
     const baselineRef = { id: 'context-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-context', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/context.yaml', relativePath: 'agt_zhouce/config/context.yaml' }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
@@ -473,7 +480,7 @@ describe('Agent 双模式配置工作台', () => {
     }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'5'.repeat(64)}` as const
-    const asset = { id: 'rules-empty-asset', containerId: 'rules-empty-container', kind: 'rules', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [{ code: 'rules_not_materialized', severity: 'info', message: '尚未创建 rules.yaml' }] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'rules-empty-asset', containerId: 'rules-empty-container', kind: 'rules', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [{ code: 'rules_not_materialized', severity: 'info', message: '尚未创建 rules.yaml' }] } satisfies import('../contracts').SourceAssetSummaryDto
     const base = 'schemaVersion: 1\nrules:\n  []\n'
     const baselineRef = { id: 'rules-empty-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash, targetExists: false }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-rules-empty', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/rules.yaml', relativePath: 'agt_zhouce/config/rules.yaml' }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
@@ -496,7 +503,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' }, ruleRefs: ['rule-common'] } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'6'.repeat(64)}` as const
-    const asset = { id: 'rules-asset', containerId: 'rules-container', kind: 'rules', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'rules-asset', containerId: 'rules-container', kind: 'rules', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const base = 'schemaVersion: 1\nrules:\n  - "rule-common"'
     const baselineRef = { id: 'rules-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-rules', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/rules.yaml', relativePath: 'agt_zhouce/config/rules.yaml' }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
@@ -542,7 +549,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' }, skillRefs: ['skill-review'] } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'7'.repeat(64)}` as const
-    const asset = { id: 'skills-asset', containerId: 'skills-container', kind: 'skills', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'skills-asset', containerId: 'skills-container', kind: 'skills', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const base = 'schemaVersion: 1\nskills:\n  - "skill-review"'
     const baselineRef = { id: 'skills-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-skills', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/skills.yaml', relativePath: 'agt_zhouce/config/skills.yaml' }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
@@ -571,7 +578,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' }, mcpRefs: ['mcp-bandi'] } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'8'.repeat(64)}` as const
-    const asset = { id: 'mcp-asset', containerId: 'mcp-container', kind: 'mcp', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'mcp-asset', containerId: 'mcp-container', kind: 'mcp', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const base = 'schemaVersion: 1\nmcp:\n  - "mcp-bandi"'
     const baselineRef = { id: 'mcp-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-mcp', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/mcp.yaml', relativePath: 'agt_zhouce/config/mcp.yaml' }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
@@ -619,7 +626,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' }, sopRefs: ['sop-delivery'] } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'d'.repeat(64)}` as const
-    const asset = { id: 'sop-asset', containerId: 'sop-container', kind: 'sop', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'sop-asset', containerId: 'sop-container', kind: 'sop', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const base = 'schemaVersion: 1\nsop:\n  - "sop-delivery"'
     const baselineRef = { id: 'sop-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-sop', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/sop.yaml', relativePath: 'agt_zhouce/config/sop.yaml' }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
@@ -639,10 +646,10 @@ describe('Agent 双模式配置工作台', () => {
 
     renderAgent('/agents/zhouce?tab=permissions')
 
-    expect(screen.getByText('长期权限边界')).toBeInTheDocument()
-    expect(screen.getByText(/实际工具调用仍由 Claude Code 在终端中按当前任务请求授权/)).toBeInTheDocument()
-    expect(screen.getByText(/不会写入真实配置或授权终端操作/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '调整长期边界' })).toBeInTheDocument()
+    expect(screen.getByText('长期权限')).toBeInTheDocument()
+    expect(screen.getByText(/当前任务中的工具调用，仍需在你选择的 AI 编程工具中授权/)).toBeInTheDocument()
+    expect(screen.getByText(/不会写入真实配置或批准工具调用/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '调整长期权限' })).toBeInTheDocument()
   })
 
   it('Desktop Permissions 在双 Agent 发现结果中只加载当前 Agent 容器', async () => {
@@ -651,7 +658,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => ({ ...item, packageSource: { kind: 'bandi-managed', packageId: `agt_${item.id}`, strategy: 'managed' } })) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'3'.repeat(64)}` as const
-    const otherAsset = { id: 'permissions-other', containerId: 'permissions-other-container', kind: 'permissions', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const otherAsset = { id: 'permissions-other', containerId: 'permissions-other-container', kind: 'permissions', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const currentAsset = { ...otherAsset, id: 'permissions-current', containerId: 'permissions-current-container' }
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-permissions-dual', profileVersion: 'agent-package-v1', containers: [
       { id: otherAsset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/other-permissions.yaml', relativePath: `agt_${other.id}/config/permissions.yaml` }, format: 'yaml', contentHash: hash, writable: true },
@@ -660,9 +667,11 @@ describe('Agent 双模式配置工作台', () => {
     const load = vi.spyOn(desktopBridge, 'loadConfigEditor').mockResolvedValue({ requestId: 'load-current', asset: currentAsset, canonicalContent: 'schemaVersion: 1\npermissions:\n  files: "仅当前工作区"\n  commands: "构建、测试与版本控制"\n  network: "仅已配置 MCP"\n  delegation: "仅明确服务授权范围"', redacted: false, baselineRef: { id: 'base-current', assetId: currentAsset.id, containerId: currentAsset.containerId, assetContentHash: hash, containerContentHash: hash }, diagnostics: [] })
 
     renderAgent('/agents/zhouce?tab=permissions', state)
-    fireEvent.click(screen.getByRole('button', { name: '调整长期边界' }))
+    fireEvent.click(screen.getByRole('button', { name: '调整长期权限' }))
 
     await waitFor(() => expect(load).toHaveBeenCalledWith({ requestId: 'load-permissions-zhouce', assetId: currentAsset.id }))
+    expect(screen.getByLabelText('文件写入')).toHaveValue('仅当前工作区')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it.each([
@@ -673,11 +682,11 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'4'.repeat(64)}` as const
-    vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-permissions-error', profileVersion: 'agent-package-v1', containers: containerIds.map((id) => ({ id, locator: { rootKind: 'managed' as const, displayPath: `/tmp/${id}.yaml`, relativePath: 'agt_zhouce/config/permissions.yaml' }, format: 'yaml' as const, contentHash: hash, writable: true })), assets: assetIds.map((id, index) => ({ id, containerId: containerIds[index], kind: 'permissions' as const, officialScope: 'managed' as const, assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed' as const, diagnostics: [] })), sharedAssets: [], references: [], diagnostics: [] })
+    vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-permissions-error', profileVersion: 'agent-package-v1', containers: containerIds.map((id) => ({ id, locator: { rootKind: 'managed' as const, displayPath: `/tmp/${id}.yaml`, relativePath: 'agt_zhouce/config/permissions.yaml' }, format: 'yaml' as const, contentHash: hash, writable: true })), assets: assetIds.map((id, index) => ({ id, containerId: containerIds[index], agentId: 'zhouce', teamId: 'xinghe', kind: 'permissions' as const, officialScope: 'managed' as const, assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed' as const, diagnostics: [] })), sharedAssets: [], references: [], diagnostics: [] })
     const load = vi.spyOn(desktopBridge, 'loadConfigEditor')
 
     renderAgent('/agents/zhouce?tab=permissions', state)
-    fireEvent.click(screen.getByRole('button', { name: '调整长期边界' }))
+    fireEvent.click(screen.getByRole('button', { name: '调整长期权限' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
     expect(screen.queryByLabelText('文件写入')).not.toBeInTheDocument()
@@ -689,7 +698,7 @@ describe('Agent 双模式配置工作台', () => {
     const save = vi.spyOn(desktopBridge, 'saveConfig')
 
     renderAgent('/agents/zhouce?tab=permissions')
-    fireEvent.click(screen.getByRole('button', { name: '调整长期边界' }))
+    fireEvent.click(screen.getByRole('button', { name: '调整长期权限' }))
     fireEvent.change(screen.getByLabelText('文件写入'), { target: { value: '任意目录' } })
     fireEvent.click(screen.getByRole('button', { name: '保存到当前页面' }))
 
@@ -697,7 +706,7 @@ describe('Agent 双模式配置工作台', () => {
     expect(within(dialog).getByText(/仅在当前页面更新/)).toBeInTheDocument()
     fireEvent.change(within(dialog).getByLabelText(/输入 Agent 名称/), { target: { value: '周策' } })
     fireEvent.click(within(dialog).getByRole('checkbox'))
-    fireEvent.click(within(dialog).getByRole('button', { name: '确认扩大长期边界' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认扩大长期权限' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '确认扩大 Agent 长期权限' })).not.toBeInTheDocument())
     expect(save).not.toHaveBeenCalled()
@@ -729,7 +738,7 @@ describe('Agent 双模式配置工作台', () => {
         organizationRelationships: [],
                 formalMemory: [],
         automaticCleanup: [{ id: 'agent_indexes', label: 'Agent 索引', detail: '将自动清理 1 项' }],
-        historyAndBackups: [{ id: 'config_revisions', label: '配置版本', detail: '将删除 3 项 ConfigRevision；独立 Backup 不变' }],
+        historyAndBackups: [{ id: 'config_revisions', label: '配置版本', detail: '将删除 3 个配置版本；已有备份不受影响' }],
         blockers: [],
       },
       canCommit: true,
@@ -740,7 +749,7 @@ describe('Agent 双模式配置工作台', () => {
     fireEvent.click(screen.getByRole('button', { name: '预览永久删除影响' }))
     const dialog = await screen.findByRole('dialog', { name: '永久删除 周策' })
     await waitFor(() => expect(preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'zhouce' })))
-    expect(within(dialog).getByText(/独立 备份 不变/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/已有备份不受影响/)).toBeInTheDocument()
     expect(within(dialog).queryByText(/ConfigRevision|Backup|2026-09-03T12:00:00Z/)).not.toBeInTheDocument()
     const confirmation = within(dialog).getByLabelText(/输入“永久删除 周策”确认/)
     const deleteButton = within(dialog).getByRole('button', { name: '永久删除' })
@@ -812,7 +821,7 @@ describe('Agent 双模式配置工作台', () => {
     fireEvent.click(screen.getByRole('button', { name: '预览永久删除影响' }))
     const dialog = await screen.findByRole('dialog', { name: '永久删除 周策' })
     expect(await within(dialog).findByText('agent_static_reference:other-agent')).toBeInTheDocument()
-    expect(within(dialog).getByText('解除建议：先移除其他 AgentPackage 中的静态引用。')).toBeInTheDocument()
+    expect(within(dialog).getByText('处理建议：先移除其他 AgentPackage 中的静态引用。')).toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: '永久删除' })).not.toBeInTheDocument()
     expect(within(dialog).queryByLabelText(/输入“/)).not.toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: '重新检查' })).toBeInTheDocument()
@@ -881,7 +890,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = { ...initialState, agents: initialState.agents.map((item) => item.id === source.id ? { ...item, packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' } } : item) }
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const hash = `sha256:${'5'.repeat(64)}` as const
-    const asset = { id: 'context-asset', containerId: 'context-container', kind: 'context', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
+    const asset = { id: 'context-asset', containerId: 'context-container', kind: 'context', officialScope: 'managed', agentId: 'zhouce', teamId: 'xinghe', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] } satisfies import('../contracts').SourceAssetSummaryDto
     const base = 'schemaVersion: 1\ncontextPolicy:\n  enabled: true\n  triggerRatio: 0.8\n  targetRatio: 0.5\n  protectRecentTurns: 6\n  protectOpeningTurns: 2\noutputProfileId: ""\noutputParameterBindings: []'
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue({ requestId: 'discover-context', profileVersion: 'agent-package-v1', containers: [{ id: asset.containerId, locator: { rootKind: 'managed', displayPath: '/tmp/context.yaml', relativePath: 'agt_zhouce/config/context.yaml' }, format: 'yaml', contentHash: hash, writable: true }], assets: [asset], sharedAssets: [], references: [], diagnostics: [] })
     vi.spyOn(desktopBridge, 'loadConfigEditor').mockResolvedValue({ requestId: 'load-context', asset, canonicalContent: base, redacted: false, baselineRef: { id: 'context-base', assetId: asset.id, containerId: asset.containerId, assetContentHash: hash, containerContentHash: hash }, diagnostics: [] })
@@ -896,6 +905,6 @@ describe('Agent 双模式配置工作台', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Bandi 不会覆盖当前文件')
     expect(screen.getByDisplayValue(85)).toHaveValue(85)
     expect(screen.getByText(/triggerRatio: 0.9/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '基于当前内容重新编辑' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '使用文件当前内容继续编辑' })).toBeEnabled()
   })
 })

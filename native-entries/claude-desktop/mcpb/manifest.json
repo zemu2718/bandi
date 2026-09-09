@@ -1,0 +1,15 @@
+{
+  "manifest_version": "0.3",
+  "name": "bandi-readonly",
+  "version": "0.1.0",
+  "description": "Read-only Bandi configuration facts",
+  "author": { "name": "Bandi" },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"]
+    }
+  }
+}

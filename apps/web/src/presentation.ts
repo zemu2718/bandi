@@ -27,17 +27,6 @@ export function formatRelativeExpiry(
   return `约${formatter.format(minutes < 60 ? minutes : Math.ceil(minutes / 60), minutes < 60 ? 'minute' : 'hour')}过期`
 }
 
-const domainTerms: Array<[string, string]> = [
-  ['ConfigRevision', '配置版本'],
-  ['MemoryRevision', '记忆版本'],
-  ['Backup', '备份'],
-  ['Revision', '版本'],
-]
-
-export function localizeDomainText(value: string): string {
-  return domainTerms.reduce((text, [term, label]) => text.replaceAll(term, label), value)
-}
-
 const memoryScopeLabels: Record<string, string> = {
   agent_long_term: 'Agent 长期记忆',
 }
@@ -68,8 +57,8 @@ const assetKindLabels: Record<string, string> = {
   Command: '命令',
   output_profile: '输出格式',
   OutputProfile: '输出格式',
-  memory: '正式记忆',
-  Memory: '正式记忆',
+  memory: 'Agent 长期记忆',
+  Memory: 'Agent 长期记忆',
   settings: '设置',
   Settings: '设置',
   Plugin: '插件',
@@ -80,7 +69,7 @@ export function assetKindLabel(kind: string): string {
 }
 
 const assetParseStatusLabels: Record<string, string> = {
-  parsed: '已读取',
+  parsed: '正常',
   invalid: '配置有误',
   unsupported: '版本不兼容',
   redacted: '已脱敏',
@@ -91,6 +80,8 @@ export function assetParseStatusLabel(status: string): string {
 }
 
 const assetScopeLabels: Record<string, string> = {
+  managed: 'Agent 自有',
+  bandi: 'Team 共享',
   公司共享: 'Team 共享',
   公司安全边界: 'Team 安全边界',
 }

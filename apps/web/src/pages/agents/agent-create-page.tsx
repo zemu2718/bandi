@@ -1,5 +1,4 @@
 import { useRef, useState, type Ref } from 'react'
-import { FolderOpen } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '../../components/ui/button'
 import { AppDialog } from '../../components/ui/dialog'
@@ -12,6 +11,7 @@ import { AgentAvatarPicker } from '../../components/agents/agent-avatar-picker'
 import { allocateAgentId, commitManagedAgentCreation, importClaudeAgent, isDesktopRuntime, previewClaudeAgent, selectClaudeAgentFile } from '../../desktop-bridge'
 import type { ClaudeAgentPreviewDto } from '../../contracts'
 import { getAgentConfigPath, normalizeAgentName, serializeAgentConfig, snapshotAgentConfig, validateAgentName, type AgentConfigPayload } from '../../agent-config-model'
+import { AgentImportPanel } from './agent-import-panel'
 
 const agentTemplates = [
   { id: '', name: '空白 Agent', description: '从空白定义开始。', mission: '', rolePrompt: '', workingConstraints: '' },
@@ -160,7 +160,7 @@ export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentC
       prohibitions: [],
       completionDefinition: [],
       packagePath: `~/.bandi/agents/agt_${agentId}/`,
-      packageSource: importMode && importPreview ? { kind: 'claude-agent-import', packageId: `agt_${agentId}`, strategy: 'managed-copy', sourcePath: importPreview.sourcePath, sourceBaselineHash: importPreview.sourceBaselineHash, importedAt: new Date().toISOString() } : desktop ? { kind: 'bandi-managed', packageId: `agt_${agentId}`, strategy: 'managed' } : { kind: 'bandi-demo', strategy: 'create-demo' },
+      packageSource: importMode && importPreview ? { kind: 'managed-agent-import', packageId: `agt_${agentId}`, strategy: 'managed-copy', toolId: importPreview.toolId, sourceFileName: importPreview.sourceFileName, sourceBaselineHash: importPreview.sourceBaselineHash, importedAt: new Date().toISOString() } : desktop ? { kind: 'bandi-managed', packageId: `agt_${agentId}`, strategy: 'managed' } : { kind: 'bandi-demo', strategy: 'create-demo' },
       avatarPath: avatar ? 'avatar.png' : undefined,
       instructions: importPreview?.instructions
         ?? [rolePrompt.trim(), workingConstraints.trim()].filter(Boolean).join('\n\n'),
@@ -172,7 +172,7 @@ export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentC
       outputParameterBindings: [],
       hookRefs: [],
       commandRefs: [],
-      permissions: { files: '未授予', commands: '未授予', network: '未授予' },
+      permissions: { files: '未授予', commands: '未授予', network: '未授予', delegation: '未授予' },
       sopRefs: [],
       files: [],
     }
@@ -220,7 +220,7 @@ export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentC
             ? { tone: 'success', title: 'Agent 已导入', description: '已创建 Bandi 受管副本，原文件保持不变。' }
             : { tone: 'success', title: 'Agent 已导入', description: '已添加到当前演示；未写入本机配置。' }
           : desktop
-            ? { tone: 'success', title: 'Agent 已创建', description: '长期配置已保存；任务使用与执行仍在 Claude Code 中完成。' }
+            ? { tone: 'success', title: 'Agent 已创建', description: '长期配置已保存；任务使用与执行仍在你选择的外部 AI 编程工具中完成。' }
             : { tone: 'success', title: 'Agent 已创建', description: '已添加到当前演示；未写入本机配置。' },
       })
       allowNavigation.current = true
@@ -266,7 +266,7 @@ export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentC
         </div>
         <p className="mt-2 text-xs leading-5 text-muted-foreground">{agentTemplates.find((template) => template.id === templateId)?.description}</p>
       </fieldset>
-      <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError} help="用于列表、组织关系和 Claude Code 中识别这个 Agent。" />
+      <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError} help="用于列表、组织关系和外部 AI 编程工具中识别这个 Agent。" />
       <TextField label="一句话描述（可选）" value={mission} onChange={setMission} help="概括这个 Agent 是做什么的，将保存为长期使命摘要。" />
       <TextArea label="角色定位（可选）" value={rolePrompt} onChange={setRolePrompt} help="说明它是谁、负责什么，以及应如何回应。" />
       <TextArea label="工作方法与约束（可选）" value={workingConstraints} onChange={setWorkingConstraints} help="将写入主指令；不会创建 Rules 资产，也不会增加权限。" />
@@ -278,7 +278,7 @@ export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentC
           {!teamValid && <p role="alert" className="text-sm text-danger">当前没有可用 Team，暂时无法创建 Agent。</p>}
         </div>
       </details>
-      <MockBoundaryNote>{desktop ? '创建后可在 Agent 详情中继续完善权限、项目和长期记忆；任务使用与执行仍在 Claude Code 中完成。' : '当前仅创建页面演示记录，不会写入本机配置。'}</MockBoundaryNote>
+      <MockBoundaryNote>{desktop ? '创建后可在 Agent 详情中继续完善权限、项目和长期记忆；任务使用与执行仍在你选择的外部 AI 编程工具中完成。' : '当前仅创建页面演示记录，不会写入本机配置。'}</MockBoundaryNote>
       {saveError && <ErrorNotice error={saveError} />}
     </form>
   </AppDialog>
@@ -295,16 +295,11 @@ export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentC
     </>}
   >
     <div className="space-y-5">
-      <button type="button" disabled={!desktop || selectingDirectory || saving} aria-busy={selectingDirectory} onClick={() => void chooseImportFile()} className="flex min-h-36 w-full flex-col items-center justify-center rounded-lg border border-dashed border-border px-5 py-6 text-center transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
-        <FolderOpen size={28} aria-hidden="true" />
-        <b className="mt-3 text-sm">{selectingDirectory ? '正在读取…' : importPreview ? '重新选择 Agent 文件' : '选择 Agent 文件'}</b>
-        <span className="mt-1 text-xs text-muted-foreground">当前支持 Claude Code 的 .claude/agents/*.md</span>
-      </button>
-      {!desktop && <p className="text-xs text-muted-foreground">本机文件选择仅在 Bandi Desktop 中可用。</p>}
+      <AgentImportPanel desktop={desktop} preview={importPreview} selecting={selectingDirectory} saving={saving} onSelect={() => void chooseImportFile()} />
       {submitted && !importPreview && <p role="alert" className="text-xs text-danger">请选择并成功预览一个 Agent 文件。</p>}
       {importPreview && <>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/35 p-4 text-sm">
-          <div className="min-w-0"><b className="block truncate">{importPreview.sourcePath.split(/[\\/]/).pop()}</b><span className="text-xs text-muted-foreground">文件已读取，可在导入前确认内容。</span></div>
+          <div className="min-w-0"><b className="block truncate">{importPreview.sourceFileName}</b><span className="text-xs text-muted-foreground">文件已读取，可在导入前确认内容。</span></div>
           <Button type="button" variant="outline" size="sm" disabled={selectingDirectory || saving} onClick={() => void chooseImportFile()}>重新选择</Button>
         </div>
         <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError ?? (submitted && duplicateId ? '系统生成的 Agent ID 已存在，请重试。' : undefined)} help="可在导入前修改；用于在 Bandi 和 AI 编程工具中识别这个 Agent。" />

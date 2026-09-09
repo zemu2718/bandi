@@ -182,7 +182,14 @@ describe('渐进式首次体验', () => {
     expect(screen.getByRole('link', { name: '查看 Agent' })).toHaveAttribute('href', '/agents')
     expect(screen.queryByText('快捷入口')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '新建 Agent' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '任务简报' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '需求池' })).not.toBeInTheDocument()
+  })
+
+  it('Team 空状态只保留一个创建入口', () => {
+    renderRoutes('/organization', emptyState)
+
+    expect(screen.getAllByRole('button', { name: '创建 Team' })).toHaveLength(1)
+    expect(screen.getByText('还没有 Team')).toBeInTheDocument()
   })
 
   it('首次使用从 Agent 导入或创建开始', () => {
@@ -190,7 +197,8 @@ describe('渐进式首次体验', () => {
 
     expect(screen.getByRole('heading', { name: '先新建或导入一个长期 Agent' })).toBeInTheDocument()
     expect(screen.getByText('无需预先配置额外组织层级。')).toBeInTheDocument()
-    expect(screen.getByText(/Claude Code 的 \.claude\/agents\/\*\.md 文件导入为受管副本/)).toBeInTheDocument()
+    expect(screen.getByText(/按 Team 管理每个 Agent 独立的受管配置、长期 Memory 和版本历史/)).toBeInTheDocument()
+    expect(screen.getByText(/当前仅支持 Claude Code 的 \.claude\/agents\/\*\.md 文件/)).toBeInTheDocument()
     expect(screen.getByText(/浏览器演示不会读取或写入本机文件/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '新建 Agent' })).toHaveAttribute('href', '/agents/new')
     expect(screen.getByRole('link', { name: '导入 Agent' })).toHaveAttribute('href', '/agents/new?mode=import')

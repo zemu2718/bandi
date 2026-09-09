@@ -48,7 +48,7 @@ export function agentFileSource(agent: FullAgent, _context: AgentProjectionConte
     if (content !== undefined) return { status: 'available', provenance: 'demo-projection', language: configKind === 'instructions' ? 'markdown' : 'yaml', content }
   }
   if (/^config\/mcp\.json$/.test(normalized)) return { status: 'available', provenance: 'demo-projection', language: 'json', content: JSON.stringify({ mcp: agent.mcpRefs }, null, 2) }
-  if (normalized === 'memory/long-term.md') return { status: 'available', provenance: 'demo-projection', language: 'markdown', content: `# 长期记忆\n\nRevision: ${association.file.revision ?? '未设置'}\n\n长期记忆直接保存，每次变更生成不可变版本。` }
+  if (normalized === 'memory/long-term.md') return { status: 'available', provenance: 'demo-projection', language: 'markdown', content: `# Agent 长期记忆\n\n版本：${association.file.revision ?? '未设置'}\n\n长期记忆直接保存，每次变更都会生成新版本。` }
 
   return { status: 'unavailable', reason: 'unsupported-file', message: '已有文件记录，但浏览器演示暂不支持显示该格式的源码。' }
 }

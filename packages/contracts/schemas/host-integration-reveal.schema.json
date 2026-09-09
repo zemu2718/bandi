@@ -1,0 +1,5 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://bandi.local/contracts/host-integration-reveal.schema.json","title":"Bandi Host Integration Reveal v1","type":"object","additionalProperties":false,
+  "required":["toolId","targetId","requestId","status","revealed","reason"],
+  "properties":{"toolId":{"enum":["claude-code","claude-desktop","codex","gemini-cli","grok-build","opencode","openclaw","hermes","pi"]},"targetId":{"type":"string","minLength":1},"requestId":{"type":"string","minLength":1},"status":{"const":"degraded"},"revealed":{"const":false},"reason":{"type":"string","minLength":1}}
+}

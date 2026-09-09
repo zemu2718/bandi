@@ -60,10 +60,10 @@ describe('设置页', () => {
   it('默认展示四个用户可操作的设置分类', () => {
     renderSettings()
 
-    expect(screen.getByText('管理工具交接、终端偏好、本机数据恢复与外观。')).toBeInTheDocument()
+    expect(screen.getByText('管理 AI 工具、终端偏好、本机数据恢复与外观。')).toBeInTheDocument()
     expect(screen.getAllByRole('navigation', { name: '设置分类' })[0].querySelectorAll('button')).toHaveLength(4)
-    expect(screen.getByRole('button', { name: '工具与交接' })).toHaveClass('bg-foreground')
-    expect(screen.getByRole('button', { name: '终端' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
+    expect(screen.getByRole('button', { name: '终端偏好' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '数据与恢复' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '外观' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: '默认终端' })).not.toBeInTheDocument()
@@ -74,17 +74,17 @@ describe('设置页', () => {
     expect(screen.queryByRole('button', { name: '路径与编辑器' })).not.toBeInTheDocument()
   })
 
-  it('兼容旧链接并让已删除分类回退到工具与交接', () => {
+  it('兼容旧链接并让已删除分类回退到AI 工具', () => {
     const { unmount } = renderSettings('/?section=ai-clients')
-    expect(screen.getByRole('button', { name: '工具与交接' })).toHaveClass('bg-foreground')
+    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
     unmount()
 
     renderSettings('/?section=workspace')
-    expect(screen.getByRole('button', { name: '工具与交接' })).toHaveClass('bg-foreground')
-    expect(screen.getByText('要管理的 AI 编程工具')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
+    expect(screen.getByText('AI 编程工具')).toBeInTheDocument()
   })
 
-  it('在终端分类中管理默认终端', () => {
+  it('在终端偏好分类中管理默认终端', () => {
     renderSettings('/?section=terminal')
 
     const terminal = screen.getByRole('combobox', { name: '默认终端' })
@@ -124,9 +124,9 @@ describe('设置页', () => {
     })
 
     expect(screen.getAllByRole('navigation', { name: '设置分类' })[0].querySelectorAll('button')).toHaveLength(4)
-    expect(screen.getByRole('button', { name: '工具与交接' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'AI 工具' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '网络与代理' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '工具与交接' })).toHaveClass('bg-foreground')
+    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
 
     unmount()
     const terminalView = renderSettings('/?section=terminal', {
@@ -134,7 +134,7 @@ describe('设置页', () => {
       runtime: 'desktop',
       uiPreferences: { ...DEFAULT_UI_PREFERENCES, terminal: 'terminal' },
     })
-    expect(screen.getByText(/白名单界面偏好/)).toBeInTheDocument()
+    expect(screen.getByText(/这台设备上的 Bandi 偏好/)).toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox', { name: '默认终端' }), { target: { value: 'ghostty' } })
     fireEvent.click(screen.getByRole('button', { name: '保存终端偏好' }))
     await waitFor(() => expect(JSON.parse(localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) ?? '{}').terminal).toBe('ghostty'))
@@ -147,7 +147,7 @@ describe('设置页', () => {
     })
     expect(screen.getByRole('tab', { name: '本地数据' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '配置文件快照' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '重新开始' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '重置 Bandi' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: '配置方案' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: '远程备份' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Agent 根目录' })).not.toBeInTheDocument()
@@ -169,7 +169,7 @@ describe('设置页', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '存储位置' }))
     expect(screen.getByRole('textbox', { name: 'Agent 根目录' })).toHaveValue('~/.bandi/agents')
-    expect(screen.getByText('外部变化保护')).toBeInTheDocument()
+    expect(screen.getByText('防止覆盖其他修改')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: '演示检查频率' })).toHaveValue('5 分钟')
     expect(screen.queryByText('自动快照')).not.toBeInTheDocument()
 
@@ -182,8 +182,8 @@ describe('设置页', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '远程备份' }))
     expect(screen.getByText('Private Git 约束')).toBeInTheDocument()
-    expect(screen.getByText('远程备份包含正式记忆')).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: '远程备份包含正式记忆' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByText('远程备份包含 Agent 长期记忆')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '远程备份包含 Agent 长期记忆' })).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByText(/凭据、Token、钥匙串/)).toBeInTheDocument()
     expect(screen.queryByText('快照历史')).not.toBeInTheDocument()
   })
@@ -199,7 +199,7 @@ describe('设置页', () => {
       ...initialState.agents[0],
       id: 'imported-access',
       packagePath: '~/.bandi/agents/agt_imported-access/',
-      packageSource: { kind: 'claude-agent-import' as const, packageId: 'agt_imported-access', strategy: 'managed-copy' as const, sourcePath: '/Users/demo/.claude/agents/reviewer.md', sourceBaselineHash: 'sha256:source', importedAt: '2026-09-02T00:00:00Z' },
+      packageSource: { kind: 'managed-agent-import' as const, packageId: 'agt_imported-access', strategy: 'managed-copy' as const, toolId: 'claude-code' as const, sourceFileName: 'reviewer.md', sourceBaselineHash: 'sha256:source', importedAt: '2026-09-02T00:00:00Z' },
     }
     const reference = {
       ...initialState.agents[0],
@@ -214,13 +214,14 @@ describe('设置页', () => {
     })
 
     fireEvent.click(screen.getByRole('tab', { name: '存储位置' }))
-    expect(screen.getByText('本地访问边界')).toBeInTheDocument()
+    expect(screen.getByText('Bandi 可以访问的位置')).toBeInTheDocument()
     expect(screen.getByText('Bandi 受管 Agent 配置')).toBeInTheDocument()
     expect(screen.getByText('Agent 导入来源')).toBeInTheDocument()
     expect(screen.getByText('历史外部 Agent 引用')).toBeInTheDocument()
-    expect(screen.getByText('/Users/demo/.claude/agents/reviewer.md')).toBeInTheDocument()
+    expect(screen.getByText('claude-code · reviewer.md')).toBeInTheDocument()
+    expect(screen.queryByText('/Users/demo/.claude/agents/reviewer.md')).not.toBeInTheDocument()
     expect(screen.getByText('/Volumes/shared/agent')).toBeInTheDocument()
-    expect(screen.getByText(/不是整盘权限/)).toBeInTheDocument()
+    expect(screen.getByText(/除此之外的位置不会被读取或修改/)).toBeInTheDocument()
     expect(screen.queryByText(/OS 已授权/)).not.toBeInTheDocument()
   })
 

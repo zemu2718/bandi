@@ -12,7 +12,7 @@ import {
 } from '../../desktop-bridge'
 import type { FullAgent } from '../../domain'
 import { useApp } from '../../state'
-import { formatDisplayTimestamp, formatRelativeExpiry, localizeDomainText } from '../../presentation'
+import { formatDisplayTimestamp, formatRelativeExpiry } from '../../presentation'
 
 const impactGroups: Array<{
   key: Exclude<keyof ManagedAgentDeletionPreviewDto['impacts'], 'blockers'>
@@ -20,7 +20,7 @@ const impactGroups: Array<{
 }> = [
   { key: 'sharedAssetReferences', title: '共享资产引用' },
   { key: 'organizationRelationships', title: '组织关系' },
-  { key: 'formalMemory', title: '正式记忆' },
+  { key: 'formalMemory', title: '长期记忆' },
   { key: 'automaticCleanup', title: '自动清理项' },
   { key: 'historyAndBackups', title: '历史与备份' },
 ]
@@ -32,9 +32,9 @@ function ImpactList({ items }: { items: ManagedAgentDeletionImpactDto[] }) {
     <ul className="mt-3 space-y-2 text-sm">
       {items.map((item) => (
         <li key={item.id} className="min-w-0 rounded-md border border-border p-3 [overflow-wrap:anywhere]">
-          <b>{localizeDomainText(item.label)}</b>
-          <p className="mt-1 break-words leading-6 text-muted-foreground">{localizeDomainText(item.detail)}</p>
-          {item.remediation && <p className="mt-1 break-words text-xs leading-5 text-warning">解除建议：{localizeDomainText(item.remediation)}</p>}
+          <b>{item.label}</b>
+          <p className="mt-1 break-words leading-6 text-muted-foreground">{item.detail}</p>
+          {item.remediation && <p className="mt-1 break-words text-xs leading-5 text-warning">处理建议：{item.remediation}</p>}
         </li>
       ))}
     </ul>
@@ -190,22 +190,22 @@ export function AgentDangerZone({ agent }: { agent: FullAgent }) {
         <div>
           <div className="label text-danger">危险区</div>
           <h2 id="agent-danger-zone-title" className="mt-2 font-semibold">永久删除 Agent</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">永久删除受管目录、配置版本和相关索引。独立备份不会随之删除；此操作不等同于隐私擦除。</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">永久删除此 Agent 的 Bandi 受管数据。此操作无法撤销，独立备份可能仍保留副本；Bandi 不会删除受管范围以外的文件。</p>
         </div>
         <Button variant="danger" onClick={() => void showPreview()}><Trash2 size={16} aria-hidden="true" />预览永久删除影响</Button>
       </div>
-      <AppDialog open={open} onOpenChange={(next) => { if (!next) close() }} title={`永久删除 ${agent.name}`} description="本地服务会重新计算全部影响；有阻塞项时不能提交。" size="lg" footer={footer}>
+      <AppDialog open={open} onOpenChange={(next) => { if (!next) close() }} title={`永久删除 ${agent.name}`} description="Bandi 会再次检查删除影响。有未处理的关联或责任时，无法永久删除。" size="lg" footer={footer}>
         {loading && !preview && <p role="status" className="text-sm text-muted-foreground">正在计算删除影响…</p>}
         {error && <ErrorNotice error={error} />}
         {preview && <div className="min-w-0 space-y-5">
           <div className="min-w-0 rounded-lg border border-warning/30 bg-warning/8 p-4 text-sm leading-6">
             <b className="break-words">删除目标：{agent.name}</b>
             <p className="mt-1 font-mono text-xs text-muted-foreground" title={agent.id}>Agent ID：{shortId(agent.id)}</p>
-            <p className="mt-2 text-muted-foreground">发现 {groups.length} 个受影响分组，共 {impactCount} 项影响；{blockers.length ? `当前有 ${blockers.length} 个阻塞项。` : '当前无阻塞项，可以继续确认。'}</p>
-            <p className="mt-2 text-muted-foreground">Agent 配置及其版本历史将被删除。已有备份快照可能仍包含历史副本，但不能直接恢复该 Agent。</p>
+            <p className="mt-2 text-muted-foreground">此次删除会影响 {impactCount} 项内容，分为 {groups.length} 类；{blockers.length ? `其中 ${blockers.length} 项需要先处理。` : '没有需要先处理的项目，可以继续确认。'}</p>
+            <p className="mt-2 text-muted-foreground">此 Agent 的受管配置和版本历史将被永久删除，无法撤销。已有备份快照可能仍包含副本，但不能从这里直接恢复此 Agent。</p>
           </div>
           {blockers.length > 0 && <section className="rounded-lg border border-danger/30 bg-danger/5 p-4">
-            <h3 className="text-sm font-semibold">先解除以下阻塞项</h3>
+            <h3 className="text-sm font-semibold">先处理以下项目</h3>
             <ImpactList items={blockers} />
           </section>}
           {stale && <p className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm">删除预览已失效，请重新检查。</p>}
@@ -216,7 +216,7 @@ export function AgentDangerZone({ agent }: { agent: FullAgent }) {
           {canConfirm && <label className="block text-sm font-medium" htmlFor="agent-deletion-confirmation">输入“{preview.confirmationText}”确认
             <input ref={confirmationRef} id="agent-deletion-confirmation" autoComplete="off" className="mt-2 h-10 w-full px-3" value={confirmation} disabled={loading} onChange={(event) => setConfirmation(event.target.value)} />
           </label>}
-          <p className="text-xs text-muted-foreground">预览 <time dateTime={preview.expiresAt} title={formatDisplayTimestamp(preview.expiresAt)}>{formatRelativeExpiry(preview.expiresAt)}</time>。提交时会再次检查 Agent 配置和全部影响是否变化。</p>
+          <p className="text-xs text-muted-foreground">预览 <time dateTime={preview.expiresAt} title={formatDisplayTimestamp(preview.expiresAt)}>{formatRelativeExpiry(preview.expiresAt)}</time>。永久删除前，Bandi 会再次检查 Agent 配置和相关影响是否变化。</p>
         </div>}
       </AppDialog>
     </section>

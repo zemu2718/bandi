@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupAssetReferences, groupDiscoveryDiagnostics, projectDiscoveredAssets, projectSharedAssets } from '../discovered-assets'
+import { assetCategoryForKind, countDiscoveredAssetCategories, filterDiscoveredAssets, groupAssetReferences, groupDiscoveryDiagnostics, projectDiscoveredAssets, projectSharedAssets, type DiscoveredAssetRow } from '../discovered-assets'
 
 const hash = `sha256:${'a'.repeat(64)}` as const
 
@@ -18,13 +18,13 @@ describe('真实资产发现投影', () => {
       requestId: 'discover-1',
       profileVersion: 'agent-package-v1',
       containers: [{ id: 'container-1', locator: { rootKind: 'managed', displayPath: 'config/mcp.yaml', relativePath: 'config/mcp.yaml' }, format: 'yaml', contentHash: hash, writable: false, readOnlyReason: 'future schema' }],
-      assets: [{ id: 'asset-1', containerId: 'container-1', kind: 'mcp', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'unsupported', diagnostics: [{ code: 'future_schema', severity: 'warning', message: '未来版本只读' }] }],
+      assets: [{ id: 'asset-1', containerId: 'container-1', kind: 'mcp', officialScope: 'managed', agentId: 'zhouce', teamId: 'team-personal', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'unsupported', diagnostics: [{ code: 'future_schema', severity: 'warning', message: '未来版本只读' }] }],
       sharedAssets: [],
       references: [{ sourceAssetId: 'asset-1', sourceContainerId: 'container-1', referrerKind: 'agent', referrerId: 'zhouce', targetAssetId: 'mcp-bandi', targetKind: 'mcp', state: 'unresolved', sourcePath: 'config/mcp.yaml' }],
       diagnostics: [],
     })
 
-    expect(rows[0]).toMatchObject({ path: 'config/mcp.yaml', writable: false, readOnlyReason: 'future schema', parseStatus: 'unsupported', outgoingReferences: 1, unresolvedReferences: 1 })
+    expect(rows[0]).toMatchObject({ path: 'config/mcp.yaml', agentId: 'zhouce', teamId: 'team-personal', writable: false, readOnlyReason: 'future schema', parseStatus: 'unsupported', outgoingReferences: 1, unresolvedReferences: 1 })
     expect(rows[0].diagnostics[0].message).toBe('未来版本只读')
   })
 
@@ -66,13 +66,62 @@ describe('真实资产发现投影', () => {
       requestId: 'discover-2',
       profileVersion: 'agent-package-v1',
       containers: [],
-      assets: [{ id: 'asset-2', containerId: 'missing', kind: 'skills', officialScope: 'managed', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] }],
+      assets: [{ id: 'asset-2', containerId: 'missing', kind: 'skills', officialScope: 'managed', agentId: 'zhouce', teamId: 'team-personal', assetContentHash: hash, containerContentHash: hash, writable: true, parseStatus: 'parsed', diagnostics: [] }],
       sharedAssets: [],
       references: [],
       diagnostics: [],
     })
 
-    expect(rows[0]).toMatchObject({ path: '来源容器缺失', writable: false })
+    expect(rows[0]).toMatchObject({ path: '配置来源缺失', agentId: 'zhouce', teamId: 'team-personal', writable: false })
     expect(rows[0].diagnostics[0].code).toBe('asset_container_missing')
+  })
+
+  it('统一资产分类并将扩展类型归入其他', () => {
+    expect(assetCategoryForKind('skills')).toBe('skills')
+    expect(assetCategoryForKind('skill')).toBe('skills')
+    expect(assetCategoryForKind('rules')).toBe('rules')
+    expect(assetCategoryForKind('rule')).toBe('rules')
+    expect(assetCategoryForKind('mcp')).toBe('mcp')
+    expect(assetCategoryForKind('sop')).toBe('sop')
+    for (const kind of ['instructions', 'permissions', 'hooks', 'unknown']) {
+      expect(assetCategoryForKind(kind)).toBe('other')
+    }
+  })
+
+  it('先按 Team 隔离，再按分类、搜索和筛选派生列表', () => {
+    const row = (id: string, kind: string, teamId: string, agentId = 'zhouce'): DiscoveredAssetRow => ({
+      id,
+      label: `${id}.yaml`,
+      source: '受管 Agent 配置',
+      nodeType: 'config',
+      teamId,
+      agentId,
+      kind,
+      scope: 'managed',
+      path: `config/${id}.yaml`,
+      writable: true,
+      parseStatus: 'parsed',
+      profileVersion: 'agent-package-v1',
+      diagnostics: [],
+      references: [],
+      referenceSummaries: [],
+      outgoingReferences: 0,
+      incomingReferences: 0,
+      unresolvedReferences: 0,
+    })
+    const rows = [row('review', 'skills', 'team-one'), row('linear', 'mcp', 'team-one'), row('secret', 'skills', 'team-two')]
+    const teamRows = filterDiscoveredAssets(rows, { teamId: 'team-one', category: 'overview' })
+
+    expect(countDiscoveredAssetCategories(teamRows)).toEqual({ skills: 1, mcp: 1, rules: 0, sop: 0, other: 0 })
+    expect(filterDiscoveredAssets(rows, {
+      teamId: 'team-one',
+      category: 'skills',
+      query: '周策',
+      owner: 'zhouce',
+      scope: 'managed',
+      health: 'parsed',
+      agentNames: new Map([['zhouce', '周策']]),
+    }).map((item) => item.id)).toEqual(['review'])
+    expect(filterDiscoveredAssets(rows, { teamId: 'team-one', category: 'skills', query: 'secret' })).toEqual([])
   })
 })

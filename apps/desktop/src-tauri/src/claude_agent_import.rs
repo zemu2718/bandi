@@ -13,7 +13,9 @@ pub(crate) struct PreviewClaudeAgentRequest {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ClaudeAgentPreviewDto {
+    pub(crate) tool_id: &'static str,
     pub(crate) source_path: String,
+    pub(crate) source_file_name: String,
     pub(crate) source_baseline_hash: String,
     pub(crate) name: String,
     pub(crate) description: Option<String>,
@@ -112,8 +114,15 @@ fn parse_source(canonical: String, bytes: Vec<u8>) -> Result<ClaudeAgentPreviewD
         .into_iter()
         .filter(|key| !matches!(key.as_str(), "name" | "description"))
         .collect();
+    let source_file_name = Path::new(&canonical)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("agent.md")
+        .to_string();
     Ok(ClaudeAgentPreviewDto {
+        tool_id: "claude-code",
         source_path: canonical,
+        source_file_name,
         source_baseline_hash: crate::local_service::hash_bytes(&bytes),
         name,
         description,

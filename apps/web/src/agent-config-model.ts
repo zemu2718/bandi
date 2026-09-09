@@ -175,8 +175,8 @@ export function parseAgentComponentRefs(content: string, key: 'hooks' | 'command
 
 export function parseAgentPermissions(content: string): FullAgent['permissions'] | undefined {
   const lines = content.split(/\r?\n/)
-  const keys = ['files', 'commands', 'network'] as const
-  if (lines.length !== 5 || lines[0] !== `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}` || lines[1] !== 'permissions:') return undefined
+  const keys = ['files', 'commands', 'network', 'delegation'] as const
+  if (lines.length !== 6 || lines[0] !== `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}` || lines[1] !== 'permissions:') return undefined
   const permissions = {} as FullAgent['permissions']
   for (const [index, key] of keys.entries()) {
     const match = lines[index + 2]?.match(new RegExp(`^ {2}${key}: ("(?:[^"\\\\]|\\\\.)*")$`))
@@ -295,6 +295,7 @@ export function serializeAgentConfig(agent: FullAgent, payload: AgentConfigPaylo
       `  files: ${quote(applied.permissions.files)}`,
       `  commands: ${quote(applied.permissions.commands)}`,
       `  network: ${quote(applied.permissions.network)}`,
+      `  delegation: ${quote(applied.permissions.delegation)}`,
     ].join('\n')
     case 'sop': return `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}\nsop:\n${yamlList(applied.sopRefs)}`
     case 'hooks': return `schemaVersion: ${AGENT_PACKAGE_SCHEMA_VERSION}\nhooks: ${JSON.stringify(applied.hookRefs)}`
@@ -307,15 +308,15 @@ export function describeAgentConfigFile(payload: AgentConfigPayload, evidence: E
   if (!path) return undefined
   const descriptions: Record<AgentConfigPayload['kind'], string> = {
     identity: '稳定身份与职责',
-    instructions: '主 Instructions',
+    instructions: '主指令',
     context: '上下文与输出格式',
-    skills: 'Skill 配置与引用',
-    rules: 'Rule 配置与引用',
-    mcp: 'MCP 配置与引用',
-    permissions: '长期权限边界',
-    sop: 'SOP 配置与引用',
-    hooks: 'Hook 配置与引用',
-    commands: 'Command 配置与引用',
+    skills: '使用的 Skills',
+    rules: '使用的规则',
+    mcp: '使用的 MCP 服务',
+    permissions: '权限范围',
+    sop: '使用的 SOP',
+    hooks: '使用的 Hooks',
+    commands: '使用的 Commands',
   }
   return {
     path,
@@ -353,7 +354,7 @@ export function isAgentConfigPayload(value: unknown): value is AgentConfigPayloa
     && (payloadValue.outputProfileId === undefined || typeof payloadValue.outputProfileId === 'string')
     && (payloadValue.outputParameterBindings === undefined || (Array.isArray(payloadValue.outputParameterBindings)
       && payloadValue.outputParameterBindings.every(isParameterBinding)))
-  if (value.kind === 'permissions') return ['files', 'commands', 'network'].every((key) => typeof payloadValue[key] === 'string')
+  if (value.kind === 'permissions') return ['files', 'commands', 'network', 'delegation'].every((key) => typeof payloadValue[key] === 'string')
   if (value.kind === 'identity') {
     return payloadValue.schemaVersion === AGENT_PACKAGE_SCHEMA_VERSION
       && ['id', 'name', 'mission', 'teamId'].every((key) => typeof payloadValue[key] === 'string')

@@ -1,7 +1,7 @@
 [package]
 name = "bandi-desktop"
 version = "0.1.0"
-description = "Bandi multi-Agent configuration manager"
+description = "A local-first desktop workspace for managing distinct, persistent configurations for multiple AI coding agents."
 authors = ["Bandi"]
 edition = "2021"
 default-run = "bandi-desktop"

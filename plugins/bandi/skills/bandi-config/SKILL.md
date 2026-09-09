@@ -1,38 +1,25 @@
 ---
 name: bandi-config
-description: 当用户要求查看 Bandi 配置状态、诊断本地配置或检查 AgentPackage 配置有效性时使用。只通过 bandi CLI 读取事实，不执行任务或直接写入配置。
-allowed-tools: Bash(cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml --bin bandi -- *)
+description: 当用户要求查看 Bandi Team、长期 Agent、可选 Team-scoped TaskBrief、上下文或配置诊断时使用。只通过 bandi CLI 读取事实。
+allowed-tools: Bash(bandi --json *)
 ---
 
 # Bandi 配置事实
 
-通过与 Desktop 共用 Rust Local Service 的 `bandi` CLI 获取事实：
+只执行以下固定命令：
 
 ```text
-cargo run --quiet --manifest-path apps/desktop/src-tauri/Cargo.toml --bin bandi -- --json doctor
-cargo run --quiet --manifest-path apps/desktop/src-tauri/Cargo.toml --bin bandi -- --json status
-cargo run --quiet --manifest-path apps/desktop/src-tauri/Cargo.toml --bin bandi -- --json config check
+bandi --json doctor
+bandi --json status
+bandi --json teams list
+bandi --json agents list --team-id <稳定 ID>
+bandi --json agents show --agent-id <稳定 ID>
+bandi --json task-briefs list --team-id <稳定 ID>
+bandi --json task-briefs show --task-brief-id <稳定 ID>
+bandi --json context show --team-id <稳定 ID> --agent-id <稳定 ID> [--task-brief-id <稳定 ID>]
+bandi --json config check
 ```
 
-## 配置范围
+稳定 ID 仅允许字母、数字、`-`、`_`、`.`；不得接受名称、路径或额外选项。不得拼接或执行其他命令。
 
-只解释以下长期配置事实：
-
-- Team；
-- Agent；
-- 可选的 Team-scoped TaskBrief；
-- Agent 长期 Memory。
-
-## 边界
-
-- 只读取配置事实、诊断与能力状态。
-- 不直接访问 SQLite 或受管配置文件以绕过 Local Service。
-- 不接受、登记、扫描或访问任意用户目录。
-- 不创建或协作执行任务，不选择参与 Agent，不处理执行期批准，不推进或监控任务，不管理 Claude Code Session。
-- 不把 RuntimeProjection 持久化为主事实。
-- 持久化变更只能由 Desktop/Local Service 的受限流程处理；本 Skill 不执行写入。
-- 凭据、Token、Cookie、私钥和钥匙串内容不得进入回复、命令参数或日志。
-
-## 输出
-
-按“状态 → 证据 → 影响 → 修复建议”说明结果。`degraded`、`not_initialized`、`not_checked` 必须原样表达，不得推断为可用。
+仅解释 Team、长期 Agent、可选 Team-scoped TaskBrief 与长期配置事实。不得绕过 CLI 访问数据，不得写配置、启动工具、执行任务、调度 Agent、推进 SOP、处理批准或管理 Session。凭据、Token、Cookie、私钥和绝对路径不得进入回复。按“状态 → 证据 → 影响 → 修复建议”说明；`degraded`、`not_initialized`、`not_checked` 必须原样表达。

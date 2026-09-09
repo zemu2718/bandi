@@ -75,6 +75,80 @@ pub struct ConfigCheckReport {
     pub diagnostics: Vec<CliDiagnostic>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamFact {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mission: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boundary: Option<String>,
+    pub member_agent_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentFact {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub team_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mission: Option<String>,
+    #[serde(default)]
+    pub responsibilities: Vec<String>,
+    #[serde(default)]
+    pub deliverables: Vec<String>,
+    #[serde(default)]
+    pub decision_boundaries: Vec<String>,
+    #[serde(default)]
+    pub escalation_conditions: Vec<String>,
+    #[serde(default)]
+    pub prohibitions: Vec<String>,
+    #[serde(default)]
+    pub completion_definition: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskBriefFact {
+    pub id: String,
+    pub team_id: String,
+    pub title: String,
+    pub goal: String,
+    pub context: String,
+    pub constraints: String,
+    pub expected_output: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextFact {
+    pub team: TeamFact,
+    pub agent: AgentFact,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_brief: Option<TaskBriefFact>,
+}
+
+fn valid_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        && value != "."
+        && value != ".."
+}
+
+fn require_id(value: &str, label: &str) -> Result<(), String> {
+    valid_id(value)
+        .then_some(())
+        .ok_or_else(|| format!("{label}无效"))
+}
+
 fn path_check(name: &str, path: &Path, expected_directory: bool) -> CheckItem {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => CheckItem {
@@ -117,20 +191,18 @@ pub fn doctor(paths: &LocalServicePaths) -> DoctorReport {
         path_check("sharedAssets", &paths.shared_assets, true),
     ];
     if paths.database.is_file() {
-        checks.push(
-            match domain_store::load_long_term_domain_snapshot_v4_at(&paths.database) {
-                Ok(_) => CheckItem {
-                    name: "databaseSchema".into(),
-                    status: "ok".into(),
-                    message: "SQLite/WAL schema 可读取".into(),
-                },
-                Err(message) => CheckItem {
-                    name: "databaseSchema".into(),
-                    status: "error".into(),
-                    message,
-                },
+        checks.push(match organization_snapshot(paths) {
+            Ok(_) => CheckItem {
+                name: "databaseSchema".into(),
+                status: "ok".into(),
+                message: "SQLite/WAL schema 可读取".into(),
             },
-        );
+            Err(message) => CheckItem {
+                name: "databaseSchema".into(),
+                status: "error".into(),
+                message,
+            },
+        });
     }
     let status = if checks.iter().any(|item| item.status == "error") {
         "degraded"
@@ -156,11 +228,74 @@ fn empty_snapshot() -> domain_store::LongTermDomainSnapshotDtoV4 {
 fn organization_snapshot(
     paths: &LocalServicePaths,
 ) -> Result<domain_store::LongTermDomainSnapshotDtoV4, String> {
-    if paths.database.is_file() {
-        domain_store::load_long_term_domain_snapshot_v4_at(&paths.database)
-    } else {
-        Ok(empty_snapshot())
+    if !paths.database.is_file() {
+        return Ok(empty_snapshot());
     }
+    let connection = Connection::open_with_flags(
+        &paths.database,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|_| "无法以只读方式打开本地领域数据库".to_string())?;
+    let mut statement = connection
+        .prepare("SELECT id, name, mark, color, mission, boundary_text, member_agent_ids_json, shared_asset_ids_json FROM teams ORDER BY rowid")
+        .map_err(|_| "无法读取 Team".to_string())?;
+    let teams = statement
+        .query_map([], |row| {
+            Ok(domain_store::TeamDtoV4 {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                mark: row.get(2)?,
+                color: row.get(3)?,
+                mission: row.get(4)?,
+                boundary: row.get(5)?,
+                member_agent_ids: serde_json::from_str(&row.get::<_, String>(6)?).map_err(
+                    |error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            6,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    },
+                )?,
+                shared_asset_ids: serde_json::from_str(&row.get::<_, String>(7)?).map_err(
+                    |error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            7,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    },
+                )?,
+            })
+        })
+        .map_err(|_| "无法查询 Team".to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "Team 记录损坏".to_string())?;
+    drop(statement);
+    let mut statement = connection
+        .prepare("SELECT id, team_id, title, goal, context, constraints_text, expected_output, archived_at FROM task_briefs ORDER BY rowid")
+        .map_err(|_| "无法读取 TaskBrief".to_string())?;
+    let task_briefs = statement
+        .query_map([], |row| {
+            Ok(domain_store::TaskBriefDtoV4 {
+                id: row.get(0)?,
+                team_id: row.get(1)?,
+                title: row.get(2)?,
+                goal: row.get(3)?,
+                context: row.get(4)?,
+                constraints: row.get(5)?,
+                expected_output: row.get(6)?,
+                archived_at: row.get(7)?,
+            })
+        })
+        .map_err(|_| "无法查询 TaskBrief".to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "TaskBrief 记录损坏".to_string())?;
+    Ok(domain_store::LongTermDomainSnapshotDtoV4 {
+        schema_version: 4,
+        teams,
+        task_briefs,
+    })
 }
 
 fn discovery(
@@ -177,6 +312,161 @@ fn discovery(
             include_claude_user_root: false,
         },
     )
+}
+
+fn team_fact(team: &domain_store::TeamDtoV4) -> TeamFact {
+    TeamFact {
+        id: team.id.clone(),
+        name: team.name.clone(),
+        mission: team.mission.clone(),
+        boundary: team.boundary.clone(),
+        member_agent_ids: team.member_agent_ids.clone(),
+    }
+}
+
+fn task_brief_fact(task: &domain_store::TaskBriefDtoV4) -> TaskBriefFact {
+    TaskBriefFact {
+        id: task.id.clone(),
+        team_id: task.team_id.clone(),
+        title: task.title.clone(),
+        goal: task.goal.clone(),
+        context: task.context.clone(),
+        constraints: task.constraints.clone(),
+        expected_output: task.expected_output.clone(),
+        archived_at: task.archived_at.clone(),
+    }
+}
+
+fn read_agent(paths: &LocalServicePaths, agent_id: &str) -> Result<AgentFact, String> {
+    require_id(agent_id, "Agent 标识")?;
+    let package = paths.managed_agents.join(format!("agt_{agent_id}"));
+    let metadata = fs::symlink_metadata(&package).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "Agent 不存在".to_string()
+        } else {
+            "无法检查 AgentPackage".to_string()
+        }
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err("AgentPackage 必须是受管根内普通目录".into());
+    }
+    let manifest_path = package.join("agent.yaml");
+    let (manifest_id, _, schema_version) = local_service::manifest_facts(&manifest_path)
+        .map_err(|issue| format!("无法读取 Agent 事实：{}", issue.message))?;
+    if manifest_id != agent_id {
+        return Err("AgentPackage 稳定标识不一致".into());
+    }
+    if schema_version != 1 {
+        return Err("AgentPackage schemaVersion 不受支持".into());
+    }
+    let manifest: AgentFact = serde_yaml::from_str(
+        &fs::read_to_string(manifest_path).map_err(|_| "无法读取 Agent 事实".to_string())?,
+    )
+    .map_err(|_| "Agent 身份字段无效".to_string())?;
+    if manifest.id != agent_id || !valid_id(&manifest.team_id) {
+        return Err("Agent 身份稳定标识无效或不一致".into());
+    }
+    Ok(manifest)
+}
+
+pub fn list_teams(paths: &LocalServicePaths) -> Result<Vec<TeamFact>, String> {
+    Ok(organization_snapshot(paths)?
+        .teams
+        .iter()
+        .map(team_fact)
+        .collect())
+}
+
+pub fn list_agents(paths: &LocalServicePaths, team_id: &str) -> Result<Vec<AgentFact>, String> {
+    require_id(team_id, "Team 标识")?;
+    let snapshot = organization_snapshot(paths)?;
+    let team = snapshot
+        .teams
+        .iter()
+        .find(|team| team.id == team_id)
+        .ok_or_else(|| "Team 不存在".to_string())?;
+    team.member_agent_ids
+        .iter()
+        .map(|agent_id| {
+            let agent = read_agent(paths, agent_id)?;
+            if agent.team_id != team_id {
+                return Err(format!("Agent {agent_id} 不属于所选 Team"));
+            }
+            Ok(agent)
+        })
+        .collect()
+}
+
+pub fn show_agent(paths: &LocalServicePaths, agent_id: &str) -> Result<AgentFact, String> {
+    read_agent(paths, agent_id)
+}
+
+pub fn list_task_briefs(
+    paths: &LocalServicePaths,
+    team_id: &str,
+) -> Result<Vec<TaskBriefFact>, String> {
+    require_id(team_id, "Team 标识")?;
+    let snapshot = organization_snapshot(paths)?;
+    if !snapshot.teams.iter().any(|team| team.id == team_id) {
+        return Err("Team 不存在".into());
+    }
+    Ok(snapshot
+        .task_briefs
+        .iter()
+        .filter(|task| task.team_id == team_id)
+        .map(task_brief_fact)
+        .collect())
+}
+
+pub fn show_task_brief(
+    paths: &LocalServicePaths,
+    task_brief_id: &str,
+) -> Result<TaskBriefFact, String> {
+    require_id(task_brief_id, "TaskBrief 标识")?;
+    organization_snapshot(paths)?
+        .task_briefs
+        .iter()
+        .find(|task| task.id == task_brief_id)
+        .map(task_brief_fact)
+        .ok_or_else(|| "TaskBrief 不存在".to_string())
+}
+
+pub fn show_context(
+    paths: &LocalServicePaths,
+    team_id: &str,
+    agent_id: &str,
+    task_brief_id: Option<&str>,
+) -> Result<ContextFact, String> {
+    require_id(team_id, "Team 标识")?;
+    let snapshot = organization_snapshot(paths)?;
+    let team = snapshot
+        .teams
+        .iter()
+        .find(|team| team.id == team_id)
+        .ok_or_else(|| "Team 不存在".to_string())?;
+    let agent = read_agent(paths, agent_id)?;
+    if agent.team_id != team_id || !team.member_agent_ids.iter().any(|id| id == agent_id) {
+        return Err("Agent 不属于所选 Team".into());
+    }
+    if agent.status != "active" {
+        return Err("Agent 必须处于 active 状态".into());
+    }
+    let task_brief = task_brief_id
+        .map(|id| {
+            require_id(id, "TaskBrief 标识")?;
+            snapshot
+                .task_briefs
+                .iter()
+                .find(|task| task.id == id && task.team_id == team_id && task.archived_at.is_none())
+                .map(task_brief_fact)
+                .ok_or_else(|| "TaskBrief 不存在、已归档或不属于所选 Team".to_string())
+        })
+        .transpose()?;
+    Ok(ContextFact {
+        team: team_fact(team),
+        agent,
+        task_brief,
+    })
 }
 
 pub fn status(paths: &LocalServicePaths) -> Result<StatusReport, String> {
@@ -229,7 +519,7 @@ pub fn check_config(paths: &LocalServicePaths) -> Result<ConfigCheckReport, Stri
                 code: item.code,
                 severity: item.severity,
                 message: item.message,
-                path: item.path,
+                path: item.path.filter(|path| !Path::new(path).is_absolute()),
                 remediation: item.remediation,
             })
             .collect(),
@@ -322,6 +612,74 @@ mod tests {
         assert_eq!(status.asset_references, 0);
         assert_eq!(check.checked_assets, 1);
         assert_eq!(check.status, "valid");
+    }
+
+    #[test]
+    fn readonly_queries_return_stable_facts_without_paths_or_writes() {
+        let root = tempdir().unwrap();
+        let paths = LocalServicePaths {
+            database: root.path().join("bandi.db"),
+            managed_agents: root.path().join("agents"),
+            shared_assets: root.path().join("shared-assets"),
+        };
+        let package = paths.managed_agents.join("agt_alpha");
+        fs::create_dir_all(&package).unwrap();
+        fs::write(
+            package.join("agent.yaml"),
+            "schemaVersion: 1\nid: alpha\nname: Alpha\nteamId: team-personal\nstatus: active\nmission: 审核配置\nresponsibilities: []\ndeliverables: []\ndecisionBoundaries: []\nescalationConditions: []\nprohibitions: []\ncompletionDefinition: []\nsecret: do-not-return\n",
+        )
+        .unwrap();
+        domain_store::save_team_v4_at(
+            &paths.database,
+            domain_store::TeamDtoV4 {
+                id: "team-personal".into(),
+                name: "个人".into(),
+                mark: None,
+                color: None,
+                mission: Some("个人配置".into()),
+                boundary: None,
+                member_agent_ids: vec!["alpha".into()],
+                shared_asset_ids: vec![],
+            },
+        )
+        .unwrap();
+        let connection = domain_store::open_at(&paths.database).unwrap();
+        connection
+            .execute(
+                "UPDATE teams SET member_agent_ids_json = '[\"alpha\"]' WHERE id = 'team-personal'",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        domain_store::save_task_brief_v4_at(
+            &paths.database,
+            domain_store::TaskBriefDtoV4 {
+                id: "brief-1".into(),
+                team_id: "team-personal".into(),
+                title: "检查配置".into(),
+                goal: "确认事实".into(),
+                context: "只读".into(),
+                constraints: "无写入".into(),
+                expected_output: "JSON".into(),
+                archived_at: None,
+            },
+        )
+        .unwrap();
+        let before = fs::read(package.join("agent.yaml")).unwrap();
+
+        assert_eq!(list_teams(&paths).unwrap()[0].id, "team-personal");
+        assert_eq!(list_agents(&paths, "team-personal").unwrap()[0].id, "alpha");
+        assert_eq!(show_agent(&paths, "alpha").unwrap().name, "Alpha");
+        assert_eq!(list_task_briefs(&paths, "team-personal").unwrap().len(), 1);
+        assert_eq!(show_task_brief(&paths, "brief-1").unwrap().goal, "确认事实");
+        let context = show_context(&paths, "team-personal", "alpha", Some("brief-1")).unwrap();
+        let json = serde_json::to_string(&context).unwrap();
+        assert!(json.contains("team-personal"));
+        assert!(!json.contains(root.path().to_string_lossy().as_ref()));
+        assert!(!json.contains("do-not-return"));
+        assert_eq!(fs::read(package.join("agent.yaml")).unwrap(), before);
+        assert!(show_agent(&paths, "../alpha").is_err());
+        assert!(show_context(&paths, "team-personal", "alpha", Some("../brief")).is_err());
     }
 
     #[cfg(unix)]

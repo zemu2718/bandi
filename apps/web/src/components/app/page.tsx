@@ -1,12 +1,22 @@
-import { useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { createContext, useContext, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Copy, Info } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib'
 import { useApp } from '../../state'
 
-export function PageHeader({ title, description, action, backTo, backLabel = '返回' }: { title: string; description?: string; action?: ReactNode; backTo?: string; backLabel?: string }) {
-  return <div className="mb-6">{backTo && <Link to={backTo} className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={16} />{backLabel}</Link>}<div className="flex flex-wrap items-end justify-between gap-4"><div className="min-w-0"><h2 className="text-2xl font-semibold tracking-tight">{title}</h2>{description && <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">{description}</p>}</div>{action}</div></div>
+const PageHeaderTargetContext = createContext<HTMLElement | null>(null)
+
+export function PageHeaderTargetProvider({ target, children }: { target: HTMLElement | null; children: ReactNode }) {
+  return <PageHeaderTargetContext value={target}>{children}</PageHeaderTargetContext>
+}
+
+export function PageHeader({ title, description, action, leading, backTo, backLabel = '返回' }: { title: string; description?: string; action?: ReactNode; leading?: ReactNode; backTo?: string; backLabel?: string }) {
+  const target = useContext(PageHeaderTargetContext)
+  const content = <>{backTo && <Link to={backTo} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={16} aria-hidden="true" />{backLabel}</Link>}<div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-4"><div className="flex min-w-0 items-center gap-3">{leading}<div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">{description}</p>}</div></div>{action}</div></>
+  if (target) return createPortal(<div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">{content}</div>, target)
+  return <div className="mb-6 space-y-4">{content}</div>
 }
 
 export type Tone = 'success' | 'warning' | 'danger' | 'neutral'
@@ -51,12 +61,12 @@ export function MockBoundaryNote({ children = '所有业务更改仅在当前页
   return <div className="flex gap-3 rounded-lg border border-border bg-muted/45 p-4 text-sm leading-6 text-muted-foreground"><Info size={18} aria-hidden="true" className="mt-0.5 shrink-0" /><div>{children}</div></div>
 }
 
-export function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
-  return <div className="rounded-lg border border-dashed border-border p-8 text-center"><b>{title}</b><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">{description}</p>{action && <div className="mt-4">{action}</div>}</div>
+export function EmptyState({ title, description, action, className }: { title: string; description?: string; action?: ReactNode; className?: string }) {
+  return <div className={cn('rounded-lg border border-dashed border-border p-8 text-center', className)}><b>{title}</b>{description && <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">{description}</p>}{action && <div className="mt-4">{action}</div>}</div>
 }
 
 export function EntityNotFound({ entity, backTo }: { entity: string; backTo: string }) {
-  return <div className="panel mx-auto max-w-2xl p-8 text-center"><h2 className="text-xl font-semibold">未找到{entity}</h2><p className="mt-2 text-sm text-muted-foreground">请检查链接是否正确，或返回列表重新选择。</p><Button className="mt-5" asChild><Link to={backTo}>返回列表</Link></Button></div>
+  return <div className="panel mx-auto max-w-2xl p-8 text-center"><h1 className="text-xl font-semibold">未找到{entity}</h1><p className="mt-2 text-sm text-muted-foreground">请检查链接是否正确，或返回列表重新选择。</p><Button className="mt-5" asChild><Link to={backTo}>返回列表</Link></Button></div>
 }
 
 export function PathActions({ path }: { path: string }) {

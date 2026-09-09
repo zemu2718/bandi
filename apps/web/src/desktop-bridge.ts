@@ -1,6 +1,6 @@
 import type { AppCommandId } from './app-commands'
 import type { FullAgent } from './domain'
-import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, DiscoveryRequest, DiscoveryResult, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, DiscoveryRequest, DiscoveryResult, HostIntegrationCommitRequest, HostIntegrationDto, HostIntegrationPreviewDto, HostIntegrationRequest, HostIntegrationResultDto, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, RevealHostDirectoryResultDto, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, TaskBriefDto, TeamDto } from './contracts'
 
 const commandEvent = 'bandi://app-command'
 
@@ -89,6 +89,30 @@ export async function requestClientLaunchV3(input: RequestClientLaunchV3): Promi
   return invokeDesktop<ClientLaunchResultV3>('request_client_launch_v3', { request: input })
 }
 
+export async function listHostIntegrations(): Promise<HostIntegrationDto[]> {
+  return invokeDesktop('list_host_integrations', {})
+}
+
+export async function previewHostIntegrationInstall(input: HostIntegrationRequest): Promise<HostIntegrationPreviewDto> {
+  return invokeDesktop('preview_host_integration_install', { request: input })
+}
+
+export async function commitHostIntegrationInstall(input: HostIntegrationCommitRequest): Promise<HostIntegrationResultDto> {
+  return invokeDesktop('commit_host_integration_install', { request: input })
+}
+
+export async function previewHostIntegrationUninstall(input: HostIntegrationRequest): Promise<HostIntegrationPreviewDto> {
+  return invokeDesktop('preview_host_integration_uninstall', { request: input })
+}
+
+export async function commitHostIntegrationUninstall(input: HostIntegrationCommitRequest): Promise<HostIntegrationResultDto> {
+  return invokeDesktop('commit_host_integration_uninstall', { request: input })
+}
+
+export async function revealHostDirectory(input: HostIntegrationRequest): Promise<RevealHostDirectoryResultDto> {
+  return invokeDesktop('reveal_host_directory', { request: input })
+}
+
 export async function loadToolConfiguration(): Promise<ToolConfigurationSnapshotDto> {
   return invokeDesktop('load_tool_configuration', {})
 }
@@ -129,10 +153,8 @@ export async function commitFactoryReset(input: CommitFactoryResetRequest): Prom
   return invokeDesktop('commit_factory_reset', { request: input })
 }
 
-export async function selectDirectory(): Promise<string | null> {
-  if (!isDesktopRuntime()) throw new Error('该系统功能仅在 Bandi Desktop 中可用')
-  const { open } = await import('@tauri-apps/plugin-dialog')
-  return open({ directory: true, multiple: false })
+export async function restartAfterFactoryReset(): Promise<void> {
+  return invokeDesktop('restart_after_factory_reset', {})
 }
 
 export async function selectClaudeAgentFile(): Promise<string | null> {
@@ -263,7 +285,7 @@ export async function importClaudeAgent(
       commit: {
         requestId,
         create: { agentId: agent.id, agent, files },
-        teamId: agent.teamId,
+        team: { teamId: agent.teamId },
       },
     },
   })
@@ -287,7 +309,7 @@ export async function commitManagedAgentCreation(
           ? Array.from(new Uint8Array(await avatar.arrayBuffer()))
           : undefined,
       },
-      teamId: teamId ?? agent.teamId,
+      team: { teamId: teamId ?? agent.teamId },
     },
   })
 }
@@ -320,7 +342,7 @@ export async function commitManagedAgentIdentity(
             }
           : avatar,
       },
-      teamId: agent.teamId,
+      team: { teamId: agent.teamId },
     },
   })
 }

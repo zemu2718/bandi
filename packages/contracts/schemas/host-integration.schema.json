@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bandi.local/contracts/host-integration.schema.json",
+  "title": "Bandi Host Integration v1",
+  "type": "array",
+  "items": { "$ref": "#/$defs/integration" },
+  "$defs": {
+    "toolId": { "enum": ["claude-code", "claude-desktop", "codex", "gemini-cli", "grok-build", "opencode", "openclaw", "hermes", "pi"] },
+    "status": { "enum": ["not_checked", "degraded"] },
+    "installationState": { "enum": ["not_installed", "installed", "update_available", "foreign_collision", "unsupported", "unknown"] },
+    "integration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["toolId", "targetId", "status", "installationState", "canInstall", "canUninstall", "canReveal", "reason"],
+      "properties": {
+        "toolId": { "$ref": "#/$defs/toolId" }, "targetId": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/status" }, "installationState": { "$ref": "#/$defs/installationState" },
+        "canInstall": { "type": "boolean" }, "canUninstall": { "type": "boolean" }, "canReveal": { "type": "boolean" }, "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     Emitter, Manager,
 };
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod agent_service;
 mod ai_adapters;
@@ -18,6 +19,8 @@ pub mod cli_service;
 mod config_fs;
 mod domain_store;
 mod factory_reset;
+mod host_integration;
+mod host_integration_targets;
 mod local_service;
 mod memory_service;
 mod memory_target;
@@ -553,6 +556,30 @@ fn commit_factory_reset(
 }
 
 #[tauri::command]
+fn restart_after_factory_reset(app: tauri::AppHandle) -> Result<(), String> {
+    factory_reset::restart_guard_at(
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "FACTORY_RESET_UNAVAILABLE: 无法访问应用数据目录")?,
+        &app.path()
+            .home_dir()
+            .map_err(|_| "FACTORY_RESET_UNAVAILABLE: 无法访问用户目录")?,
+    )?;
+    #[cfg(feature = "e2e")]
+    {
+        Ok(())
+    }
+    #[cfg(all(not(feature = "e2e"), debug_assertions))]
+    {
+        Err("FACTORY_RESET_MANUAL_RESTART_REQUIRED: 开发模式无法自动重新打开；请关闭当前窗口，并从开发菜单重新启动 Desktop".into())
+    }
+    #[cfg(all(not(feature = "e2e"), not(debug_assertions)))]
+    {
+        app.request_restart()
+    }
+}
+
+#[tauri::command]
 fn create_backup_snapshot(
     app: tauri::AppHandle,
     request: backup_service::CreateBackupSnapshotRequest,
@@ -669,6 +696,94 @@ fn restore_config_revision(
         &revisions_root(&app)?,
         request,
     ))
+}
+
+#[tauri::command]
+fn list_host_integrations(
+    app: tauri::AppHandle,
+) -> Result<Vec<host_integration::HostIntegrationDto>, String> {
+    Ok(host_integration::list_at(&app.path().home_dir().map_err(
+        |_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录",
+    )?))
+}
+
+#[tauri::command]
+fn preview_host_integration_install(
+    app: tauri::AppHandle,
+    request: host_integration::HostIntegrationRequest,
+) -> Result<host_integration::HostIntegrationPreviewDto, String> {
+    host_integration::preview_install_at(
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn commit_host_integration_install(
+    app: tauri::AppHandle,
+    request: host_integration::HostIntegrationCommitRequest,
+) -> Result<host_integration::HostIntegrationResultDto, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    host_integration::commit_install_at(
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn preview_host_integration_uninstall(
+    app: tauri::AppHandle,
+    request: host_integration::HostIntegrationRequest,
+) -> Result<host_integration::HostIntegrationPreviewDto, String> {
+    host_integration::preview_uninstall_at(
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn commit_host_integration_uninstall(
+    app: tauri::AppHandle,
+    request: host_integration::HostIntegrationCommitRequest,
+) -> Result<host_integration::HostIntegrationResultDto, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    host_integration::commit_uninstall_at(
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn reveal_host_directory(
+    app: tauri::AppHandle,
+    request: host_integration::HostIntegrationRequest,
+) -> Result<host_integration::RevealHostDirectoryResultDto, String> {
+    host_integration::reveal_at(
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
 }
 
 #[tauri::command]
@@ -1168,18 +1283,18 @@ fn managed_agent_deletion_facts(
         .map(|value| {
             impact(
                 value.clone(),
-                "正式 Memory 审核责任或审计历史",
-                value.clone(),
-                Some("先转移职责；已有审计历史不能删除"),
+                "长期记忆的审核责任或历史记录",
+                "此 Agent 仍承担长期记忆审核责任，或存在必须保留的历史记录".into(),
+                Some("先转移审核责任；必须保留的历史记录会阻止删除"),
             )
         })
         .collect::<Vec<_>>();
     let formal_memory = if raw["memoryReferences"].as_i64().unwrap_or(0) > 0 {
         vec![impact(
             "formal_memory".into(),
-            "正式 Memory",
-            format!("存在 {} 项责任或历史引用", raw["memoryReferences"]),
-            Some("先转移职责；审计历史引用会阻止删除"),
+            "长期记忆",
+            format!("存在 {} 项审核责任或历史记录", raw["memoryReferences"]),
+            Some("先转移审核责任；必须保留的历史记录会阻止删除"),
         )]
     } else {
         Vec::new()
@@ -1201,7 +1316,7 @@ fn managed_agent_deletion_facts(
         "reviewResponsibilities": review_responsibilities,
         "formalMemory": formal_memory,
         "automaticCleanup": automatic_cleanup,
-        "historyAndBackups": [impact("config_revisions".into(), "配置版本", format!("将删除 {config_revisions} 项 ConfigRevision；独立 Backup 不变"), None)],
+        "historyAndBackups": [impact("config_revisions".into(), "配置版本与备份", format!("将删除 {config_revisions} 项配置版本；独立备份中的副本不会删除"), None)],
         "blockers": blockers,
     });
     Ok((fingerprint, impacts))
@@ -1288,7 +1403,7 @@ fn load_managed_agent_identity_at(
     let manifest_path = root.join("agent.yaml");
     let canonical_content = fs::read_to_string(&manifest_path)
         .map_err(|_| "AGENT_READ_FAILED: 无法读取 agent.yaml".to_string())?;
-    let (_, schema_version) =
+    let (_, _, schema_version) =
         local_service::manifest_facts(&manifest_path).map_err(|diagnostic| diagnostic.message)?;
     if schema_version != 1 {
         return Err("AGENT_READ_ONLY: 当前 AgentPackage 版本不支持身份编辑".into());
@@ -2331,10 +2446,11 @@ fn import_claude_agent(
     agent.insert(
         "packageSource".into(),
         serde_json::json!({
-            "kind": "claude-agent-import",
+            "kind": "managed-agent-import",
             "packageId": format!("agt_{}", request.commit.create.agent_id),
             "strategy": "managed-copy",
-            "sourcePath": preview.source_path,
+            "toolId": preview.tool_id,
+            "sourceFileName": preview.source_file_name,
             "sourceBaselineHash": preview.source_baseline_hash,
             "importedAt": Utc::now().to_rfc3339(),
         }),
@@ -2780,17 +2896,30 @@ pub fn run() {
         .plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            factory_reset::cleanup_committed_at(
+            if factory_reset::cleanup_committed_at(
                 &app.path().app_data_dir()?,
                 &app.path().home_dir()?,
             )
-            .map_err(std::io::Error::other)?;
+            .is_err()
+            {
+                let handle = app.handle().clone();
+                let _ = std::thread::spawn(move || {
+                    handle
+                        .dialog()
+                        .message("Bandi 无法完成重置后的安全清理，因此尚未启动，也不会创建新数据。请检查应用数据目录权限后重新打开 Bandi。")
+                        .title("无法完成重置")
+                        .kind(MessageDialogKind::Error)
+                        .blocking_show();
+                })
+                .join();
+                return Err(std::io::Error::other("FACTORY_RESET_CLEANUP_FAILED").into());
+            }
             remove_legacy_project_files(&managed_agents_root(&app.handle())?)
                 .map_err(std::io::Error::other)?;
             Ok(())
         })
-        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             load_long_term_domain_snapshot_v4,
             save_team_v4,
@@ -2814,6 +2943,7 @@ pub fn run() {
             recover_memory_revision,
             preview_factory_reset,
             commit_factory_reset,
+            restart_after_factory_reset,
             create_backup_snapshot,
             list_backup_snapshots,
             preview_backup_restore,
@@ -2825,6 +2955,12 @@ pub fn run() {
             save_config,
             recover_config_revision,
             restore_config_revision,
+            list_host_integrations,
+            preview_host_integration_install,
+            commit_host_integration_install,
+            preview_host_integration_uninstall,
+            commit_host_integration_uninstall,
+            reveal_host_directory,
             request_client_launch_v3,
             import_ui_asset,
             read_ui_asset,
@@ -3176,7 +3312,7 @@ mod tests {
 
     #[test]
     fn managed_agent_creation_requires_complete_unique_canonical_files() {
-        let manifest = "schemaVersion: 1\nid: test-agent\n";
+        let manifest = "schemaVersion: 1\nid: test-agent\nteamId: team-personal\n";
         for required in REQUIRED_AGENT_PACKAGE_FILES {
             let root = tempfile::tempdir().unwrap();
             let files = minimal_agent_package_files(manifest)
@@ -3228,7 +3364,7 @@ mod tests {
     #[test]
     fn managed_agent_creation_validates_staging_before_commit() {
         let root = tempfile::tempdir().unwrap();
-        let manifest = "schemaVersion: 1\nid: test-agent\n";
+        let manifest = "schemaVersion: 1\nid: test-agent\nteamId: team-personal\n";
         let mut files = minimal_agent_package_files(manifest);
         files
             .iter_mut()
@@ -3254,7 +3390,7 @@ mod tests {
     #[test]
     fn managed_agent_creation_rejects_removed_orchestration_file() {
         let root = tempfile::tempdir().unwrap();
-        let manifest = "schemaVersion: 1\nid: test-agent\n";
+        let manifest = "schemaVersion: 1\nid: test-agent\nteamId: team-personal\n";
         let mut files = minimal_agent_package_files(manifest);
         files.push(AgentPackageFile {
             path: "config/orchestration.yaml".into(),
@@ -3282,7 +3418,7 @@ mod tests {
     #[test]
     fn managed_agent_identity_saves_revision_and_checks_baseline() {
         let root = tempfile::tempdir().expect("应创建隔离目录");
-        let manifest = "schemaVersion: 1\nid: test-agent\n";
+        let manifest = "schemaVersion: 1\nid: test-agent\nteamId: team-personal\n";
         let created = create_managed_agent_at(
             root.path(),
             CreateManagedAgentRequest {
@@ -3302,7 +3438,7 @@ mod tests {
         let revisions = root.path().join("revisions");
         let loaded = load_managed_agent_identity_at(&package, "test-agent")
             .expect("应加载真实 identity baseline");
-        let updated = "schemaVersion: 1\nid: test-agent\nname: updated\n";
+        let updated = "schemaVersion: 1\nid: test-agent\nteamId: team-personal\nname: updated\n";
         let saved = save_managed_agent_identity_at(
             &package,
             &revisions,
@@ -3337,7 +3473,7 @@ mod tests {
         let reloaded = load_managed_agent_identity_at(&package, "test-agent").unwrap();
         std::fs::write(
             package.join("agent.yaml"),
-            "schemaVersion: 1\nid: test-agent\nname: external\n",
+            "schemaVersion: 1\nid: test-agent\nteamId: team-personal\nname: external\n",
         )
         .unwrap();
         let changed = save_managed_agent_identity_at(
@@ -3347,7 +3483,9 @@ mod tests {
                 request_id: "save-conflict".into(),
                 agent_id: "test-agent".into(),
                 agent: serde_json::json!({ "id": "test-agent", "name": "测试 Agent" }),
-                manifest: "schemaVersion: 1\nid: test-agent\nname: proposed\n".into(),
+                manifest:
+                    "schemaVersion: 1\nid: test-agent\nteamId: team-personal\nname: proposed\n"
+                        .into(),
                 expected_baseline: reloaded.baseline_ref,
                 base_content: reloaded.canonical_content,
                 avatar: AvatarChange::Keep,
@@ -3585,7 +3723,7 @@ mod tests {
     #[test]
     fn managed_identity_recovery_and_restore_preserve_history() {
         let root = tempfile::tempdir().unwrap();
-        let manifest = "schemaVersion: 1\nid: test-agent\nname: original\n";
+        let manifest = "schemaVersion: 1\nid: test-agent\nteamId: team-personal\nname: original\n";
         create_managed_agent_at(
             root.path(),
             CreateManagedAgentRequest {
@@ -3599,7 +3737,7 @@ mod tests {
         let package = root.path().join("agt_test-agent");
         let revisions = root.path().join("revisions");
         let loaded = load_managed_agent_identity_at(&package, "test-agent").unwrap();
-        let updated = "schemaVersion: 1\nid: test-agent\nname: updated\n";
+        let updated = "schemaVersion: 1\nid: test-agent\nteamId: team-personal\nname: updated\n";
         let saved = save_managed_agent_identity_at(
             &package,
             &revisions,

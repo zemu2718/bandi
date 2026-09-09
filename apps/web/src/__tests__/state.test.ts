@@ -109,6 +109,40 @@ describe('演示状态', () => {
     }).currentTeamId).toBe('team-personal')
   })
 
+  it('只识别带稳定前缀的旧数据库错误生命周期', () => {
+    const legacy = reducer(initialState, {
+      type: 'FACTORY_RESET_LEGACY_REQUIRED',
+      technicalDetails: 'LEGACY_DATABASE_RESET_REQUIRED: 检测到旧版开发数据库',
+    })
+
+    expect(legacy.factoryReset).toEqual({
+      status: 'legacy-database-required',
+      technicalDetails: 'LEGACY_DATABASE_RESET_REQUIRED: 检测到旧版开发数据库',
+    })
+    expect(initialState.factoryReset).toEqual({ status: 'idle' })
+  })
+
+  it('重置提交后只允许进入重新打开与手动兜底终态', () => {
+    const committed = reducer(initialState, { type: 'FACTORY_RESET_COMMITTED' })
+    const restarting = reducer(committed, { type: 'FACTORY_RESET_RESTARTING' })
+    const manual = reducer(restarting, {
+      type: 'FACTORY_RESET_MANUAL_RESTART_REQUIRED',
+      technicalDetails: 'restart failed',
+    })
+
+    expect(committed.factoryReset).toEqual({ status: 'committed' })
+    expect(restarting.factoryReset).toEqual({ status: 'restarting' })
+    expect(manual.factoryReset).toEqual({
+      status: 'manual-restart-required',
+      technicalDetails: 'restart failed',
+    })
+    expect(reducer(manual, { type: 'FACTORY_RESET_COMMITTED' })).toBe(manual)
+    expect(reducer(initialState, { type: 'FACTORY_RESET_RESTARTING' })).toBe(initialState)
+    expect(reducer(initialState, {
+      type: 'FACTORY_RESET_MANUAL_RESTART_REQUIRED',
+    })).toBe(initialState)
+  })
+
   it('重新读取期间保留已有 Agent 诊断', () => {
     const diagnostic = { code: 'invalid-agent', severity: 'error' as const, message: 'Agent 配置无效' }
     const state = { ...initialState, runtime: 'desktop' as const, agentDiagnostics: [diagnostic] }
@@ -316,7 +350,7 @@ describe('演示状态', () => {
     expect(result.teams).toBe(initialState.teams)
   })
 
-  it('Web 直接保存长期 Memory 并递增 revision', () => {
+  it('Web 直接保存 Agent 长期记忆并生成新版本', () => {
     const space = initialState.memorySpaces[0]
     const result = reducer(initialState, {
       type: 'SAVE_MEMORY',
@@ -329,7 +363,7 @@ describe('演示状态', () => {
       content: '更新后的长期事实',
       revision: 'r19',
     })
-    expect(result.notice).toMatchObject({ tone: 'success', title: '长期记忆已保存' })
+    expect(result.notice).toMatchObject({ tone: 'success', title: 'Agent 长期记忆已保存' })
   })
 
 })

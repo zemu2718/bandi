@@ -15,7 +15,8 @@ export function AgentConfigFileViewer({ agent, context, path, view, onView, onBa
   const source = agentFileSource(agent, context, path)
   const sourceDetails = {
     'bandi-managed': { label: 'Bandi Desktop 受管配置', note: '只读源码根据 Bandi Desktop 已加载的受管配置生成。' },
-    'claude-agent-import': { label: 'Claude Agent 受管副本', note: '源码来自已导入的 Bandi 受管副本；原始 Claude Agent 文件不会被修改。' },
+    'managed-agent-import': { label: '已导入的 Agent 受管副本', note: '源码来自导入后的 Bandi 受管副本；原始 Agent 文件不会被修改。' },
+    'claude-agent-import': { label: 'Claude Agent 受管副本（旧记录）', note: '源码来自已导入的 Bandi 受管副本；原始 Claude Agent 文件不会被修改。' },
     'bandi-demo': { label: '当前页面演示', note: '只读源码根据当前页面中的配置生成，不读取或写入本机文件。' },
     'external-reference': { label: '历史外部只读引用', note: '仅展示历史记录，未读取对应目录内容，也不再支持添加。' },
   }[agent.packageSource.kind]

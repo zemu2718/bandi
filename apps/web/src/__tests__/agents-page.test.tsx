@@ -7,11 +7,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AgentsPage, getAgentListTarget } from '../pages/agents/agents-page'
 import { AppProvider, initialState } from '../state'
 
-function renderAgents(state = initialState) {
+function renderAgents(state = initialState, initialEntry = '/agents') {
   const router = createMemoryRouter([{
     path: '/agents',
     element: <AppProvider initialState={state}><AgentsPage /></AppProvider>,
-  }], { initialEntries: ['/agents'] })
+  }], { initialEntries: [initialEntry] })
   return render(<RouterProvider router={router} />)
 }
 
@@ -25,6 +25,25 @@ describe('Agents 列表入口', () => {
     expect(screen.getByRole('link', { name: '导入 Agent' })).toHaveAttribute('href', '/agents/new?mode=import')
     expect(screen.queryByRole('link', { name: '仅登记外部引用' })).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '新建 Agent' })).not.toBeInTheDocument()
+  })
+
+  it('首次空状态隐藏筛选并就近提供创建与导入入口', () => {
+    renderAgents({ ...initialState, agents: [], agentDiagnostics: [] })
+
+    expect(screen.getByText('还没有 Agent')).toBeInTheDocument()
+    expect(screen.queryByText('新建 Agent，或导入已有 Claude Code Agent 配置。')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: '新建 Agent' })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: '导入已有 Agent' })).toHaveLength(1)
+    expect(screen.queryByRole('textbox', { name: '搜索 Agent' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/显示 0 个/)).not.toBeInTheDocument()
+  })
+
+  it('筛选无结果时保留筛选并提供清除操作', () => {
+    renderAgents(initialState, '/agents?q=不存在的Agent')
+
+    expect(screen.getByText('没有匹配的 Agent')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '清除筛选' })).toBeInTheDocument()
+    expect(screen.getByText(`显示 0 个，共 ${initialState.agents.filter((agent) => agent.teamId === initialState.currentTeamId).length} 个 Agent`)).toBeInTheDocument()
   })
 
   it('表格滚动区域支持键盘聚焦', () => {
@@ -60,7 +79,7 @@ describe('Agents 列表入口', () => {
 
     expect(screen.queryByRole('link', { name: /查看 其他 Team Agent/ })).not.toBeInTheDocument()
     const count = initialState.agents.filter((agent) => agent.teamId === initialState.currentTeamId).length
-    expect(screen.getByText(`${count} / ${count} 个 Agent`)).toBeInTheDocument()
+    expect(screen.getByText(`显示 ${count} 个，共 ${count} 个 Agent`)).toBeInTheDocument()
   })
 
   it('外部变化缺少对应文件时安全降级到 AgentPackage', () => {

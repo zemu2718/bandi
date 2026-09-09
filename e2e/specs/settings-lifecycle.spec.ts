@@ -47,7 +47,7 @@ async function configureToolsAndReviewGuide() {
   expect(snapshot.selectedPlanId).toBe('review')
 
   await browser.execute(() => { window.location.hash = '#/guide' })
-  await expect(browser.$('h1=从长期配置回到 Claude Code')).toBeDisplayed()
+  await expect(browser.$('h2=管理长期配置，再回到你的 AI 编程工具')).toBeDisplayed()
   await browser.waitUntil(
     async () => (await browser.$('body').getText()).includes('不会重置首次使用状态'),
     { timeoutMsg: '引导回顾未显示无损说明' },
@@ -82,6 +82,7 @@ async function verifyPersistenceAndReset() {
     },
   })
   expect(result.requiresRestart).toBe(true)
+  await invoke<void>('restart_after_factory_reset')
   await expect(fs.readFile(preservedExternalFile, 'utf8')).resolves.toBe('external file preserved')
   await expect(fs.readFile(preservedClaudeFile, 'utf8')).resolves.toBe('claude preserved')
 }
@@ -96,7 +97,7 @@ async function verifyFreshStateAfterReset() {
 }
 
 describe('Desktop 设置与恢复真实闭环', () => {
-  it('持久化工具方案、无损回顾引导并安全恢复出厂', async () => {
+  it('持久化工具方案、无损回顾引导并安全重置 Bandi', async () => {
     if (process.env.BANDI_E2E_SETTINGS_PHASE === 'reset') return verifyPersistenceAndReset()
     if (process.env.BANDI_E2E_SETTINGS_PHASE === 'fresh') return verifyFreshStateAfterReset()
     return configureToolsAndReviewGuide()

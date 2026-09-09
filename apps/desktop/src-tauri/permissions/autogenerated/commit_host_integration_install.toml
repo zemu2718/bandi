@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-commit-host-integration-install"
+description = "Enables the commit_host_integration_install command without any pre-configured scope."
+commands.allow = ["commit_host_integration_install"]
+
+[[permission]]
+identifier = "deny-commit-host-integration-install"
+description = "Denies the commit_host_integration_install command without any pre-configured scope."
+commands.deny = ["commit_host_integration_install"]

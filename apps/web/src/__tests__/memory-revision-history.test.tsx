@@ -30,28 +30,28 @@ describe('长期记忆版本历史', () => {
     vi.spyOn(desktopBridge, 'listMemoryRevisions').mockReturnValue(new Promise((done) => { resolve = done }))
     render(<MemoryRevisionHistory spaceId="memory-agent-zhouce" />)
 
-    fireEvent.click(screen.getByRole('button', { name: '正式版本历史' }))
-    expect(screen.getByRole('status')).toHaveTextContent('正在加载正式版本历史')
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载版本历史')
     resolve([])
-    await screen.findByText('当前记忆范围暂无正式版本。')
+    await screen.findByText('长期记忆暂无历史版本。')
   })
 
   it('展示空历史且请求只包含空间稳定标识', async () => {
     const list = vi.spyOn(desktopBridge, 'listMemoryRevisions').mockResolvedValue([])
     render(<MemoryRevisionHistory spaceId="memory-agent-zhouce" />)
-    fireEvent.click(screen.getByRole('button', { name: '正式版本历史' }))
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
 
-    expect(await screen.findByText('当前记忆范围暂无正式版本。')).toBeInTheDocument()
+    expect(await screen.findByText('长期记忆暂无历史版本。')).toBeInTheDocument()
     expect(list).toHaveBeenCalledWith({ requestId: 'list-memory-revisions-memory-agent-zhouce', spaceId: 'memory-agent-zhouce' })
   })
 
-  it('只读展示版本关联与当前正式版本', async () => {
+  it('只读展示版本关联与当前版本', async () => {
     vi.spyOn(desktopBridge, 'listMemoryRevisions').mockResolvedValue([revision])
     render(<MemoryRevisionHistory spaceId="memory-agent-zhouce" currentRevisionId={revision.id} />)
-    fireEvent.click(screen.getByRole('button', { name: '正式版本历史' }))
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
 
     expect(await screen.findByText(formatDisplayTimestamp(revision.writtenAt))).toBeInTheDocument()
-    expect(screen.getByText('当前正式版本')).toBeInTheDocument()
+    expect(screen.getByText('当前版本')).toBeInTheDocument()
     expect(screen.getByText(revision.id).closest('details')).not.toHaveAttribute('open')
     fireEvent.click(screen.getByText('版本详情'))
     expect(screen.getByText(revision.id)).toBeInTheDocument()
@@ -63,7 +63,7 @@ describe('长期记忆版本历史', () => {
   it('服务失败时保留对话框并显示错误', async () => {
     vi.spyOn(desktopBridge, 'listMemoryRevisions').mockRejectedValue(new Error('MemoryRevision 历史已损坏'))
     render(<MemoryRevisionHistory spaceId="memory-agent-zhouce" />)
-    fireEvent.click(screen.getByRole('button', { name: '正式版本历史' }))
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('MemoryRevision 历史已损坏')
     expect(screen.getByRole('dialog', { name: '长期记忆版本历史' })).toBeInTheDocument()
@@ -75,11 +75,11 @@ describe('长期记忆版本历史', () => {
       .mockResolvedValueOnce([revision])
     render(<MemoryRevisionHistory spaceId="memory-agent-zhouce" currentRevisionId={revision.id} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '正式版本历史' }))
-    await screen.findByText('当前记忆范围暂无正式版本。')
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
+    await screen.findByText('长期记忆暂无历史版本。')
     fireEvent.click(screen.getAllByRole('button', { name: '关闭' }).at(-1)!)
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: '正式版本历史' }))
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
 
     expect(await screen.findByText(revision.id)).toBeInTheDocument()
     expect(list).toHaveBeenCalledTimes(2)

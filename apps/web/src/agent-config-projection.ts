@@ -160,7 +160,7 @@ export function agentFilePreview(agent: FullAgent, context: AgentProjectionConte
   if (normalized === 'config/commands.yaml') return { title: 'Command 引用', description: '仅管理 CommandDefinition 的显式引用与非敏感参数；不会执行命令。', fields: [{ label: '已引用', value: agent.commandRefs.map((item) => context.assets.find((asset) => asset.id === item.assetId)?.name ?? item.assetId) }, { label: '参数绑定', value: agent.commandRefs.flatMap((item) => item.parameterBindings.map((binding) => `${item.assetId}.${binding.parameterId}`)) }], notice: externalNotice ?? '不接受 Shell 字符串、可执行程序、工作目录或环境变量。' }
   if (normalized === 'memory/long-term.md') {
     const spaces = context.memorySpaces.filter((item) => item.owner.includes(agent.name) && item.scopeType === 'Agent 长期')
-    return { title: '长期记忆', description: '长期记忆直接保存，每次变更生成不可变版本。', fields: [{ label: '记忆范围', value: spaces.map((item) => `${item.owner} · ${item.revision}`) }], notice: externalNotice }
+    return { title: 'Agent 长期记忆', description: '长期记忆直接保存，每次变更都会生成新版本。', fields: [{ label: '记忆范围', value: spaces.map((item) => `${item.owner} · ${item.revision}`) }], notice: externalNotice }
   }
   return { title: association.file.type, description: '当前文件尚无专属结构化预览。', fields: [{ label: '路径', value: normalized }, { label: '状态', value: association.file.status }], notice: externalNotice }
 }

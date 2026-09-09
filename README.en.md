@@ -8,9 +8,9 @@
 
 # Bandi
 
-**A persistent agent and configuration manager for nine AI coding tools.**
+**A local-first desktop workspace for managing distinct, persistent configurations for multiple AI coding agents.**
 
-Manage agents, teams, configuration, and history for Claude Code, Claude Desktop, Codex, Gemini, Grok, OpenCode, OpenClaw, Hermes, and Pi locally—then return to your own tool to work.
+Organize multiple agents with different responsibilities by team. Each agent has its own AgentPackage, long-term Memory, and traceable revisions. Manage Bandi-owned configuration through safe writes, then use these agents in your selected AI coding tool. Nine built-in tools are currently supported.
 
 [![Apache License 2.0](https://img.shields.io/github/license/zemu2718/bandi?style=flat-square)](LICENSE) ![Development](https://img.shields.io/badge/status-development-orange?style=flat-square) [![Desktop platforms](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml/badge.svg?branch=main)](https://github.com/zemu2718/bandi/actions/workflows/desktop-platforms.yml?query=branch%3Amain)
 
@@ -22,33 +22,49 @@ Manage agents, teams, configuration, and history for Claude Code, Claude Desktop
 
 ## What you get
 
-- **See each agent's persistent configuration:** View its team, Instructions, Rules, Skills, MCP, permissions, SOP, and long-term Memory in one place.
+- **See each agent's distinct, persistent configuration:** View multiple agents' responsibilities, team membership, and their own Instructions, Rules, Skills, MCP, permissions, SOP, and long-term Memory in one place. Bandi only displays Bandi-owned managed configuration and does not read existing host-tool configuration content.
 - **Make changes with a history to return to:** Bandi checks for external changes before saving, creates a ConfigRevision or MemoryRevision after a verified write, and provides local backup and recovery.
-- **Keep configuration separate from execution:** Bandi manages how agents work next time and beyond. Collaboration, authorization, execution, and acceptance for the current task stay in your own Claude Code CLI.
+- **Keep configuration separate from execution:** Bandi manages how agents work next time and beyond. Collaboration, authorization, execution, and acceptance for the current task stay in your chosen external AI coding tool.
 
 ## What Bandi manages
 
 Bandi keeps its persistent relationships straightforward:
 
 ```text
-Team → Agent → optional Team TaskBrief
+Team → Agent → optional requirement
 ```
 
-Each agent belongs to one team. For individual use, the built-in Personal Team provides that structure without requiring you to set up an organization. An optional TaskBrief belongs to a team and prepares the goal, background, constraints, and expected outputs for a task before you continue in Claude Code. It does not store participating agents, progress, todos, approvals, logs, or acceptance status, and Bandi does not execute or track the task.
+Each agent belongs to one team. For individual use, the built-in Personal Team provides that structure without requiring you to set up an organization. A requirement (internally modeled as TaskBrief) belongs to a team and prepares the goal, background, constraints, and expected outputs for a task before you continue in the selected external AI coding tool. It does not store participating agents, progress, todos, approvals, logs, or acceptance status, and Bandi does not execute or track the task.
 
-| Scenario | Bandi Desktop | Claude Code CLI |
+| Scenario | Bandi Desktop | External AI coding tool |
 | --- | --- | --- |
-| **Persistent agents** | Create or import agents and maintain team membership and AgentPackages | Use configured agents to complete the current task |
+| **Persistent agents** | Create agents and maintain team membership and AgentPackages | Use configured agents to complete the current task |
 | **Configuration and permissions** | Edit persistent configuration, default policies, and capability boundaries | Handle one-time permission requests for the current task |
 | **Memory and history** | Save agent long-term Memory, revisions, and local backups | Keep the current session's chat, todos, logs, and execution feedback |
-| **TaskBrief** | Optionally organize lightweight, team-scoped context | Choose participating agents and handle collaboration, reporting, and acceptance |
+| **Requirement pool** | Optionally organize lightweight, team-scoped context | Choose participating agents and handle collaboration, reporting, and acceptance |
 
 ## How it works
 
-1. **Choose a team and agent.** Start with the Personal Team, or use teams to organize multiple persistent agents when needed.
-2. **View or edit persistent configuration.** Create or import an agent, then edit its managed configuration in one interface.
+1. **Choose a team and agent.** Start with the Personal Team, or use teams to organize multiple persistent agents with different responsibilities.
+2. **View or edit persistent configuration.** Create an agent, then edit its Bandi-managed configuration in one interface.
 3. **Save safely and retain history.** The Local Service validates the target and baseline, writes atomically, reads the result back, and creates a revision after success.
-4. **Continue in Claude Code.** Bandi uses stable IDs only to prepare context for the selected team, agent, and optional TaskBrief. The external Claude Code CLI performs the actual task.
+4. **Continue in your tool.** Client Launch v3 uses stable IDs only to prepare context for the selected team, agent, and optional requirement. The external tool performs the actual task.
+
+### Fixed integration entry points
+
+| Tool | Fixed entry point |
+| --- | --- |
+| Claude Code | plugin |
+| Claude Desktop | MCPB through the official UI (degraded) |
+| Codex | `~/.agents/skills` |
+| Gemini | `~/.gemini/extensions` |
+| Grok | `~/.grok/skills` |
+| OpenCode | `~/.config/opencode/skills` |
+| OpenClaw | `~/.openclaw/skills` |
+| Hermes | `~/.hermes/skills` |
+| Pi | `~/.pi/agent/skills` |
+
+A tool plan stores choices and configuration; it never installs integrations automatically. Host Integration installs to or reveals only a fixed allowlisted entry point after an explicit user action. Runtime capability without a real smoke test remains `not_checked`; a partial path is `degraded`.
 
 ### Persistent assets it manages
 
@@ -65,7 +81,7 @@ The two core objects are:
 - **Skills:** Referenced skill configuration and diagnostics.
 - **MCP:** MCP server configuration and persistent boundaries.
 - **Permissions:** Persistent capability boundaries and default policies; expansions require separate confirmation.
-- **SOP:** Workflow definitions for agents to use in Claude Code; Bandi does not execute them.
+- **SOP:** Workflow definitions for agents to use in the selected AI coding tool; Bandi does not execute them.
 - **Hooks / Commands:** Managed configuration, not a general-purpose command execution surface in Bandi.
 - **Shared assets:** Explicitly referenced team assets and read-only reference diagnostics.
 
@@ -97,7 +113,8 @@ By default, Bandi manages only its own persistent configuration assets:
 - **It does not execute or schedule tasks,** and provides no task center, approval workflow, or runtime monitoring console.
 - **It does not launch terminals or commands;** Client Launch v3 only prepares typed context.
 - **It does not manage sessions,** read terminal output, or mirror chats, todos, or logs.
-- **It does not accept, access, scan, modify, or delete arbitrary user directories;** import handles only one supported agent file explicitly selected by the user and creates a managed copy.
+- **The app only displays Bandi-owned managed configuration.** It accepts no arbitrary paths and does not enumerate, scan, or read host configuration content.
+- **Host directories have one fixed-allowlist exception.** Only an explicit Host Integration action may install to or reveal a fixed entry point; Bandi exposes no general opener, file API, or shell.
 - **It does not back up credentials or execution history;** tokens, cookies, private keys, keychain data, and Claude Code session content are excluded.
 - **Deletion and recovery affect Bandi-owned data only,** with separate confirmation and recovery boundaries for high-risk operations.
 
