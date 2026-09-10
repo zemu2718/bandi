@@ -5,6 +5,7 @@ import {
   ChevronDown,
   CircleAlert,
   CircleCheck,
+  CircleHelp,
   CircleX,
   Info,
   PanelLeftClose,
@@ -15,9 +16,9 @@ import {
   Sun,
   ClipboardList,
   Workflow,
+  Wrench,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { AiClientLaunchAction } from './components/ai-clients'
 import { PageHeaderTargetProvider } from './components/app/page'
 import { Button } from './components/ui/button'
 import { Tooltip } from './components/ui/tooltip'
@@ -36,9 +37,8 @@ const nav = [
   ['/tasks', '需求池', ClipboardList],
   ['/agents', 'Agent', Bot],
   ['/assets', '配置资产', Workflow],
+  ['/tools', 'AI 工具', Wrench],
 ] as const
-
-const settingsNav = ['/settings', '设置', Settings] as const
 
 function useMediaQuery(query: string) {
   const getMatches = () => typeof window !== 'undefined'
@@ -93,7 +93,7 @@ function TeamSwitcher({ expanded }: { expanded: boolean }) {
           }}><span className="grid size-7 shrink-0 place-items-center rounded-lg text-[10px] font-semibold" style={{ backgroundColor: teamIdentity.color, color: teamIdentity.foreground }} aria-hidden="true">{teamIdentity.mark}</span><span className="min-w-0 flex-1 truncate">{team.name}</span>{team.id === current.id && <span className="ml-3 text-xs text-muted-foreground">当前</span>}</DropdownMenu.Item>
         })}
         <DropdownMenu.Separator className="my-1 h-px bg-border" />
-        <DropdownMenu.Item className={menuItemClass} onSelect={() => navigate(`/organization?team=${current.id}`)}>管理当前 Team</DropdownMenu.Item>
+        <DropdownMenu.Item className={menuItemClass} onSelect={() => navigate(`/organization/teams/${encodeURIComponent(current.id)}`)}>管理当前 Team</DropdownMenu.Item>
         <DropdownMenu.Item className={menuItemClass} onSelect={() => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'organization', entity: 'team', mode: 'create', returnTo: '/agents' } })}>新建 Team</DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
@@ -119,6 +119,7 @@ export function Shell() {
   const canFitExpandedMenu = useMediaQuery('(min-width: 960px)')
   const [savedAssets, setSavedAssets] = useState<{ logo?: string; background?: string }>({})
   const [primaryMenuExpanded, setPrimaryMenuExpanded] = useState(isWideViewport)
+  const [dismissedAgentIds, setDismissedAgentIds] = useState<string[]>([])
   const [pageHeaderTarget, setPageHeaderTarget] = useState<HTMLDivElement | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
@@ -137,6 +138,7 @@ export function Shell() {
     state.recentAgentIds.map((id, index) => [id, index]),
   )
   const recentAgents = [...teamAgents]
+    .filter((agent) => !dismissedAgentIds.includes(agent.id))
     .sort((left, right) =>
       (recentOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER)
       - (recentOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER))
@@ -194,7 +196,10 @@ export function Shell() {
   }, [title])
 
   useEffect(() => {
-    if (!resetTerminal && metadata.agentId) dispatch({ type: 'RECORD_RECENT_AGENT', agentId: metadata.agentId })
+    if (!resetTerminal && metadata.agentId) {
+      setDismissedAgentIds((ids) => ids.filter((id) => id !== metadata.agentId))
+      dispatch({ type: 'RECORD_RECENT_AGENT', agentId: metadata.agentId })
+    }
   }, [dispatch, location.key, metadata.agentId, resetTerminal])
 
   useEffect(() => {
@@ -268,48 +273,40 @@ export function Shell() {
 
   return (
     <div className="relative min-h-screen text-foreground">
+      <div className="fixed inset-x-0 top-0 z-40 flex h-10 items-center border-b border-border bg-background/94 pl-20 pr-2 backdrop-blur">
+        <Tooltip content={primaryMenuExpanded ? '收起侧栏' : '展开侧栏'} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label={primaryMenuExpanded ? '收起侧栏' : '展开侧栏'}
+            aria-expanded={primaryMenuExpanded}
+            onClick={() => setPrimaryMenuExpanded((expanded) => !expanded)}
+          >
+            {primaryMenuExpanded ? <PanelLeftClose size={17} className="-translate-y-0.5" aria-hidden="true" /> : <PanelLeftOpen size={17} className="-translate-y-0.5" aria-hidden="true" />}
+          </Button>
+        </Tooltip>
+        <div className="min-w-0 flex-1 self-stretch" data-tauri-drag-region />
+        <nav className="flex shrink-0 items-center gap-1" aria-label="全局工具">
+          <Tooltip content="使用指南" side="bottom" triggerClassName="mr-2"><Button variant="ghost" size="icon" aria-label="使用指南" onClick={() => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'usage-guide', topic: metadata.guideTopic ?? 'quick-start' } })}><CircleHelp size={17} aria-hidden="true" /></Button></Tooltip>
+          <Tooltip content={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'} side="bottom"><Button variant="ghost" size="icon" aria-label={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'} onClick={() => runCommand('theme.toggle')}>{effectiveTheme === 'light' ? <Moon size={17} aria-hidden="true" /> : <Sun size={17} aria-hidden="true" />}</Button></Tooltip>
+          <Tooltip content="设置" side="bottom"><Button asChild variant="ghost" size="icon"><Link to="/settings" aria-label="设置"><Settings size={17} aria-hidden="true" /></Link></Button></Tooltip>
+        </nav>
+      </div>
       {backgroundUrl && <><img src={backgroundUrl} alt="" aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" style={{ objectFit: effectiveUiPreferences.backgroundFit }} /><div className="pointer-events-none fixed inset-0 bg-background" style={{ opacity: effectiveUiPreferences.backgroundDim / 100 }} /></>}
       <div
         data-primary-menu-layout={primaryMenuExpanded ? 'expanded' : 'compact'}
         data-main-menu-layout={mainMenuLayout}
-        className="relative flex min-h-screen"
+        className="relative flex min-h-screen bg-background pt-10"
       >
-        <aside className={cn('sticky top-0 z-30 flex h-screen shrink-0 flex-col border-r border-border bg-card p-2 transition-[width]', primaryMenuExpanded ? 'w-52' : 'w-14')} aria-label="Bandi 配置管理">
+        <aside className={cn('sticky top-10 z-30 flex h-[calc(100vh-2.5rem)] shrink-0 flex-col border-r border-border bg-card p-2 transition-[width]', primaryMenuExpanded ? 'w-52' : 'w-14')} aria-label="Bandi 配置管理">
           <div className="mb-5 w-full">
             <TeamSwitcher expanded={primaryMenuExpanded} />
           </div>
           <RailNavigation expanded={primaryMenuExpanded} />
-          <div className="mt-auto flex w-full flex-col gap-2 border-t border-border pt-2">
-            {primaryMenuExpanded ? <AiClientLaunchAction variant="ghost" compact className="w-full justify-start px-3 text-muted-foreground hover:text-foreground" /> : <Tooltip content="选择 AI 工具" side="right" triggerClassName="w-full"><AiClientLaunchAction variant="ghost" compact className="w-full px-0 text-muted-foreground hover:text-foreground [&_span]:hidden" /></Tooltip>}
-            <Tooltip content={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'} side="right" triggerClassName="w-full">
-              <Button variant="ghost" className={cn('min-h-10 w-full gap-3 px-3 text-muted-foreground hover:text-foreground', !primaryMenuExpanded && 'justify-center')} onClick={() => runCommand('theme.toggle')} aria-label={effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'}>
-                {effectiveTheme === 'light' ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
-                {primaryMenuExpanded && <span className="flex-1 text-left text-sm font-medium">{effectiveTheme === 'light' ? '切换到深色' : '切换到浅色'}</span>}
-              </Button>
-            </Tooltip>
-            <Tooltip content={primaryMenuExpanded ? '收起侧栏' : '展开侧栏'} side="right" triggerClassName="w-full">
-              <Button
-                variant="ghost"
-                className={cn('min-h-10 w-full gap-3 px-3 text-muted-foreground hover:text-foreground', !primaryMenuExpanded && 'justify-center')}
-                aria-label={primaryMenuExpanded ? '收起侧栏' : '展开侧栏'}
-                aria-expanded={primaryMenuExpanded}
-                onClick={() => setPrimaryMenuExpanded((expanded) => !expanded)}
-              >
-                {primaryMenuExpanded ? <PanelLeftClose size={18} aria-hidden="true" /> : <PanelLeftOpen size={18} aria-hidden="true" />}
-                {primaryMenuExpanded && <span className="flex-1 text-left text-sm font-medium">收起侧栏</span>}
-              </Button>
-            </Tooltip>
-            {(() => {
-              const link = <NavLink to={settingsNav[0]} aria-label="设置" className={(props) => railLinkClass({ ...props, expanded: primaryMenuExpanded })}>
-                <Settings size={18} className="shrink-0" aria-hidden="true" />
-                {primaryMenuExpanded && <span className="truncate text-sm font-medium">设置</span>}
-              </NavLink>
-              return primaryMenuExpanded ? link : <Tooltip content="设置" side="right" triggerClassName="w-full">{link}</Tooltip>
-            })()}
-          </div>
         </aside>
 
-        {mainMenuLayout !== 'hidden' && <aside className={cn('sticky top-0 flex h-screen min-w-0 shrink-0 flex-col border-r border-border bg-card', agentMenuExpanded ? 'w-[220px]' : 'w-16')} aria-label="当前 Team Agent">
+        {mainMenuLayout !== 'hidden' && recentAgents.length > 0 && <aside className={cn('sticky top-10 flex h-[calc(100vh-2.5rem)] min-w-0 shrink-0 flex-col border-r border-border bg-card', agentMenuExpanded ? 'w-[220px]' : 'w-16')} aria-label="当前 Team Agent">
           <div className={cn('flex h-14 shrink-0 items-center border-b border-border', agentMenuExpanded ? 'gap-2 px-3' : 'justify-center')}>
             {agentMenuExpanded && logoUrl && <img src={logoUrl} alt="" aria-hidden="true" className="size-8 shrink-0 rounded-lg object-contain" />}
             {agentMenuExpanded && <div className="min-w-0 flex-1"><b className="text-sm font-semibold">当前 Team Agent</b>{effectiveUiPreferences.shellLabel && <p className="truncate text-xs text-muted-foreground">{effectiveUiPreferences.shellLabel}</p>}</div>}
@@ -329,21 +326,21 @@ export function Shell() {
                   'relative flex shrink-0 items-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   agentMenuExpanded ? 'min-h-14 min-w-0 flex-1 gap-3 px-2' : 'size-11 justify-center',
                   agentMenuExpanded && 'pr-10',
-                  isActive && 'bg-muted/50 text-foreground before:absolute before:left-0 before:h-6 before:w-0.5 before:rounded-full before:bg-foreground',
+                  isActive && 'bg-muted/50 text-foreground',
                 )}
               >
                 <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-foreground">{agent.name.slice(0, 1)}</span>
                 {agentMenuExpanded && <span className="min-w-0"><b className="block truncate text-sm font-medium">{agent.name}</b><span className="block truncate text-xs text-muted-foreground">{agent.teamName}</span></span>}
               </NavLink>
-              return agentMenuExpanded ? <div key={agent.id}>{link}</div> : <Tooltip key={agent.id} content={label} side="right">{link}</Tooltip>
+              return agentMenuExpanded ? <div key={agent.id} className="group relative">{link}<Tooltip content="移除最近访问记录" side="right" triggerClassName="absolute right-1.5 top-1/2 -translate-y-1/2"><Button variant="ghost" size="icon" className="size-8 min-h-8 rounded-md p-0 text-muted-foreground hover:bg-background/80 hover:text-foreground" aria-label={`移除 ${agent.name} 的最近访问记录`} onClick={() => { setDismissedAgentIds((ids) => [...ids, agent.id]); dispatch({ type: 'REMOVE_RECENT_AGENT', agentId: agent.id }) }}><X size={14} strokeWidth={1.8} aria-hidden="true" /></Button></Tooltip></div> : <Tooltip key={agent.id} content={label} side="right">{link}</Tooltip>
             })}
           </nav>
         </aside>}
 
         <div className="min-w-0 flex-1 bg-background/90">
-          <header className="sticky top-0 z-20 flex min-h-20 flex-wrap items-center gap-4 border-b border-border bg-background/94 px-6 py-3 backdrop-blur max-[1280px]:px-4">
-            <div ref={setPageHeaderTarget} className="flex min-w-0 flex-1 flex-wrap items-center gap-4" />
-            {location.pathname !== '/' && (configurationStatus.phase === 'pending' || configurationStatus.phase === 'failed') && <Button asChild variant="outline" size="sm"><Link to="/"><CircleAlert size={16} aria-hidden="true" />{configurationStatus.phase === 'failed' ? '配置读取失败' : `配置状态 · ${configurationStatus.items.length} 项`}</Link></Button>}
+          <header className="sticky top-0 z-20 flex min-h-20 flex-wrap items-center gap-4 border-b border-border bg-background/94 px-6 py-3 backdrop-blur max-[1280px]:px-4 max-sm:gap-2 max-sm:px-3">
+            <div ref={setPageHeaderTarget} className="flex min-w-0 flex-1 flex-wrap items-center gap-4 max-sm:basis-full" />
+            {location.pathname !== '/' && (configurationStatus.phase === 'pending' || configurationStatus.phase === 'failed') && <Button asChild variant="outline" size="sm" className="max-sm:w-full"><Link to="/"><CircleAlert size={16} aria-hidden="true" />{configurationStatus.phase === 'failed' ? '配置读取失败' : `配置状态 · ${configurationStatus.items.length} 项`}</Link></Button>}
           </header>
           <main className="shell-main mx-auto max-w-[1420px]"><PageHeaderTargetProvider target={pageHeaderTarget}><Outlet /></PageHeaderTargetProvider></main>
         </div>

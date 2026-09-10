@@ -57,16 +57,15 @@ afterEach(() => {
 })
 
 describe('设置页', () => {
-  it('默认展示四个用户可操作的设置分类', () => {
+  it('默认展示三个用户可操作的设置分类', () => {
     renderSettings()
 
-    expect(screen.getByText('管理 AI 工具、终端偏好、本机数据恢复与外观。')).toBeInTheDocument()
-    expect(screen.getAllByRole('navigation', { name: '设置分类' })[0].querySelectorAll('button')).toHaveLength(4)
-    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
-    expect(screen.getByRole('button', { name: '终端偏好' })).toBeInTheDocument()
+    expect(screen.getByText('管理终端偏好、本机数据恢复与外观。')).toBeInTheDocument()
+    expect(screen.getAllByRole('navigation', { name: '设置分类' })[0].querySelectorAll('button')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: '终端偏好' })).toHaveClass('bg-foreground')
     expect(screen.getByRole('button', { name: '数据与恢复' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '外观' })).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: '默认终端' })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '默认终端' })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: '首选编辑器' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '常规' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '客户端与工具' })).not.toBeInTheDocument()
@@ -74,14 +73,11 @@ describe('设置页', () => {
     expect(screen.queryByRole('button', { name: '路径与编辑器' })).not.toBeInTheDocument()
   })
 
-  it('兼容旧链接并让已删除分类回退到AI 工具', () => {
-    const { unmount } = renderSettings('/?section=ai-clients')
-    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
-    unmount()
-
+  it('未知设置分类回退到终端偏好', () => {
     renderSettings('/?section=workspace')
-    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
-    expect(screen.getByText('AI 编程工具')).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: '终端偏好' })).toHaveClass('bg-foreground')
+    expect(screen.getByRole('combobox', { name: '默认终端' })).toBeInTheDocument()
   })
 
   it('在终端偏好分类中管理默认终端', () => {
@@ -97,11 +93,11 @@ describe('设置页', () => {
     expect(screen.queryByRole('combobox', { name: '首选编辑器' })).not.toBeInTheDocument()
 
     fireEvent.change(terminal, { target: { value: 'iterm2' } })
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '取消' })[0])
     expect(terminal).toHaveValue('terminal')
 
     fireEvent.change(terminal, { target: { value: 'ghostty' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存演示设置' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '保存演示设置' })[0])
     expect(terminal).toHaveValue('ghostty')
   })
 
@@ -123,10 +119,10 @@ describe('设置页', () => {
       uiPreferences: { ...DEFAULT_UI_PREFERENCES, terminal: 'terminal' },
     })
 
-    expect(screen.getAllByRole('navigation', { name: '设置分类' })[0].querySelectorAll('button')).toHaveLength(4)
-    expect(screen.getByRole('button', { name: 'AI 工具' })).toBeInTheDocument()
+    expect(screen.getAllByRole('navigation', { name: '设置分类' })[0].querySelectorAll('button')).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: 'AI 工具' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '网络与代理' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'AI 工具' })).toHaveClass('bg-foreground')
+    expect(screen.getByRole('button', { name: '终端偏好' })).toHaveClass('bg-foreground')
 
     unmount()
     const terminalView = renderSettings('/?section=terminal', {
@@ -140,7 +136,7 @@ describe('设置页', () => {
     await waitFor(() => expect(JSON.parse(localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) ?? '{}').terminal).toBe('ghostty'))
 
     terminalView.unmount()
-    renderSettings('/?section=data', {
+    renderSettings('/?section=recovery', {
       ...initialState,
       runtime: 'desktop',
       uiPreferences: { ...DEFAULT_UI_PREFERENCES, terminal: 'ghostty' },
@@ -153,182 +149,26 @@ describe('设置页', () => {
     expect(screen.queryByRole('textbox', { name: 'Agent 根目录' })).not.toBeInTheDocument()
   })
 
-  it('将配置与备份拆为四个互斥 Tab 并保留内容归属', () => {
-    renderSettings('/?section=data')
+  it('数据与恢复保留存储、快照与远程备份三个 Tab', () => {
+    renderSettings('/?section=recovery')
 
-    const profiles = screen.getByRole('tab', { name: '配置方案' })
-    const content = screen.getByTestId('configuration-backup-scroll-area')
-    expect(content).toHaveClass('flex-1', 'lg:overflow-y-auto', 'lg:overscroll-contain')
-    expect(profiles).toHaveAttribute('aria-selected', 'true')
-    expect(profiles).toHaveAttribute('aria-controls', 'configuration-backup-panel-profiles')
-    expect(screen.getByRole('tabpanel', { name: '配置方案' })).toHaveAttribute('aria-labelledby', 'configuration-backup-tab-profiles')
-    expect(screen.getByText('个人配置')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '新建配置方案' })).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Agent 根目录' })).not.toBeInTheDocument()
-    expect(screen.queryByText('快照历史')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('tab', { name: '存储位置' }))
-    expect(screen.getByRole('textbox', { name: 'Agent 根目录' })).toHaveValue('~/.bandi/agents')
-    expect(screen.getByText('防止覆盖其他修改')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: '演示检查频率' })).toHaveValue('5 分钟')
-    expect(screen.queryByText('自动快照')).not.toBeInTheDocument()
-
+    expect(screen.getByRole('tab', { name: '存储位置' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('textbox', { name: 'Agent 根目录' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: '快照与恢复' }))
     expect(screen.getByText('快照历史')).toBeInTheDocument()
-    expect(screen.getByText('自动快照')).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: '启用自动快照' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getAllByRole('button', { name: '预览恢复' }).length).toBeGreaterThan(0)
-    expect(screen.queryByText('Private Git 约束')).not.toBeInTheDocument()
-
     fireEvent.click(screen.getByRole('tab', { name: '远程备份' }))
     expect(screen.getByText('Private Git 约束')).toBeInTheDocument()
-    expect(screen.getByText('远程备份包含 Agent 长期记忆')).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: '远程备份包含 Agent 长期记忆' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getByText(/凭据、Token、钥匙串/)).toBeInTheDocument()
-    expect(screen.queryByText('快照历史')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '配置方案' })).not.toBeInTheDocument()
   })
 
-  it('在存储位置展示已登记的本地访问边界', () => {
-    const managed = {
-      ...initialState.agents[0],
-      id: 'managed-access',
-      packagePath: '~/.bandi/agents/agt_managed-access/',
-      packageSource: { kind: 'bandi-managed' as const, packageId: 'agt_managed-access', strategy: 'managed' as const },
-    }
-    const imported = {
-      ...initialState.agents[0],
-      id: 'imported-access',
-      packagePath: '~/.bandi/agents/agt_imported-access/',
-      packageSource: { kind: 'managed-agent-import' as const, packageId: 'agt_imported-access', strategy: 'managed-copy' as const, toolId: 'claude-code' as const, sourceFileName: 'reviewer.md', sourceBaselineHash: 'sha256:source', importedAt: '2026-09-02T00:00:00Z' },
-    }
-    const reference = {
-      ...initialState.agents[0],
-      id: 'external-access',
-      packagePath: '/Volumes/shared/agent/',
-      packageSource: { kind: 'external-reference' as const, externalPath: '/Volumes/shared/agent', strategy: 'reference-only' as const },
-    }
-    renderSettings('/?section=data', {
-      ...initialState,
-      runtime: 'desktop',
-      agents: [managed, imported, reference],
-    })
-
-    fireEvent.click(screen.getByRole('tab', { name: '存储位置' }))
-    expect(screen.getByText('Bandi 可以访问的位置')).toBeInTheDocument()
-    expect(screen.getByText('Bandi 受管 Agent 配置')).toBeInTheDocument()
-    expect(screen.getByText('Agent 导入来源')).toBeInTheDocument()
-    expect(screen.getByText('历史外部 Agent 引用')).toBeInTheDocument()
-    expect(screen.getByText('claude-code · reviewer.md')).toBeInTheDocument()
-    expect(screen.queryByText('/Users/demo/.claude/agents/reviewer.md')).not.toBeInTheDocument()
-    expect(screen.getByText('/Volumes/shared/agent')).toBeInTheDocument()
-    expect(screen.getByText(/除此之外的位置不会被读取或修改/)).toBeInTheDocument()
-    expect(screen.queryByText(/OS 已授权/)).not.toBeInTheDocument()
-  })
-
-  it('配置与备份 Tab 支持循环键盘切换、切换回顶并保留未保存草稿', async () => {
-    renderSettings('/?section=data')
-    const content = screen.getByTestId('configuration-backup-scroll-area')
-    const scrollTo = vi.fn()
-    content.scrollTo = scrollTo
-    const profiles = screen.getByRole('tab', { name: '配置方案' })
-    const storageTab = screen.getByRole('tab', { name: '存储位置' })
-    const remote = screen.getByRole('tab', { name: '远程备份' })
-
-    fireEvent.keyDown(profiles, { key: 'ArrowLeft' })
-    await waitFor(() => expect(remote).toHaveFocus())
-    expect(remote).toHaveAttribute('aria-selected', 'true')
-    fireEvent.keyDown(remote, { key: 'Home' })
-    await waitFor(() => expect(profiles).toHaveFocus())
-    fireEvent.keyDown(profiles, { key: 'End' })
-    await waitFor(() => expect(remote).toHaveFocus())
-    fireEvent.keyDown(remote, { key: 'ArrowRight' })
-    await waitFor(() => expect(profiles).toHaveFocus())
-
-    fireEvent.click(storageTab)
-    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0 })
-    const agentRoot = screen.getByRole('textbox', { name: 'Agent 根目录' })
-    fireEvent.change(agentRoot, { target: { value: '~/.bandi/custom-agents' } })
-    fireEvent.click(remote)
-    fireEvent.change(screen.getByRole('textbox', { name: '仓库地址' }), { target: { value: 'github.com/org/demo' } })
-    fireEvent.click(profiles)
-    fireEvent.click(storageTab)
-    expect(screen.getByRole('textbox', { name: 'Agent 根目录' })).toHaveValue('~/.bandi/custom-agents')
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
-    expect(screen.getByRole('textbox', { name: 'Agent 根目录' })).toHaveValue('~/.bandi/agents')
-    fireEvent.click(remote)
-    expect(screen.getByRole('textbox', { name: '仓库地址' })).toHaveValue('github.com/org/demo')
-  })
-
-  it('保存存储位置并在关闭创建快照对话框后恢复焦点', async () => {
-    renderSettings('/?section=data')
-
-    fireEvent.click(screen.getByRole('tab', { name: '存储位置' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Agent 根目录' }), { target: { value: '~/.bandi/custom-agents' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存演示设置' }))
-    expect(screen.getByRole('textbox', { name: 'Agent 根目录' })).toHaveValue('~/.bandi/custom-agents')
-
-    fireEvent.click(screen.getByRole('tab', { name: '快照与恢复' }))
-    const trigger = screen.getByRole('button', { name: '创建快照' })
-    fireEvent.click(trigger)
-    expect(screen.getByRole('dialog', { name: '创建快照' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
-
-    await waitFor(() => expect(trigger).toHaveFocus())
-  })
-
-  it('所有工具共享当前配置方案并独立加入', () => {
-    renderSettings('/?section=ai-clients')
-
-    expect(screen.getByRole('combobox', { name: '当前配置方案' })).toHaveValue('personal')
-    expect(screen.getByText(/这里只记录当前配置方案管理哪些工具/)).toBeInTheDocument()
-    expect(screen.getAllByText('可选择 Agent 与上下文 · 尚未检查是否已安装')).toHaveLength(2)
-    expect(screen.getAllByText('仅管理配置 · 暂不支持直接打开').length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('button', { name: '从方案移除' })).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: '加入配置方案' }).length).toBeGreaterThan(0)
-    expect(screen.queryByRole('button', { name: '新建配置方案' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/Gateway/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Profile/)).not.toBeInTheDocument()
-  })
-
-  it('以中文展示插件安装范围和状态', () => {
-    const scopes = ['user', 'project', 'local', 'managed'] as const
-    renderSettings('/?section=ai-clients', {
-      ...initialState,
-      pluginInstallations: scopes.map((scope, index) => ({
-        ...initialState.pluginInstallations[0],
-        pluginId: `plugin-${scope}`,
-        scope,
-        installedVersion: `1.0.${index}`,
-      })),
-    })
-
-    expect(screen.getByText('1.0.0 · 用户级')).toBeInTheDocument()
-    expect(screen.getByText('1.0.1 · 项目级')).toBeInTheDocument()
-    expect(screen.getByText('1.0.2 · 本地级')).toBeInTheDocument()
-    expect(screen.getByText('1.0.3 · 受管级')).toBeInTheDocument()
-    expect(screen.getAllByText('已安装')).toHaveLength(4)
-  })
-
-  it('在配置与备份中新建空白方案并统一切换', async () => {
-    renderSettings('/?section=data')
-    fireEvent.click(screen.getByRole('button', { name: '新建配置方案' }))
-    fireEvent.change(screen.getByLabelText('方案名称'), { target: { value: 'Team B' } })
-    fireEvent.click(screen.getByRole('button', { name: '创建演示方案' }))
-    await waitFor(() => expect(screen.getByText('Team B')).toBeInTheDocument())
-    expect(screen.getAllByText('当前').length).toBeGreaterThan(0)
-    expect(screen.getByText('已加入 0 个工具 · 1 个演示版本')).toBeInTheDocument()
-  })
-
-  it('网络代理默认跟随系统且仅手动模式展开字段', () => {
-    renderSettings('/?section=network')
+  it('网络代理保留在 Web 终端偏好页', () => {
+    renderSettings('/?section=terminal')
     const mode = screen.getByRole('combobox', { name: '代理模式' })
     expect(mode).toHaveValue('system')
-    expect(screen.queryByRole('textbox', { name: 'HTTP 代理' })).not.toBeInTheDocument()
     fireEvent.change(mode, { target: { value: 'manual' } })
     const httpProxy = screen.getByRole('textbox', { name: 'HTTP 代理' })
     fireEvent.change(httpProxy, { target: { value: 'ftp://proxy.example.com' } })
     expect(screen.getByText(/协议必须是 http: 或 https:/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '保存演示设置' })).toBeDisabled()
   })
 
   it('个性化草稿立即作用当前工作台，保存前不持久化', async () => {

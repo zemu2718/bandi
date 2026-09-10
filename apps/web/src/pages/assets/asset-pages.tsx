@@ -13,19 +13,20 @@ import type { ParameterDefinition } from '../../component-parameters'
 import { pluginInstallationStatusLabels, pluginScopeLabels } from '../../plugin-installation'
 import { SkillDetail } from './skill-detail'
 import { discoverConfig, isDesktopRuntime } from '../../desktop-bridge'
-import { countDiscoveredAssetCategories, filterDiscoveredAssets, groupDiscoveryDiagnostics, projectDiscoveredAssets, projectSharedAssets, type AssetCategory, type DiscoveryIssueGroup, type DiscoveredAssetRow } from '../../discovered-assets'
+import { countDiscoveredAssetCategories, filterDiscoveredAssets, groupDiscoveryDiagnostics, projectDiscoveredAssets, type AssetCategory, type DiscoveryIssueGroup, type DiscoveredAssetRow } from '../../discovered-assets'
 import { DiscoveredAssetsList, DiscoveryIssues } from './discovered-assets-table'
+import { CreateSharedAssetDialog, ImportSharedAssetDialog, SharedAssetDetail } from './shared-asset-management'
 import { assetKindLabel, assetParseStatusLabel, assetScopeLabel } from '../../presentation'
 
 const kinds: AssetKind[] = ['Skill', 'Memory', 'Rules', 'MCP', 'SOP', 'CLAUDE.md', 'Settings', 'Hook', 'Command', 'OutputProfile', 'Plugin']
 const desktopFilterKeys = ['q', 'owner', 'scope', 'health'] as const
 const assetCategoryMeta: Record<AssetCategory, { label: string; title: string; description: string; search: string }> = {
-  overview: { label: '概览', title: '全部配置', description: '当前 Team 的 Agent 配置和共享资产。', search: '搜索名称、Agent 或路径…' },
-  skills: { label: 'Skills', title: 'Skills', description: 'Agent Skill 配置与 Team 共享 Skill。', search: '搜索 Skill、Agent 或路径…' },
+  overview: { label: '概览', title: '全部资产', description: '当前 Team 可供 Agent 显式引用的共享资产。', search: '搜索名称、使用中的 Agent 或位置…' },
+  skills: { label: 'Skills', title: 'Skills', description: '供 Agent 引用的 Team 共享 Skill。', search: '搜索 Skill、Agent 或位置…' },
   mcp: { label: 'MCP', title: 'MCP', description: '查看 MCP 配置和引用；这里不连接或测试 MCP。', search: '搜索 MCP、Agent 或路径…' },
-  rules: { label: 'Rules', title: 'Rules', description: 'Agent 规则配置与 Team 共享规则。', search: '搜索 Rule、Agent 或路径…' },
+  rules: { label: 'Rules', title: 'Rules', description: '供 Agent 引用的 Team 共享规则。', search: '搜索 Rule、Agent 或位置…' },
   sop: { label: 'SOP', title: 'SOP', description: '管理长期流程定义；Desktop 不执行或推进流程。', search: '搜索 SOP、Agent 或路径…' },
-  other: { label: '其他', title: '其他配置', description: 'Instructions、Context、权限及扩展配置。', search: '搜索配置、Agent 或路径…' },
+  other: { label: '其他', title: '其他资产', description: '兼容展示已有扩展共享资产；当前不提供新增或更新。', search: '搜索资产、Agent 或位置…' },
 }
 const assetCategories = Object.keys(assetCategoryMeta) as AssetCategory[]
 
@@ -34,6 +35,7 @@ export function AssetsPage() {
   const desktop = isDesktopRuntime()
   const [params, setParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [discovered, setDiscovered] = useState<DiscoveredAssetRow[]>([])
   const [issues, setIssues] = useState<DiscoveryIssueGroup[]>([])
   const [loading, setLoading] = useState(desktop)
@@ -54,7 +56,7 @@ export function AssetsPage() {
       const result = await discoverConfig({ requestId: 'discover-assets', includeClaudeUserRoot: false })
       setDiscovered(projectDiscoveredAssets(result))
       setIssues(groupDiscoveryDiagnostics(result.diagnostics))
-      dispatch({ type: 'HYDRATE_SHARED_ASSETS', assets: projectSharedAssets(result.sharedAssets) })
+      dispatch({ type: 'HYDRATE_SHARED_ASSETS', sharedAssets: result.sharedAssets, references: result.references })
       setLoaded(true)
     } catch (cause) {
       setError(errorFromCause(cause, '无法读取配置资产', '现有文件没有变化。请检查本地服务后重试。'))
@@ -70,7 +72,6 @@ export function AssetsPage() {
 
   const currentTeam = state.teams.find((team) => team.id === state.currentTeamId)
   const teamName = currentTeam?.name ?? '当前 Team'
-  const teamAgents = state.agents.filter((agent) => agent.teamId === state.currentTeamId)
   const agentNames = useMemo(() => new Map(state.agents.map((agent) => [agent.id, agent.name])), [state.agents])
   const requestedCategory = val('tab') as AssetCategory
   const category = assetCategories.includes(requestedCategory) ? requestedCategory : 'overview'
@@ -84,7 +85,6 @@ export function AssetsPage() {
     scope: val('scope'),
     health: val('health'),
     agentNames,
-    teamName,
   })
   const categoryCounts = countDiscoveredAssetCategories(teamRows)
   const categoryTabs = assetCategories.map((id) => ({
@@ -100,7 +100,7 @@ export function AssetsPage() {
     setParams(nextParams)
   }
   const demoRows = state.assets.filter((item) => (!val('q') || `${item.name} ${item.summary} ${item.path}`.toLowerCase().includes(val('q').toLowerCase())) && (!val('kind') || item.kind === val('kind')) && (!val('owner') || item.owner === val('owner')) && (!val('scope') || item.scope === val('scope')) && (!val('health') || item.status === val('health')))
-  const owners = desktop ? [...new Set(teamRows.flatMap((item) => item.agentId ?? []))] : [...new Set(state.assets.map((item) => item.owner))]
+  const owners = desktop ? [...new Set(teamRows.flatMap((item) => item.referenceSummaries.map((summary) => summary.agentId)))] : [...new Set(state.assets.map((item) => item.owner))]
   const scopes = desktop ? [...new Set(categoryRows.map((item) => item.scope))] : [...new Set(state.assets.map((item) => item.scope))]
   const statuses = desktop ? [...new Set(categoryRows.map((item) => item.parseStatus))] : [...new Set(state.assets.map((item) => item.status))]
   const activeFilterCount = desktopFilterKeys.filter((key) => val(key)).length
@@ -115,7 +115,7 @@ export function AssetsPage() {
     {filtered && <div className="flex items-center justify-between border-b border-border bg-muted/35 px-4 py-2 text-xs"><span>已应用 {activeFilterCount} 项筛选</span><button onClick={clear} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X size={13} aria-hidden="true" />清除全部</button></div>}
   </>
 
-  return <><PageHeader title="配置资产" description={desktop ? `查看 ${teamName} 的 Agent 配置、共享资产和待处理问题。` : '在当前页面中演示查看和管理技能、长期记忆、规则、MCP、SOP 与 Claude Code 配置。'} action={<div className="flex flex-wrap gap-2">{desktop ? <Button variant="outline" disabled={loading} aria-busy={loading} onClick={refresh}><RefreshCw size={16} aria-hidden="true" />{loading ? '正在刷新' : '刷新'}</Button> : <><Button asChild variant="outline"><Link to="/assets/skills">管理演示技能</Link></Button><Button onClick={() => setCreateOpen(true)}><Plus size={16} aria-hidden="true" />新建演示资产</Button></>}</div>} />{desktop && <EntityTabs tabs={categoryTabs} active={category} onChange={selectCategory} scope="asset-category" ariaLabel="配置资产分类" variant="segmented" className="mb-5" />}<section id={desktop ? `asset-category-panel-${category}` : undefined} role={desktop ? 'tabpanel' : undefined} aria-labelledby={desktop ? `asset-category-tab-${category}` : undefined} className="panel overflow-hidden">{desktop && <div className="border-b border-border px-5 py-4"><h2 className="font-semibold">{categoryInfo.title}</h2><p className="mt-1 text-sm text-muted-foreground">{categoryInfo.description}</p></div>}{desktop && <details className="border-b border-border bg-muted/20 px-5 py-3 text-sm text-muted-foreground"><summary className="cursor-pointer font-medium text-foreground">关于配置资产</summary><p className="mt-2">这里只显示 Bandi 管理的 Agent 配置和当前 Team 的共享资产。Bandi 不会读取其他目录。共享资产新增、导入和更新当前尚未接入。</p></details>}{desktop ? desktopFilters : <div className="grid gap-3 border-b border-border p-4 md:grid-cols-2 xl:grid-cols-5"><label className="relative"><Search className="absolute left-3 top-2.5 text-muted-foreground" size={16} aria-hidden="true" /><input aria-label="搜索配置资产" className="h-9 w-full pl-9 pr-3" value={val('q')} onChange={(event) => set('q', event.target.value)} placeholder="搜索标识或路径…" /></label><Filter label="类型" value={val('kind')} onChange={(value) => set('kind', value)} values={kinds} formatValue={assetKindLabel} /><Filter label="所有者" value={val('owner')} onChange={(value) => set('owner', value)} values={owners} /><Filter label="作用域" value={val('scope')} onChange={(value) => set('scope', value)} values={scopes} formatValue={assetScopeLabel} /><Filter label="状态" value={val('health')} onChange={(value) => set('health', value)} values={statuses} /></div>}{error && <ErrorNotice error={error} className="rounded-none border-x-0 border-t-0" />}{desktop && <DiscoveryIssues groups={issues} global />}{desktop ? (!loaded && error ? null : <DiscoveredAssetsList rows={discoveredRows} loading={loading} filtered={filtered && categoryRows.length > 0} hasAgents={teamAgents.length > 0} hasTeamAssets={teamRows.length > 0} categoryLabel={categoryInfo.label} teamName={teamName} agentNames={agentNames} clear={clear} refresh={refresh} />) : demoRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-muted text-xs"><tr>{['资产', '类型', '所有者 / 作用域', '引用', '路径', '状态'].map((item) => <th key={item} className="px-5 py-3">{item}</th>)}</tr></thead><tbody className="divide-y divide-border">{demoRows.map((asset) => <tr key={asset.id} className="hover:bg-muted"><td className="px-5 py-4"><Link className="font-semibold hover:underline" to={`/assets/${asset.id}`}>{asset.name}</Link><small className="mt-1 block max-w-64 text-muted-foreground">{asset.summary}</small></td><td>{assetKindLabel(asset.kind)}</td><td>{asset.owner}<small className="block text-muted-foreground">{assetScopeLabel(asset.scope)}</small></td><td>{asset.references.length}</td><td><MonoPath>{asset.path}</MonoPath></td><td><StatusBadge tone={toneForStatus(asset.status)}>{asset.status}</StatusBadge></td></tr>)}</tbody></table></div> : <div className="p-5"><EmptyState title="没有匹配资产" description="请调整或清除筛选。" action={<Button variant="outline" onClick={clear}>清除筛选</Button>} /></div>}</section>{!desktop && <CreateAssetDialog open={createOpen} onOpenChange={setCreateOpen} />}</>
+  return <><PageHeader title="配置资产" description={desktop ? `管理 ${teamName} 可供 Agent 显式引用的独立共享资产。` : '在当前页面中演示查看和管理技能、长期记忆、规则、MCP、SOP 与 Claude Code 配置。'} action={<div className="flex flex-wrap gap-2">{desktop ? <><Button variant="outline" disabled={loading} aria-busy={loading} onClick={refresh}><RefreshCw size={16} aria-hidden="true" />{loading ? '正在扫描' : '扫描资产'}</Button><Button variant="outline" onClick={() => setImportOpen(true)}>导入文件</Button><Button onClick={() => setCreateOpen(true)}><Plus size={16} aria-hidden="true" />新增资产</Button></> : <><Button asChild variant="outline"><Link to="/assets/skills">管理演示技能</Link></Button><Button onClick={() => setCreateOpen(true)}><Plus size={16} aria-hidden="true" />新建演示资产</Button></>}</div>} />{desktop && <EntityTabs tabs={categoryTabs} active={category} onChange={selectCategory} scope="asset-category" ariaLabel="配置资产分类" variant="segmented" className="mb-5" />}<section id={desktop ? `asset-category-panel-${category}` : undefined} role={desktop ? 'tabpanel' : undefined} aria-labelledby={desktop ? `asset-category-tab-${category}` : undefined} className="panel overflow-hidden">{desktop && <div className="border-b border-border px-5 py-4"><h2 className="font-semibold">{categoryInfo.title}</h2><p className="mt-1 text-sm text-muted-foreground">{categoryInfo.description}</p></div>}{desktop && <details className="border-b border-border bg-muted/20 px-5 py-3 text-sm text-muted-foreground"><summary className="cursor-pointer font-medium text-foreground">关于配置资产</summary><p className="mt-2">这里只显示当前 Team 的 Bandi 受管共享资产。扫描不会读取宿主工具目录；导入通过系统选择器明确授权，并保存独立受管副本。</p></details>}{desktop ? desktopFilters : <div className="grid gap-3 border-b border-border p-4 md:grid-cols-2 xl:grid-cols-5"><label className="relative"><Search className="absolute left-3 top-2.5 text-muted-foreground" size={16} aria-hidden="true" /><input aria-label="搜索配置资产" className="h-9 w-full pl-9 pr-3" value={val('q')} onChange={(event) => set('q', event.target.value)} placeholder="搜索标识或路径…" /></label><Filter label="类型" value={val('kind')} onChange={(value) => set('kind', value)} values={kinds} formatValue={assetKindLabel} /><Filter label="所有者" value={val('owner')} onChange={(value) => set('owner', value)} values={owners} /><Filter label="作用域" value={val('scope')} onChange={(value) => set('scope', value)} values={scopes} formatValue={assetScopeLabel} /><Filter label="状态" value={val('health')} onChange={(value) => set('health', value)} values={statuses} /></div>}{error && <ErrorNotice error={error} className="rounded-none border-x-0 border-t-0" />}{desktop && <DiscoveryIssues groups={issues} global />}{desktop ? (!loaded && error ? null : <DiscoveredAssetsList rows={discoveredRows} loading={loading} filtered={filtered && categoryRows.length > 0} hasTeamAssets={teamRows.length > 0} categoryLabel={categoryInfo.label} agentNames={agentNames} clear={clear} refresh={refresh} create={() => setCreateOpen(true)} />) : demoRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-muted text-xs"><tr>{['资产', '类型', '所有者 / 作用域', '引用', '路径', '状态'].map((item) => <th key={item} className="px-5 py-3">{item}</th>)}</tr></thead><tbody className="divide-y divide-border">{demoRows.map((asset) => <tr key={asset.id} className="hover:bg-muted"><td className="px-5 py-4"><Link className="font-semibold hover:underline" to={`/assets/${asset.id}`}>{asset.name}</Link><small className="mt-1 block max-w-64 text-muted-foreground">{asset.summary}</small></td><td>{assetKindLabel(asset.kind)}</td><td>{asset.owner}<small className="block text-muted-foreground">{assetScopeLabel(asset.scope)}</small></td><td>{asset.references.length}</td><td><MonoPath>{asset.path}</MonoPath></td><td><StatusBadge tone={toneForStatus(asset.status)}>{asset.status}</StatusBadge></td></tr>)}</tbody></table></div> : <div className="p-5"><EmptyState title="没有匹配资产" description="请调整或清除筛选。" action={<Button variant="outline" onClick={clear}>清除筛选</Button>} /></div>}</section>{desktop ? <><CreateSharedAssetDialog open={createOpen} onOpenChange={setCreateOpen} teamId={state.currentTeamId} onSaved={refresh} /><ImportSharedAssetDialog open={importOpen} onOpenChange={setImportOpen} teamId={state.currentTeamId} onSaved={refresh} /></> : <CreateAssetDialog open={createOpen} onOpenChange={setCreateOpen} />}</>
 }
 function Filter({ label, value, onChange, values, formatValue = (item) => item }: { label: string; value: string; onChange: (v: string) => void; values: string[]; formatValue?: (value: string) => string }) { return <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className="h-9 w-full px-3"><option value="">全部{label}</option>{values.map((item) => <option key={item} value={item}>{formatValue(item)}</option>)}</select> }
 
@@ -123,7 +123,7 @@ function CreateAssetDialog({ open, onOpenChange }: { open: boolean; onOpenChange
 
 const genericTabs = [['overview', '概览'], ['content', '内容 / 配置'], ['references', '引用'], ['files', '文件']].map(([id, label]) => ({ id, label }))
 const sopTabs = [['overview', '概览'], ['steps', '步骤定义'], ['responsibility', '责任主体'], ['io', '输入输出'], ['dependencies', '依赖'], ['approval', '确认 / 升级条件'], ['references', '引用'], ['files', '文件']].map(([id, label]) => ({ id, label }))
-export function AssetDetailPage() { const { id } = useParams(); const { state } = useApp(); const asset = state.assets.find((item) => item.id === id); if (!asset) return <EntityNotFound entity="资产" backTo="/assets" />; return asset.kind === 'SOP' ? <SopDetail asset={asset} /> : asset.kind === 'Skill' && asset.skill ? <SkillDetail asset={asset} /> : asset.kind === 'Plugin' && asset.plugin ? <PluginDetail asset={asset} /> : asset.kind === 'Hook' || asset.kind === 'Command' || asset.kind === 'OutputProfile' ? <TypedAssetDetail asset={asset} /> : <GenericDetail asset={asset} /> }
+export function AssetDetailPage() { const { id } = useParams(); const { state } = useApp(); if (state.runtime === 'desktop' && id) return <SharedAssetDetail assetId={id} />; const asset = state.assets.find((item) => item.id === id); if (!asset) return <EntityNotFound entity="资产" backTo="/assets" />; return asset.kind === 'SOP' ? <SopDetail asset={asset} /> : asset.kind === 'Skill' && asset.skill ? <SkillDetail asset={asset} /> : asset.kind === 'Plugin' && asset.plugin ? <PluginDetail asset={asset} /> : asset.kind === 'Hook' || asset.kind === 'Command' || asset.kind === 'OutputProfile' ? <TypedAssetDetail asset={asset} /> : <GenericDetail asset={asset} /> }
 function TypedAssetDetail({ asset }: { asset: FullAsset }) {
   const { state } = useApp()
   const definition = asset.hook ?? asset.command ?? asset.outputProfile

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bandi.local/contracts/ai-tool-host.schema.json",
+  "title": "Bandi AI Tool Host v1",
+  "oneOf": [
+    { "$ref": "#/$defs/statusList" },
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/actionResult" }
+  ],
+  "$defs": {
+    "toolId": {
+      "enum": ["claude-code", "claude-desktop", "codex", "gemini-cli", "grok-build", "opencode", "openclaw", "hermes", "pi"]
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolId", "availability", "contextMode", "configLocationLabel", "canRevealConfig", "canOpenOfficialInstallPage", "reasonCode"],
+      "properties": {
+        "toolId": { "$ref": "#/$defs/toolId" },
+        "availability": { "enum": ["installed", "not_found", "unsupported_platform", "detection_failed"] },
+        "contextMode": { "enum": ["initial_prompt", "manual_context", "unavailable"] },
+        "configLocationLabel": { "type": "string", "minLength": 1 },
+        "canRevealConfig": { "type": "boolean" },
+        "canOpenOfficialInstallPage": { "type": "boolean" },
+        "reasonCode": { "type": "string", "minLength": 1 }
+      }
+    },
+    "statusList": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": { "$ref": "#/$defs/status" }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolId", "requestId"],
+      "properties": {
+        "toolId": { "$ref": "#/$defs/toolId" },
+        "requestId": { "$ref": "#/$defs/requestId" }
+      }
+    },
+    "actionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolId", "requestId", "outcome"],
+      "properties": {
+        "toolId": { "$ref": "#/$defs/toolId" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "outcome": { "enum": ["open_requested", "revealed"] }
+      }
+    }
+  }
+}

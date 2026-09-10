@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, FileDiff, ShieldAlert } from 'lucide-react'
 import { ClientLaunchDialog } from './components/client-launch-dialog'
+import { UsageGuideTopicContent, usageGuideTopics } from './components/usage-guide'
 import { Button } from './components/ui/button'
 import { AppDialog } from './components/ui/dialog'
 import { ErrorNotice, errorFromCause, type UserFacingError } from './components/app/error-notice'
@@ -19,6 +20,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 
 export function GlobalSheets() {
   const { state, dispatch } = useApp()
+  const navigate = useNavigate()
   const dialog = state.dialog
   const [confirmName, setConfirmName] = useState('')
   const [understood, setUnderstood] = useState(false)
@@ -51,6 +53,21 @@ export function GlobalSheets() {
   const path = dialog?.kind === 'diff' && dialog.path ? dialog.path : asset?.path ?? (agent ? `${agent.packagePath}instructions.md` : '未指定路径')
 
   if (!dialog) return null
+
+  if (dialog.kind === 'usage-guide') {
+    const selectTopic = (topic: typeof dialog.topic) => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'usage-guide', topic } })
+    const openPage = (to: string) => { close(); navigate(to) }
+    return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title="使用指南" description="选择一个主题，查看说明和相关页面。" size="xl">
+      <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
+        <nav className="grid content-start gap-1 sm:grid-cols-2 md:grid-cols-1" aria-label="使用指南主题">
+          {usageGuideTopics.map((topic) => <button key={topic.id} type="button" aria-current={dialog.topic === topic.id ? 'page' : undefined} onClick={() => selectTopic(topic.id)} className={`min-h-11 rounded-lg px-4 py-3 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dialog.topic === topic.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{topic.navLabel}</button>)}
+        </nav>
+        <div className="min-w-0 border-border md:border-l md:pl-6">
+          <UsageGuideTopicContent topic={dialog.topic} onNavigate={openPage} />
+        </div>
+      </div>
+    </AppDialog>
+  }
 
   if (dialog.kind === 'client-guide') return client ? <ClientLaunchDialog client={client} initialAgentId={agent?.id} close={close} /> : <MissingDialog title="AI 编程工具不存在" close={close} />
 

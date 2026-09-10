@@ -1,49 +1,93 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::ErrorKind,
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+    time::{Duration, SystemTime},
 };
 
+use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    domain_store::LongTermDomainSnapshotDtoV4,
-    local_service::{diagnostic, AssetLocatorDto, DiagnosticDto, RootKind},
+    config_fs::{ensure_regular_directory, ensure_regular_file, restricted_atomic_write},
+    domain_store::{self, LongTermDomainSnapshotDtoV4},
+    local_service::{
+        self, diagnostic, AssetLocatorDto, BaselineRefDto, ConfigRevisionDto, ConfigSideDto,
+        DiagnosticDto, RootKind, WriteReceiptDto,
+    },
 };
 
-const SHARED_ASSET_SCHEMA_VERSION: u64 = 1;
-const SHARED_ASSET_KINDS: &[&str] = &[
-    "rule",
-    "skill",
-    "mcp",
-    "sop",
-    "hook",
-    "command",
-    "output_profile",
-];
+const MAX_CONTENT_BYTES: usize = 256 * 1024;
+const IMPORT_TTL: Duration = Duration::from_secs(10 * 60);
+const RECOVERY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+const SHARED_ASSET_KINDS: &[&str] = &["rule", "skill", "mcp", "sop"];
+const LEGACY_SHARED_ASSET_KINDS: &[&str] = &["hook", "command", "output_profile"];
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub(crate) enum SharedAssetSourceDto {
+    Authored,
+    Imported {
+        #[serde(rename = "fileName")]
+        file_name: String,
+        #[serde(rename = "importedHash")]
+        imported_hash: String,
+        #[serde(rename = "importedAt")]
+        imported_at: String,
+    },
+    Legacy,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SharedAssetNodeDto {
     pub(crate) id: String,
+    pub(crate) name: String,
     pub(crate) kind: String,
     pub(crate) team_id: String,
     pub(crate) locator: AssetLocatorDto,
     pub(crate) content_hash: String,
+    pub(crate) container_content_hash: String,
+    pub(crate) writable: bool,
+    pub(crate) source: SharedAssetSourceDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) current_revision_id: Option<String>,
     pub(crate) parse_status: String,
     pub(crate) diagnostics: Vec<DiagnosticDto>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SharedAssetManifest {
+struct SharedAssetManifestV1 {
     schema_version: u64,
     id: String,
     kind: String,
     team_id: String,
     content_file: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SharedAssetManifestV2 {
+    schema_version: u64,
+    id: String,
+    name: String,
+    kind: String,
+    team_id: String,
+    content_file: String,
+    source: SharedAssetSourceDto,
+}
+
+struct ManifestFacts {
+    id: String,
+    name: String,
+    kind: String,
+    team_id: String,
+    content_file: String,
+    source: SharedAssetSourceDto,
 }
 
 #[derive(Debug)]
@@ -53,22 +97,295 @@ pub(crate) struct SharedAssetIndex {
     pub(crate) diagnostics: Vec<DiagnosticDto>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CreateSharedAssetRequest {
+    pub(crate) request_id: String,
+    pub(crate) team_id: String,
+    pub(crate) asset_id: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) content: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SelectSharedAssetImportRequest {
+    pub(crate) request_id: String,
+    pub(crate) team_id: String,
+    pub(crate) kind: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SharedAssetImportPreviewDto {
+    pub(crate) request_id: String,
+    pub(crate) preview_ref: String,
+    pub(crate) file_name: String,
+    pub(crate) kind: String,
+    pub(crate) size: usize,
+    pub(crate) source_hash: String,
+    pub(crate) suggested_name: String,
+    pub(crate) suggested_id: String,
+    pub(crate) expires_at: String,
+    pub(crate) diagnostics: Vec<DiagnosticDto>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CommitSharedAssetImportRequest {
+    pub(crate) request_id: String,
+    pub(crate) preview_ref: String,
+    pub(crate) expected_source_hash: String,
+    pub(crate) team_id: String,
+    pub(crate) asset_id: String,
+    pub(crate) name: String,
+    pub(crate) confirmed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SharedAssetIdentityRequest {
+    pub(crate) request_id: String,
+    pub(crate) asset_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SharedAssetEditorDto {
+    pub(crate) request_id: String,
+    pub(crate) asset: SharedAssetNodeDto,
+    pub(crate) canonical_content: String,
+    pub(crate) baseline_ref: BaselineRefDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) current_revision_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SaveSharedAssetRequest {
+    pub(crate) request_id: String,
+    pub(crate) asset_id: String,
+    pub(crate) expected_baseline: BaselineRefDto,
+    pub(crate) base_content: String,
+    pub(crate) proposed_content: String,
+    #[serde(default)]
+    pub(crate) confirmation_ref: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RecoverSharedAssetRevisionRequest {
+    pub(crate) request_id: String,
+    pub(crate) asset_id: String,
+    pub(crate) recovery_ref: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum SharedAssetMutationResult {
+    Saved {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        asset: SharedAssetNodeDto,
+        revision: Box<ConfigRevisionDto>,
+        #[serde(rename = "writeReceipt")]
+        write_receipt: WriteReceiptDto,
+    },
+    Unchanged {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        asset: SharedAssetNodeDto,
+    },
+    BaselineChanged {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        #[serde(rename = "assetId")]
+        asset_id: String,
+        locator: AssetLocatorDto,
+        base: ConfigSideDto,
+        current: ConfigSideDto,
+        proposed: ConfigSideDto,
+        diagnostics: Vec<DiagnosticDto>,
+    },
+    ConfirmationRequired {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        challenge: local_service::ConfirmationChallengeDto,
+        #[serde(rename = "affectedAgentIds")]
+        affected_agent_ids: Vec<String>,
+        diagnostics: Vec<DiagnosticDto>,
+    },
+    RegistrationPending {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        asset: SharedAssetNodeDto,
+        #[serde(rename = "fileState")]
+        file_state: String,
+        diagnostics: Vec<DiagnosticDto>,
+    },
+    RevisionPending {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        asset: SharedAssetNodeDto,
+        #[serde(rename = "fileState")]
+        file_state: String,
+        #[serde(rename = "recoveryRef")]
+        recovery_ref: String,
+        diagnostics: Vec<DiagnosticDto>,
+    },
+}
+
+#[derive(Clone)]
+struct ImportRecord {
+    path: PathBuf,
+    team_id: String,
+    kind: String,
+    file_name: String,
+    source_hash: String,
+    expires_at: SystemTime,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RevisionRecoveryRecord {
+    id: String,
+    asset_id: String,
+    asset_content_hash: String,
+    container_content_hash: String,
+    expires_at: String,
+    revision: ConfigRevisionDto,
+    write_receipt: WriteReceiptDto,
+}
+
+fn imports() -> &'static Mutex<HashMap<String, ImportRecord>> {
+    static IMPORTS: OnceLock<Mutex<HashMap<String, ImportRecord>>> = OnceLock::new();
+    IMPORTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn valid_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
+        && value != "."
+        && value != ".."
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-fn content_hash(bytes: &[u8]) -> String {
+fn hash(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
-fn owner_is_registered(
-    snapshot: &LongTermDomainSnapshotDtoV4,
-    manifest: &SharedAssetManifest,
-) -> bool {
+fn container_hash(manifest: &[u8], content: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(manifest);
+    digest.update([0]);
+    digest.update(content);
+    format!("sha256:{:x}", digest.finalize())
+}
+
+fn content_file(kind: &str) -> Option<&'static str> {
+    match kind {
+        "skill" => Some("SKILL.md"),
+        "rule" => Some("RULE.md"),
+        "mcp" => Some("MCP.yaml"),
+        "sop" => Some("SOP.md"),
+        _ => None,
+    }
+}
+
+fn validate_text(value: &str, label: &str, max: usize) -> Result<(), String> {
+    if value.trim().is_empty() || value.contains('\0') || value.chars().count() > max {
+        Err(format!("SHARED_ASSET_VALIDATION_FAILED: {label}无效"))
+    } else {
+        Ok(())
+    }
+}
+
+fn contains_sensitive_key(value: &serde_yaml::Value) -> bool {
+    match value {
+        serde_yaml::Value::Mapping(map) => map.iter().any(|(key, value)| {
+            let sensitive = key.as_str().is_some_and(|key| {
+                let key = key.to_ascii_lowercase();
+                [
+                    "token",
+                    "cookie",
+                    "password",
+                    "secret",
+                    "credential",
+                    "privatekey",
+                    "private_key",
+                    "apikey",
+                    "api_key",
+                    "accesskey",
+                    "access_key",
+                    "authorization",
+                    "auth",
+                    "bearer",
+                    "clientkey",
+                    "client_key",
+                ]
+                .iter()
+                .any(|part| key.contains(part))
+            });
+            sensitive || contains_sensitive_key(value)
+        }),
+        serde_yaml::Value::Sequence(items) => items.iter().any(contains_sensitive_key),
+        _ => false,
+    }
+}
+
+fn validate_content(kind: &str, content: &str) -> Result<String, String> {
+    validate_text(content, "资产正文", MAX_CONTENT_BYTES)?;
+    if content.len() > MAX_CONTENT_BYTES {
+        return Err("SHARED_ASSET_TOO_LARGE: 资产正文超过 256 KiB".into());
+    }
+    if kind == "mcp" {
+        let value: serde_yaml::Value = serde_yaml::from_str(content).map_err(|_| {
+            "SHARED_ASSET_MCP_INVALID: MCP 声明必须是 YAML 或 JSON 对象".to_string()
+        })?;
+        if !value.is_mapping() {
+            return Err("SHARED_ASSET_MCP_INVALID: MCP 声明必须是对象".into());
+        }
+        if contains_sensitive_key(&value) {
+            return Err("SHARED_ASSET_SECRET_REJECTED: MCP 声明不得包含凭据或秘密值".into());
+        }
+        return serde_yaml::to_string(&value)
+            .map_err(|_| "SHARED_ASSET_MCP_INVALID: 无法规范化 MCP 声明".into());
+    }
+    Ok(content.to_string())
+}
+
+fn parse_manifest(bytes: &[u8]) -> Result<ManifestFacts, ()> {
+    if let Ok(manifest) = serde_yaml::from_slice::<SharedAssetManifestV2>(bytes) {
+        if manifest.schema_version != 2 {
+            return Err(());
+        }
+        return Ok(ManifestFacts {
+            id: manifest.id,
+            name: manifest.name,
+            kind: manifest.kind,
+            team_id: manifest.team_id,
+            content_file: manifest.content_file,
+            source: manifest.source,
+        });
+    }
+    let manifest = serde_yaml::from_slice::<SharedAssetManifestV1>(bytes).map_err(|_| ())?;
+    if manifest.schema_version != 1 {
+        return Err(());
+    }
+    Ok(ManifestFacts {
+        name: manifest.id.clone(),
+        id: manifest.id,
+        kind: manifest.kind,
+        team_id: manifest.team_id,
+        content_file: manifest.content_file,
+        source: SharedAssetSourceDto::Legacy,
+    })
+}
+
+fn owner_is_registered(snapshot: &LongTermDomainSnapshotDtoV4, manifest: &ManifestFacts) -> bool {
     snapshot.teams.iter().any(|team| {
         team.id == manifest.team_id && team.shared_asset_ids.iter().any(|id| id == &manifest.id)
     })
@@ -86,24 +403,15 @@ fn safe_content_path(package: &Path, relative: &str) -> Result<PathBuf, Box<Diag
         )));
     }
     let target = package.join(path);
-    let metadata = fs::symlink_metadata(&target).map_err(|_| {
+    ensure_regular_file(&target, "共享资产正文").map_err(|_| {
         Box::new(diagnostic(
-            "shared_asset_content_missing",
-            "error",
-            "共享资产正文不存在或不可访问",
-            Some(relative.into()),
-            Some("恢复 manifest 声明的正文文件"),
-        ))
-    })?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(Box::new(diagnostic(
             "shared_asset_content_rejected",
             "error",
             "共享资产正文必须是资产目录内的普通文件",
             Some(relative.into()),
-            Some("移除符号链接或非文件目标"),
-        )));
-    }
+            Some("恢复正文文件并移除符号链接"),
+        ))
+    })?;
     Ok(target)
 }
 
@@ -115,6 +423,7 @@ fn invalid_node(
     issue: DiagnosticDto,
 ) -> SharedAssetNodeDto {
     SharedAssetNodeDto {
+        name: id.clone(),
         id,
         kind,
         team_id,
@@ -123,7 +432,11 @@ fn invalid_node(
             display_path: relative_path.clone(),
             relative_path: Some(relative_path),
         },
-        content_hash: content_hash(&[]),
+        content_hash: hash(&[]),
+        container_content_hash: hash(&[]),
+        writable: false,
+        source: SharedAssetSourceDto::Legacy,
+        current_revision_id: None,
         parse_status: "invalid".into(),
         diagnostics: vec![issue],
     }
@@ -137,9 +450,7 @@ fn discover_package(
 ) -> SharedAssetNodeDto {
     let relative_manifest = format!("{directory_id}/asset.yaml");
     let manifest_path = package.join("asset.yaml");
-    let manifest_metadata = fs::symlink_metadata(&manifest_path);
-    if !matches!(&manifest_metadata, Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink())
-    {
+    if ensure_regular_file(&manifest_path, "共享资产 manifest").is_err() {
         return invalid_node(
             directory_id.into(),
             "unknown".into(),
@@ -154,30 +465,55 @@ fn discover_package(
             ),
         );
     }
-    let manifest = fs::read_to_string(&manifest_path)
-        .ok()
-        .and_then(|content| serde_yaml::from_str::<SharedAssetManifest>(&content).ok());
-    let Some(manifest) = manifest else {
-        return invalid_node(
-            directory_id.into(),
-            "unknown".into(),
-            "unknown".into(),
-            relative_manifest,
-            diagnostic(
-                "shared_asset_manifest_invalid",
-                "error",
-                "共享资产 manifest 不符合冻结 schema",
-                Some("asset.yaml".into()),
-                Some("修正 YAML 字段、类型和未知字段"),
-            ),
-        );
+    let manifest_bytes = match fs::read(&manifest_path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return invalid_node(
+                directory_id.into(),
+                "unknown".into(),
+                "unknown".into(),
+                relative_manifest,
+                diagnostic(
+                    "shared_asset_manifest_invalid",
+                    "error",
+                    "共享资产 manifest 不符合冻结 schema",
+                    Some("asset.yaml".into()),
+                    Some("修正 YAML 字段、类型和未知字段"),
+                ),
+            )
+        }
     };
-    let basic_valid = manifest.schema_version == SHARED_ASSET_SCHEMA_VERSION
-        && manifest.id == directory_id
-        && valid_id(&manifest.id)
-        && valid_id(&manifest.team_id)
-        && SHARED_ASSET_KINDS.contains(&manifest.kind.as_str());
-    if !basic_valid {
+    let manifest = match parse_manifest(&manifest_bytes) {
+        Ok(value) => value,
+        Err(_) => {
+            return invalid_node(
+                directory_id.into(),
+                "unknown".into(),
+                "unknown".into(),
+                relative_manifest,
+                diagnostic(
+                    "shared_asset_manifest_invalid",
+                    "error",
+                    "共享资产 manifest 不符合冻结 schema",
+                    Some("asset.yaml".into()),
+                    Some("修正 YAML 字段、类型和未知字段"),
+                ),
+            )
+        }
+    };
+    let kind_valid = SHARED_ASSET_KINDS.contains(&manifest.kind.as_str())
+        || LEGACY_SHARED_ASSET_KINDS.contains(&manifest.kind.as_str());
+    let content_file_valid = content_file(&manifest.kind).map_or(
+        LEGACY_SHARED_ASSET_KINDS.contains(&manifest.kind.as_str()),
+        |expected| manifest.content_file == expected,
+    );
+    if manifest.id != directory_id
+        || !valid_id(&manifest.id)
+        || !valid_id(&manifest.team_id)
+        || !kind_valid
+        || !content_file_valid
+        || manifest.name.trim().is_empty()
+    {
         return invalid_node(
             manifest.id,
             manifest.kind,
@@ -186,9 +522,9 @@ fn discover_package(
             diagnostic(
                 "shared_asset_identity_invalid",
                 "error",
-                "共享资产版本、稳定身份、类型或目录身份无效",
+                "共享资产稳定身份、类型或目录身份无效",
                 Some("asset.yaml".into()),
-                Some("保持目录名、id、kind 与 owner 字段符合共享资产 v1"),
+                Some("保持目录名、id、kind 与 Team 符合共享资产 schema"),
             ),
         );
     }
@@ -203,7 +539,7 @@ fn discover_package(
                 "error",
                 "共享资产未与对应 Team 显式关联",
                 Some("teamId".into()),
-                Some("先在 Team 配置中注册该共享资产"),
+                Some("修复该资产的 Team 登记"),
             ),
         );
     }
@@ -242,8 +578,11 @@ fn discover_package(
         .unwrap_or(&content_path)
         .to_string_lossy()
         .into_owned();
+    let writable =
+        !fs::metadata(&content_path).is_ok_and(|metadata| metadata.permissions().readonly());
     SharedAssetNodeDto {
         id: manifest.id,
+        name: manifest.name,
         kind: manifest.kind,
         team_id: manifest.team_id,
         locator: AssetLocatorDto {
@@ -251,7 +590,11 @@ fn discover_package(
             display_path: relative_content.clone(),
             relative_path: Some(relative_content),
         },
-        content_hash: content_hash(&bytes),
+        content_hash: hash(&bytes),
+        container_content_hash: container_hash(&manifest_bytes, &bytes),
+        writable,
+        source: manifest.source,
+        current_revision_id: None,
         parse_status: "parsed".into(),
         diagnostics: Vec::new(),
     }
@@ -269,7 +612,7 @@ pub(crate) fn discover(root: &Path, snapshot: &LongTermDomainSnapshotDtoV4) -> S
                     "info",
                     "Bandi 共享资产根尚未初始化",
                     None,
-                    Some("创建首个真实共享资产后刷新索引"),
+                    Some("创建首个共享资产后刷新索引"),
                 )],
             }
         }
@@ -292,8 +635,11 @@ pub(crate) fn discover(root: &Path, snapshot: &LongTermDomainSnapshotDtoV4) -> S
     let mut seen = HashSet::new();
     for entry in entries.flatten() {
         let directory_id = entry.file_name().to_string_lossy().into_owned();
+        if directory_id.starts_with(".bandi-staging-") {
+            continue;
+        }
         let metadata = match fs::symlink_metadata(entry.path()) {
-            Ok(metadata) => metadata,
+            Ok(value) => value,
             Err(_) => continue,
         };
         if !valid_id(&directory_id) || metadata.file_type().is_symlink() || !metadata.is_dir() {
@@ -327,93 +673,38 @@ pub(crate) fn discover(root: &Path, snapshot: &LongTermDomainSnapshotDtoV4) -> S
     }
 }
 
-pub(crate) fn agent_teams(snapshot: &LongTermDomainSnapshotDtoV4) -> HashMap<String, String> {
-    snapshot
-        .teams
-        .iter()
-        .flat_map(|team| {
-            team.member_agent_ids
-                .iter()
-                .map(|agent_id| (agent_id.clone(), team.id.clone()))
-        })
-        .collect()
+fn validate_request(team_id: &str, asset_id: &str, name: &str, kind: &str) -> Result<(), String> {
+    if !valid_id(team_id) || !valid_id(asset_id) || !SHARED_ASSET_KINDS.contains(&kind) {
+        return Err("SHARED_ASSET_VALIDATION_FAILED: Team、资产标识或类型无效".into());
+    }
+    validate_text(name, "资产名称", 120)
 }
 
+fn build_manifest(
+    request: &CreateSharedAssetRequest,
+    source: SharedAssetSourceDto,
+) -> Result<Vec<u8>, String> {
+    serde_yaml::to_string(&SharedAssetManifestV2 {
+        schema_version: 2,
+        id: request.asset_id.clone(),
+        name: request.name.trim().to_string(),
+        kind: request.kind.clone(),
+        team_id: request.team_id.clone(),
+        content_file: content_file(&request.kind)
+            .ok_or_else(|| "SHARED_ASSET_KIND_UNSUPPORTED".to_string())?
+            .into(),
+        source,
+    })
+    .map(String::into_bytes)
+    .map_err(|_| "SHARED_ASSET_MANIFEST_FAILED: 无法生成 manifest".into())
+}
+
+mod editor;
+mod import;
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain_store::TeamDtoV4;
-    use tempfile::tempdir;
+mod tests;
 
-    fn snapshot() -> LongTermDomainSnapshotDtoV4 {
-        LongTermDomainSnapshotDtoV4 {
-            schema_version: 4,
-            teams: vec![TeamDtoV4 {
-                id: "xinghe".into(),
-                name: "星河".into(),
-                mark: None,
-                color: None,
-                mission: None,
-                boundary: None,
-                member_agent_ids: vec!["zhouce".into()],
-                shared_asset_ids: vec!["skill-review".into()],
-            }],
-            task_briefs: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn discovers_registered_shared_asset_with_bandi_locator() {
-        let root = tempdir().unwrap();
-        let package = root.path().join("skill-review");
-        fs::create_dir(&package).unwrap();
-        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\nteamId: xinghe\ncontentFile: SKILL.md\n").unwrap();
-        fs::write(package.join("SKILL.md"), "# Review\n").unwrap();
-
-        let result = discover(root.path(), &snapshot());
-
-        assert!(result.root_available);
-        assert_eq!(result.nodes.len(), 1);
-        assert_eq!(result.nodes[0].parse_status, "parsed");
-        assert_eq!(result.nodes[0].locator.root_kind, RootKind::Bandi);
-    }
-
-    #[test]
-    fn rejects_department_scoped_manifest() {
-        let root = tempdir().unwrap();
-        let package = root.path().join("skill-review");
-        fs::create_dir(&package).unwrap();
-        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\nteamId: xinghe\ndepartmentId: dev\ncontentFile: SKILL.md\n").unwrap();
-        fs::write(package.join("SKILL.md"), "# Review\n").unwrap();
-
-        let result = discover(root.path(), &snapshot());
-
-        assert_eq!(result.nodes[0].parse_status, "invalid");
-        assert_eq!(
-            result.nodes[0].diagnostics[0].code,
-            "shared_asset_manifest_invalid"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn rejects_symlinked_shared_asset_content() {
-        use std::os::unix::fs::symlink;
-
-        let root = tempdir().unwrap();
-        let outside = tempdir().unwrap();
-        let package = root.path().join("skill-review");
-        fs::create_dir(&package).unwrap();
-        fs::write(package.join("asset.yaml"), "schemaVersion: 1\nid: skill-review\nkind: skill\nteamId: xinghe\ncontentFile: SKILL.md\n").unwrap();
-        fs::write(outside.path().join("secret.md"), "secret").unwrap();
-        symlink(outside.path().join("secret.md"), package.join("SKILL.md")).unwrap();
-
-        let result = discover(root.path(), &snapshot());
-
-        assert_eq!(result.nodes[0].parse_status, "invalid");
-        assert_eq!(
-            result.nodes[0].diagnostics[0].code,
-            "shared_asset_content_rejected"
-        );
-    }
-}
+pub(crate) use editor::{
+    create_at, load_editor_at, recover_revision_at, repair_registration_at, save_at,
+};
+pub(crate) use import::{commit_import_at, preview_import_at};

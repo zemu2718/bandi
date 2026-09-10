@@ -4,7 +4,7 @@ import { clientAdapterCatalog } from '../client-adapters'
 import type { ClientLaunchResultV3, RequestClientLaunchV3 } from '../contracts'
 
 describe('客户端启动共享合同', () => {
-  it('v3 只准备受控 Team、Agent 与可选 TaskBrief 上下文', () => {
+  it('v3 只提交受控 Team、Agent 与可选 TaskBrief 标识', () => {
     const value = launchV3 as RequestClientLaunchV3
 
     expect(value).toMatchObject({
@@ -26,7 +26,8 @@ describe('客户端启动共享合同', () => {
         evidence: ['固定适配器'],
         remediation: ['无需处理'],
       },
-      outcome: 'context_prepared',
+      outcome: 'terminal_launch_requested',
+      contextDelivery: 'initial_prompt',
     } satisfies ClientLaunchResultV3).toBeTruthy()
   })
 
@@ -40,6 +41,6 @@ describe('客户端启动共享合同', () => {
       clientId: 'codex',
       adapterId: 'codex-terminal-v1',
     })
-    expect(Object.values(clientAdapterCatalog).filter((item) => item.launch)).toHaveLength(2)
+    expect(Object.values(clientAdapterCatalog).every((item) => item.launch)).toBe(true)
   })
 })

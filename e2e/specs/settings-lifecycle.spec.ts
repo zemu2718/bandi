@@ -5,11 +5,7 @@ import { externalSentinelDirectory } from '../helpers/first-use-fixtures.js'
 import { appDataPath, sandboxHome } from '../helpers/paths.js'
 
 type JsonRecord = Record<string, unknown>
-type ToolSnapshot = {
-  revision: number
-  selectedPlanId: string
-  plans: Array<{ id: string; name: string; toolIds: string[] }>
-}
+type ToolHostStatus = { toolId: string; availability: string }
 type ResetPreview = {
   requestId: string
   previewRef: string
@@ -27,41 +23,29 @@ const invoke = <T>(command: string, args: JsonRecord = {}) => browser.tauri.exec
 const preservedExternalFile = path.join(externalSentinelDirectory, 'factory-reset-preserved.txt')
 const preservedClaudeFile = path.join(sandboxHome, '.claude', 'factory-reset-preserved.txt')
 
-async function configureToolsAndReviewGuide() {
-  let snapshot = await invoke<ToolSnapshot>('load_tool_configuration')
-  snapshot = await invoke<ToolSnapshot>('create_tool_plan', {
-    request: {
-      plan: { id: 'coding', name: '编码方案', toolIds: ['claude-code'] },
-      expectedRevision: snapshot.revision,
-    },
-  })
-  snapshot = await invoke<ToolSnapshot>('create_tool_plan', {
-    request: {
-      plan: { id: 'review', name: '评审方案', toolIds: ['codex'] },
-      expectedRevision: snapshot.revision,
-    },
-  })
-  snapshot = await invoke<ToolSnapshot>('select_tool_plan', {
-    request: { planId: 'review', expectedRevision: snapshot.revision },
-  })
-  expect(snapshot.selectedPlanId).toBe('review')
+async function reviewToolsAndGuide() {
+  const statuses = await invoke<ToolHostStatus[]>('list_ai_tool_host_statuses')
+  expect(statuses).toHaveLength(9)
+  expect(new Set(statuses.map((item) => item.toolId)).size).toBe(9)
 
-  await browser.execute(() => { window.location.hash = '#/guide' })
-  await expect(browser.$('h2=管理长期配置，再回到你的 AI 编程工具')).toBeDisplayed()
+  await browser.execute(() => { window.location.hash = '#/tools' })
+  await expect(browser.$('h1=AI 工具')).toBeDisplayed()
+  const guideButton = await browser.$('button[aria-label="使用指南"]')
+  await guideButton.click()
+  await expect(browser.$('h2=整理需求并在外部工具中继续')).toBeDisplayed()
+  await browser.$('button=保存与恢复').click()
+  await expect(browser.$('h2=处理保存、备份与恢复')).toBeDisplayed()
   await browser.waitUntil(
-    async () => (await browser.$('body').getText()).includes('不会重置首次使用状态'),
-    { timeoutMsg: '引导回顾未显示无损说明' },
+    async () => (await browser.$('[role="dialog"]').getText()).includes('不会修改配置、首次使用状态或本机数据'),
+    { timeoutMsg: '使用指南未显示无损说明' },
   )
-
-  const afterGuide = await invoke<ToolSnapshot>('load_tool_configuration')
-  expect(afterGuide.selectedPlanId).toBe('review')
-  expect(afterGuide.plans.map((plan) => plan.id)).toEqual(['default', 'coding', 'review'])
+  await browser.$('button=查看备份与恢复').click()
+  await expect(browser.$('h1=设置')).toBeDisplayed()
 }
 
 async function verifyPersistenceAndReset() {
-  const snapshot = await invoke<ToolSnapshot>('load_tool_configuration')
-  expect(snapshot.selectedPlanId).toBe('review')
-  expect(snapshot.plans.map((plan) => plan.id)).toEqual(['default', 'coding', 'review'])
+  const statuses = await invoke<ToolHostStatus[]>('list_ai_tool_host_statuses')
+  expect(statuses).toHaveLength(9)
 
   await fs.writeFile(preservedExternalFile, 'external file preserved')
   await fs.mkdir(path.dirname(preservedClaudeFile), { recursive: true })
@@ -82,24 +66,25 @@ async function verifyPersistenceAndReset() {
     },
   })
   expect(result.requiresRestart).toBe(true)
+  await browser.execute(() => localStorage.removeItem('bandi-ui-preferences-v1'))
   await invoke<void>('restart_after_factory_reset')
   await expect(fs.readFile(preservedExternalFile, 'utf8')).resolves.toBe('external file preserved')
   await expect(fs.readFile(preservedClaudeFile, 'utf8')).resolves.toBe('claude preserved')
 }
 
 async function verifyFreshStateAfterReset() {
-  await expect(browser.$('h1=先新建或导入一个长期 Agent')).toBeDisplayed()
-  const snapshot = await invoke<ToolSnapshot>('load_tool_configuration')
-  expect(snapshot.selectedPlanId).toBe('default')
-  expect(snapshot.plans).toEqual([{ id: 'default', name: '默认方案', toolIds: [] }])
+  await browser.execute(() => localStorage.removeItem('bandi-ui-preferences-v1'))
+  await browser.refresh()
+  await expect(browser.$('h1=建立你的长期 Agent Team')).toBeDisplayed()
+  expect(await invoke<ToolHostStatus[]>('list_ai_tool_host_statuses')).toHaveLength(9)
   await expect(fs.readFile(preservedExternalFile, 'utf8')).resolves.toBe('external file preserved')
   await expect(fs.readFile(preservedClaudeFile, 'utf8')).resolves.toBe('claude preserved')
 }
 
 describe('Desktop 设置与恢复真实闭环', () => {
-  it('持久化工具方案、无损回顾引导并安全重置 Bandi', async () => {
+  it('检查固定工具目录、无损回顾引导并安全重置 Bandi', async () => {
     if (process.env.BANDI_E2E_SETTINGS_PHASE === 'reset') return verifyPersistenceAndReset()
     if (process.env.BANDI_E2E_SETTINGS_PHASE === 'fresh') return verifyFreshStateAfterReset()
-    return configureToolsAndReviewGuide()
+    return reviewToolsAndGuide()
   })
 })

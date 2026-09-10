@@ -4,9 +4,9 @@ export type Agent = { id: string; name: string; status: AgentStatus; config: Con
 export type Asset = { id: string; name: string; kind: string; owner: string; scope: string; refs: number; path: string; status: string }
 import type { BuiltInClientId } from './client-adapters'
 
-export type AiClientKind = BuiltInClientId | 'custom'
+export type AiClientKind = BuiltInClientId
 export type AiClient = {
-  id: string
+  id: BuiltInClientId
   kind: AiClientKind
   name: string
   shortName: string
@@ -18,7 +18,7 @@ export type AiClient = {
 export const aiClients: AiClient[] = [
   { id:'claude-code', kind:'claude-code', name:'Claude Code', shortName:'CC', description:'Anthropic 的命令行 AI 编程工具', detection:'not-checked', persistence:'initial-demo' },
   { id:'claude-desktop', kind:'claude-desktop', name:'Claude Desktop', shortName:'CD', description:'Anthropic 的桌面 AI 助手', detection:'not-checked', persistence:'memory-only' },
-  { id:'codex', kind:'codex', name:'Codex', shortName:'CX', description:'OpenAI 的 AI 编程工具', detection:'not-checked', persistence:'memory-only' },
+  { id:'codex', kind:'codex', name:'ChatGPT', shortName:'CG', description:'包含 Codex 编程能力的 OpenAI 桌面应用', detection:'not-checked', persistence:'memory-only' },
   { id:'gemini-cli', kind:'gemini-cli', name:'Gemini CLI', shortName:'GE', description:'Google 的命令行 AI 编程工具', detection:'not-checked', persistence:'memory-only' },
   { id:'grok-build', kind:'grok-build', name:'Grok Build', shortName:'GB', description:'xAI 的 AI 编程工具', detection:'not-checked', persistence:'memory-only' },
   { id:'opencode', kind:'opencode', name:'OpenCode', shortName:'OC', description:'开源 AI 编程工具', detection:'not-checked', persistence:'memory-only' },

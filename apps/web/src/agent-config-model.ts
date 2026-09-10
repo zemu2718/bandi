@@ -1,6 +1,6 @@
 import { AGENT_PACKAGE_SCHEMA_VERSION } from './agent-package-schema'
 import { isParameterBinding, type ParameterBinding } from './component-parameters'
-import type { AgentFile, ContextPolicy, EvidenceKind, FullAgent } from './domain'
+import { agentFunctionLabels, type AgentFile, type ContextPolicy, type EvidenceKind, type FullAgent } from './domain'
 
 export type AgentIdentityConfig = Pick<
   FullAgent,
@@ -9,6 +9,7 @@ export type AgentIdentityConfig = Pick<
   | 'status'
   | 'teamId'
   | 'avatarPath'
+  | 'functionId'
   | 'mission'
   | 'responsibilities'
   | 'deliverables'
@@ -219,6 +220,7 @@ export function snapshotAgentConfig(agent: FullAgent, kind: AgentConfigPayload['
       status: agent.status,
       teamId: agent.teamId,
       avatarPath: agent.avatarPath,
+      functionId: agent.functionId,
       mission: agent.mission,
       responsibilities: agent.responsibilities,
       deliverables: agent.deliverables,
@@ -241,7 +243,12 @@ export function snapshotAgentConfig(agent: FullAgent, kind: AgentConfigPayload['
 
 export function applyAgentConfig(agent: FullAgent, payload: AgentConfigPayload): FullAgent | undefined {
   switch (payload.kind) {
-    case 'identity': return payload.value.id !== agent.id || payload.value.schemaVersion !== AGENT_PACKAGE_SCHEMA_VERSION || validateAgentName(payload.value.name) ? undefined : { ...agent, ...payload.value, name: normalizeAgentName(payload.value.name) }
+    case 'identity': return payload.value.id !== agent.id
+      || payload.value.schemaVersion !== AGENT_PACKAGE_SCHEMA_VERSION
+      || validateAgentName(payload.value.name)
+      || (payload.value.functionId !== undefined && !(payload.value.functionId in agentFunctionLabels))
+      ? undefined
+      : { ...agent, ...payload.value, name: normalizeAgentName(payload.value.name) }
     case 'instructions': return { ...agent, instructions: payload.value }
     case 'context': return validateContextPolicy(payload.value.policy).length || validateContextWindowTokens(payload.value.contextWindowTokens).length ? undefined : { ...agent, contextPolicy: { ...payload.value.policy }, contextWindowTokens: payload.value.contextWindowTokens, outputProfileId: payload.value.outputProfileId, outputParameterBindings: payload.value.outputParameterBindings ?? [] }
     case 'skills': return { ...agent, skillRefs: [...payload.value] }
@@ -265,6 +272,7 @@ export function serializeAgentConfig(agent: FullAgent, payload: AgentConfigPaylo
       `status: ${quote(applied.status)}`,
       `teamId: ${quote(applied.teamId)}`,
       ...(applied.avatarPath ? [`avatarPath: ${quote(applied.avatarPath)}`] : []),
+      ...(applied.functionId ? [`functionId: ${quote(applied.functionId)}`] : []),
       `mission: ${quote(applied.mission)}`,
       'responsibilities:', yamlList(applied.responsibilities),
       'deliverables:', yamlList(applied.deliverables),
@@ -358,6 +366,8 @@ export function isAgentConfigPayload(value: unknown): value is AgentConfigPayloa
   if (value.kind === 'identity') {
     return payloadValue.schemaVersion === AGENT_PACKAGE_SCHEMA_VERSION
       && ['id', 'name', 'mission', 'teamId'].every((key) => typeof payloadValue[key] === 'string')
+      && (payloadValue.functionId === undefined
+        || (typeof payloadValue.functionId === 'string' && payloadValue.functionId in agentFunctionLabels))
       && isSafePathSegment(String(payloadValue.teamId))
       && !validateAgentName(String(payloadValue.name))
       && ['active', 'inactive', 'archived'].includes(String(payloadValue.status))

@@ -20,7 +20,7 @@ const resetItems = [
   '受管 Agent 及其长期配置',
   '长期记忆与共享资产',
   '配置历史与本地快照',
-  '工具方案、本机界面图片与偏好',
+  '本机界面图片与偏好',
 ]
 
 const targetLabels: Record<string, string> = {

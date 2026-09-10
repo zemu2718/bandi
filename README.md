@@ -48,7 +48,7 @@ Team → Agent → 可选需求
 1. **选择 Team 和 Agent。** 从 Personal Team 开始，或按需用 Team 组织多个不同职责的长期 Agent。
 2. **查看或修改长期配置。** 创建 Agent，在统一界面中编辑受管配置。
 3. **安全保存并保留历史。** Local Service 校验目标和 baseline，原子写入并重读验证，成功后生成 Revision。
-4. **回到你的工具工作。** Client Launch v3 只用稳定 ID 准备所选 Team、Agent 和可选需求的上下文；具体任务仍由外部工具完成。
+4. **从 AI 工具页启动。** 在固定的 `/tools` 页面选择一个工具，启动时临时选择 Team、Agent 和可选需求；Client Launch v3 按 `outcome` 与 `contextDelivery` 返回启动或手动交接结果，具体任务仍由外部工具完成。
 
 ### 九工具固定集成入口
 
@@ -64,7 +64,7 @@ Team → Agent → 可选需求
 | Hermes | `~/.hermes/skills` |
 | Pi | `~/.pi/agent/skills` |
 
-工具方案只保存选择和配置，不自动安装。Host Integration 仅在用户显式点击时安装到固定入口或 reveal 固定目录；未经真实 smoke 的运行态显示“尚未验证”，部分链路显示“部分可用”。
+九个工具分别在固定 `/tools` 页面展示。本机检测只检查固定安装候选，不运行工具、不扫描 PATH，也不读取配置正文；未检测到时可打开固定官方安装页面，配置位置存在时可由用户显式 reveal。Bandi 不自动安装工具或集成，官方页面打开和 reveal 也不表示工具已安装、已加载或可运行。
 
 ### 它管理的长期资产
 
@@ -111,18 +111,18 @@ pnpm web:dev
 Bandi 默认只管理自身受管的长期配置资产：
 
 - **不执行或调度任务，** 不提供任务中心、审批流或运行监控台；
-- **不启动终端或命令，** Client Launch v3 只准备类型化上下文；
+- **启动能力保持受控，** Client Launch v3 只按固定工具、Adapter、终端枚举和稳定 ID 提交启动请求，或返回需手动复制的上下文；不接受任意命令、参数或路径；
 - **不管理 Session，** 不读取终端输出，也不镜像聊天、Todo 或日志；
 - **应用内只查看 Bandi 自有受管配置；** 不接受任意路径，不枚举、不扫描、不读取宿主配置内容；
-- **宿主目录仅有固定 allowlist 例外；** 用户显式触发 Host Integration 后，才允许安装到九工具固定入口或 reveal 固定目录；不提供通用 opener、文件 API 或 Shell；
+- **宿主目录仅有固定 allowlist 例外；** 用户在 `/tools` 显式触发后，只允许 reveal 已存在的固定配置位置；官方安装入口只打开固定 URL，不自动安装；不提供通用 opener、文件 API 或 Shell；
 - **不备份凭据和执行过程，** Token、Cookie、私钥、钥匙串数据及 Claude Code 会话内容不进入备份；
 - **删除与恢复只处理 Bandi 自有数据，** 高风险操作保留独立确认和恢复边界。
 
 ### 更多信息
 
 - **了解产品：** [产品与页面架构](./docs/产品与页面架构.md) · [页面低保真线框图](./docs/页面低保真线框图.md)
-- **核对实现：** [技术架构](./docs/技术架构.md) · [本地服务与前端联调契约](./docs/本地服务与前端联调契约.md) · [首版能力矩阵](./docs/首版能力矩阵.md)
-- **查看验收：** [首版验收报告](./docs/首版验收报告.md) · [反馈问题](https://github.com/zemu2718/bandi/issues)
+- **核对实现：** [技术架构](./docs/技术架构.md) · [本地服务与前端联调契约](./docs/本地服务与前端联调契约.md)
+- **反馈问题：** [GitHub Issues](https://github.com/zemu2718/bandi/issues)
 
 如果 Bandi 对你有帮助，欢迎给项目点个 Star。
 

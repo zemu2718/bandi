@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-const DATABASE_SCHEMA_VERSION: i64 = 17;
+const DATABASE_SCHEMA_VERSION: i64 = 18;
 const LEGACY_DATABASE_RESET_MESSAGE: &str =
     "LEGACY_DATABASE_RESET_REQUIRED: 检测到旧版开发数据库；请重置 Bandi";
 const LONG_TERM_DOMAIN_SCHEMA_VERSION: u64 = 4;
@@ -144,7 +144,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
     match version {
         0 => create_current_schema(connection),
         DATABASE_SCHEMA_VERSION => Ok(()),
-        1..=16 => Err(LEGACY_DATABASE_RESET_MESSAGE.into()),
+        1..=17 => Err(LEGACY_DATABASE_RESET_MESSAGE.into()),
         _ => Err("本地领域数据库版本高于当前应用支持范围".into()),
     }
 }
@@ -262,37 +262,9 @@ fn create_current_schema(connection: &Connection) -> Result<(), String> {
                completed_at TEXT
              );
              CREATE INDEX agent_recovery_operations_agent ON agent_recovery_operations(agent_id, created_at);
-             CREATE TABLE tool_configuration_plans (
-               id TEXT PRIMARY KEY,
-               name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-               created_at TEXT NOT NULL,
-               updated_at TEXT NOT NULL
-             );
-             CREATE TABLE custom_tools (
-               id TEXT PRIMARY KEY,
-               name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-               created_at TEXT NOT NULL,
-               updated_at TEXT NOT NULL
-             );
-             CREATE TABLE tool_configuration_plan_tools (
-               plan_id TEXT NOT NULL REFERENCES tool_configuration_plans(id) ON DELETE CASCADE,
-               tool_id TEXT NOT NULL,
-               position INTEGER NOT NULL CHECK(position >= 0),
-               PRIMARY KEY(plan_id, tool_id),
-               UNIQUE(plan_id, position)
-             );
-             CREATE TABLE tool_configuration_state (
-               singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
-               selected_plan_id TEXT NOT NULL REFERENCES tool_configuration_plans(id) ON DELETE RESTRICT,
-               revision INTEGER NOT NULL CHECK(revision >= 0)
-             );
              INSERT INTO teams (id, name, mark, color, mission, boundary_text, member_agent_ids_json, shared_asset_ids_json, updated_at)
                VALUES ('team-personal', '个人 Team', NULL, NULL, NULL, NULL, '[]', '[]', CURRENT_TIMESTAMP);
-             INSERT INTO tool_configuration_plans (id, name, created_at, updated_at)
-               VALUES ('default', '默认方案', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-             INSERT INTO tool_configuration_state (singleton, selected_plan_id, revision)
-               VALUES (1, 'default', 0);
-             PRAGMA user_version = 17;
+             PRAGMA user_version = 18;
              COMMIT;",
         )
         .map_err(|error| format!("本地领域数据库初始化失败：{error}"))
@@ -589,7 +561,7 @@ pub(crate) fn validate_client_launch_context_at(
     team_id: &str,
     agent_id: &str,
     task_id: Option<&str>,
-) -> Result<(), String> {
+) -> Result<crate::ai_adapters::ValidatedLaunchContext, String> {
     validate_id(team_id, "Team 标识")?;
     validate_id(agent_id, "Agent 标识")?;
     let mut connection = open_at(path)?;
@@ -613,21 +585,83 @@ pub(crate) fn validate_client_launch_context_at(
     if status != "active" {
         return Err("Agent 必须处于 active 状态".into());
     }
-    if let Some(task_id) = task_id {
+    let team_name: String = transaction
+        .query_row("SELECT name FROM teams WHERE id = ?1", [team_id], |row| {
+            row.get(0)
+        })
+        .map_err(|_| "无法读取 Team 上下文".to_string())?;
+    let task = if let Some(task_id) = task_id {
         validate_id(task_id, "TaskBrief 标识")?;
-        let task_team_id: Option<String> = transaction
+        let task: Option<(String, String, String, String, String, String)> = transaction
             .query_row(
-                "SELECT team_id FROM task_briefs WHERE id = ?1 AND archived_at IS NULL",
+                "SELECT team_id, title, goal, context, constraints_text, expected_output FROM task_briefs WHERE id = ?1 AND archived_at IS NULL",
                 [task_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .optional()
             .map_err(|_| "无法校验 TaskBrief".to_string())?;
-        if task_team_id.as_deref() != Some(team_id) {
+        let task = task.ok_or_else(|| "TaskBrief 不存在、已归档或不属于所选 Team".to_string())?;
+        if task.0 != team_id {
             return Err("TaskBrief 不存在、已归档或不属于所选 Team".into());
         }
+        Some(task)
+    } else {
+        None
+    };
+    let mut prompt =
+        format!("使用 Bandi 长期配置继续。\nTeam：{team_name}（{team_id}）\nAgent：{agent_id}");
+    if let Some((_, title, goal, context, constraints, expected_output)) = task {
+        prompt.push_str(&format!("\n需求：{title}\n目标：{goal}"));
+        if !context.is_empty() {
+            prompt.push_str(&format!("\n背景：{context}"));
+        }
+        if !constraints.is_empty() {
+            prompt.push_str(&format!("\n约束：{constraints}"));
+        }
+        if !expected_output.is_empty() {
+            prompt.push_str(&format!("\n期望产出：{expected_output}"));
+        }
     }
-    Ok(())
+    Ok(crate::ai_adapters::ValidatedLaunchContext { prompt })
+}
+
+pub(crate) fn register_shared_asset_at(
+    path: &Path,
+    team_id: &str,
+    asset_id: &str,
+) -> Result<(), String> {
+    validate_id(team_id, "Team 标识")?;
+    validate_id(asset_id, "共享资产标识")?;
+    let mut connection = open_at(path)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| "无法开始共享资产登记事务".to_string())?;
+    let encoded: Option<String> = transaction
+        .query_row(
+            "SELECT shared_asset_ids_json FROM teams WHERE id = ?1",
+            [team_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| "无法读取 Team 共享资产索引".to_string())?;
+    let mut ids: Vec<String> = parse_json(encoded.ok_or_else(|| "Team 不存在".to_string())?)
+        .map_err(|_| "Team 共享资产索引损坏".to_string())?;
+    if !ids.iter().any(|id| id == asset_id) {
+        ids.push(asset_id.to_string());
+        transaction
+            .execute(
+                "UPDATE teams SET shared_asset_ids_json = ?1, updated_at = ?2 WHERE id = ?3",
+                params![
+                    json(&ids, "Team 共享资产")?,
+                    Utc::now().to_rfc3339(),
+                    team_id
+                ],
+            )
+            .map_err(|_| "无法登记 Team 共享资产".to_string())?;
+    }
+    transaction
+        .commit()
+        .map_err(|_| "无法提交共享资产登记事务".to_string())
 }
 
 pub(crate) fn save_team_v4_at(path: &Path, team: TeamDtoV4) -> Result<TeamDtoV4, String> {
@@ -831,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn new_database_uses_v17_minimal_domain() {
+    fn new_database_uses_v18_minimal_domain() {
         let root = tempdir().unwrap();
         let database = root.path().join("bandi.db");
         let connection = open_at(&database).unwrap();
@@ -839,7 +873,7 @@ mod tests {
             connection
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            17
+            18
         );
         for table in [
             "departments",
@@ -847,6 +881,10 @@ mod tests {
             "service_grants_v2",
             "memory_candidates",
             "memory_review_decisions",
+            "tool_configuration_plans",
+            "custom_tools",
+            "tool_configuration_plan_tools",
+            "tool_configuration_state",
         ] {
             assert!(!table_exists(&connection, table));
         }
@@ -856,7 +894,6 @@ mod tests {
             "memory_write_journal",
             "backup_snapshots",
             "agent_recovery_operations",
-            "tool_configuration_plans",
         ] {
             assert!(table_exists(&connection, table));
         }
@@ -868,7 +905,7 @@ mod tests {
     #[test]
     fn every_old_nonzero_database_requires_factory_reset() {
         let root = tempdir().unwrap();
-        for version in 1..=16 {
+        for version in 1..=17 {
             let database = root.path().join(format!("bandi-{version}.db"));
             let connection = Connection::open(&database).unwrap();
             connection
@@ -890,11 +927,44 @@ mod tests {
     #[test]
     fn newer_database_is_rejected() {
         let connection = Connection::open_in_memory().unwrap();
-        connection.pragma_update(None, "user_version", 18).unwrap();
+        connection.pragma_update(None, "user_version", 19).unwrap();
         assert_eq!(
             migrate(&connection).unwrap_err(),
             "本地领域数据库版本高于当前应用支持范围"
         );
+    }
+
+    #[test]
+    fn shared_asset_registration_is_idempotent_and_preserves_team_fields() {
+        let root = tempdir().unwrap();
+        let database = root.path().join("bandi.db");
+        let original = TeamDtoV4 {
+            id: PERSONAL_TEAM_ID.into(),
+            name: "个人空间".into(),
+            mark: Some("P".into()),
+            color: Some("#20201f".into()),
+            mission: Some("保持专注".into()),
+            boundary: Some("仅个人资产".into()),
+            member_agent_ids: Vec::new(),
+            shared_asset_ids: Vec::new(),
+        };
+        save_team_v4_at(&database, original.clone()).unwrap();
+        register_shared_asset_at(&database, PERSONAL_TEAM_ID, "skill-review").unwrap();
+        register_shared_asset_at(&database, PERSONAL_TEAM_ID, "skill-review").unwrap();
+
+        let saved = load_long_term_domain_snapshot_v4_at(&database)
+            .unwrap()
+            .teams
+            .into_iter()
+            .find(|team| team.id == PERSONAL_TEAM_ID)
+            .unwrap();
+        assert_eq!(saved.name, original.name);
+        assert_eq!(saved.mark, original.mark);
+        assert_eq!(saved.color, original.color);
+        assert_eq!(saved.mission, original.mission);
+        assert_eq!(saved.boundary, original.boundary);
+        assert_eq!(saved.member_agent_ids, original.member_agent_ids);
+        assert_eq!(saved.shared_asset_ids, vec!["skill-review"]);
     }
 
     #[test]

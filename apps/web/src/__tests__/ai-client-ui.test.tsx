@@ -2,9 +2,10 @@
 
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AiClientLaunchAction } from '../components/ai-clients'
+import { AiClientIcon, AiClientLaunchAction } from '../components/ai-clients'
+import { aiClients } from '../mock'
 import { GlobalSheets } from '../sheets'
 import { AppProvider, initialState, useApp, type State } from '../state'
 
@@ -15,23 +16,16 @@ vi.mock('../desktop-bridge', () => ({
   listAgents: () => Promise.resolve({ agents: [], diagnostics: [] }),
   listAgentRecoveryOperations: () => Promise.resolve([]),
   loadLongTermDomainSnapshotV4: () => Promise.resolve({ schemaVersion: 4, teams: [], taskBriefs: [] }),
-  loadToolConfiguration: () => Promise.resolve({ revision: 0, selectedPlanId: 'default', builtInToolIds: [], plans: [{ id: 'default', name: '默认方案', toolIds: [] }], customTools: [] }),
   requestClientLaunchV3: desktopBridge.requestClientLaunchV3,
 }))
 
 function Harness({ agentId }: { agentId?: string }) {
   const { state } = useApp()
-  const location = useLocation()
-  return <><AiClientLaunchAction agentId={agentId} />{state.notice && <output>{state.notice.title} {state.notice.description}</output>}<output aria-label="当前地址">{location.pathname}{location.search}</output><GlobalSheets /></>
+  return <><AiClientLaunchAction agentId={agentId} />{state.notice && <output>{state.notice.title} {state.notice.description}</output>}<GlobalSheets /></>
 }
 
-function renderLaunch(clientIds: string[], overrides: Partial<State> = {}, agentId?: string) {
-  const state: State = {
-    ...initialState,
-    ...overrides,
-    onboarding: { status: 'completed' },
-    configurationEnvironments: initialState.configurationEnvironments.map((item) => item.id === 'personal' ? { ...item, clientIds } : item),
-  }
+function renderLaunch(overrides: Partial<State> = {}, agentId?: string) {
+  const state: State = { ...initialState, ...overrides, onboarding: { status: 'completed' } }
   return render(<MemoryRouter><AppProvider initialState={state}><Harness agentId={agentId} /></AppProvider></MemoryRouter>)
 }
 
@@ -44,19 +38,34 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('AI 编程工具界面', () => {
-  it('不支持上下文启动的工具直接打开配置', () => {
-    renderLaunch(['claude-desktop'])
+  it('固定九工具正常状态都显示本地 Logo', () => {
+    const { container } = render(<>{aiClients.map((client) => <AiClientIcon key={client.id} client={client} />)}</>)
 
-    fireEvent.click(screen.getByRole('button', { name: '查看 Claude Desktop 配置' }))
+    expect(container.querySelectorAll('img')).toHaveLength(9)
+    for (const client of aiClients) expect(screen.queryByText(client.shortName)).not.toBeInTheDocument()
+  })
 
-    expect(screen.getByLabelText('当前地址')).toHaveTextContent('/settings?section=tools')
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  it('单个 Logo 加载失败时独立回退到文字徽标', () => {
+    const { container } = render(<>{aiClients.map((client) => <AiClientIcon key={client.id} client={client} />)}</>)
+
+    fireEvent.error(container.querySelectorAll('img')[2])
+    expect(screen.getByText('CG')).toBeInTheDocument()
+    expect(container.querySelectorAll('img')).toHaveLength(8)
+  })
+
+  it('固定九工具都可进入上下文选择', () => {
+    renderLaunch()
+    fireEvent.click(screen.getByRole('button', { name: '选择 AI 编程工具' }))
+
+    expect(screen.getAllByRole('menuitem')).toHaveLength(10)
+    fireEvent.click(screen.getByRole('menuitem', { name: /Claude Desktop/ }))
+    expect(screen.getByRole('dialog', { name: '在 Claude Desktop 中继续' })).toBeInTheDocument()
   })
 
   it('无需求时仍可打开上下文面板', async () => {
-    renderLaunch(['claude-code'])
-
-    fireEvent.click(screen.getByRole('button', { name: '在 Claude Code 中继续' }))
+    renderLaunch()
+    fireEvent.click(screen.getByRole('button', { name: '选择 AI 编程工具' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Claude Code/ }))
 
     expect(screen.getByRole('dialog', { name: '在 Claude Code 中继续' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: '不附加需求' })).not.toBeInTheDocument()
@@ -70,40 +79,34 @@ describe('AI 编程工具界面', () => {
       { id: 'team-a', name: 'Team A', memberAgentIds: ['zhouce', 'songyan'], sharedAssetIds: [] },
       { id: 'team-b', name: 'Team B', memberAgentIds: ['zhiheng'], sharedAssetIds: [] },
     ]
-    const agents = initialState.agents.map((agent) => ({
-      ...agent,
-      teamId: agent.id === 'zhiheng' ? 'team-b' : 'team-a',
-    }))
-    renderLaunch(['claude-code'], { teams, agents })
-    fireEvent.click(screen.getByRole('button', { name: '在 Claude Code 中继续' }))
+    const agents = initialState.agents.map((agent) => ({ ...agent, teamId: agent.id === 'zhiheng' ? 'team-b' : 'team-a' }))
+    renderLaunch({ teams, agents })
+    fireEvent.click(screen.getByRole('button', { name: '选择 AI 编程工具' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Claude Code/ }))
 
     expect(await screen.findByRole('option', { name: '周策' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: '宋研' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: '知衡' })).not.toBeInTheDocument()
-
     fireEvent.change(screen.getByLabelText('1. Team'), { target: { value: 'team-b' } })
     expect(await screen.findByRole('option', { name: '知衡' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: '周策' })).not.toBeInTheDocument()
   })
 
-  it('Desktop 只提交 Team、Agent 与可选 TaskBrief ID', async () => {
+  it('Desktop 只提交稳定 ID 并显示启动请求结果', async () => {
     desktopBridge.desktop = true
     const agent = initialState.agents.find((item) => item.status === 'active')!
     const team = initialState.teams.find((item) => item.id === agent.teamId)!
     desktopBridge.requestClientLaunchV3.mockResolvedValue({
       clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', terminalId: 'terminal', intent: 'start_with_context', teamId: team.id, agentId: agent.id,
-      capability: { status: 'supported', reason: '上下文已准备', evidence: [], remediation: [] }, outcome: 'context_prepared',
+      capability: { status: 'supported', reason: '启动请求已提交', evidence: [], remediation: [] }, outcome: 'terminal_launch_requested', contextDelivery: 'initial_prompt',
     })
-    renderLaunch(['claude-code'], { teams: [team] }, agent.id)
-    fireEvent.click(screen.getByRole('button', { name: '在 Claude Code 中继续' }))
-    fireEvent.click(await screen.findByRole('button', { name: '准备上下文' }))
+    renderLaunch({ teams: [team] }, agent.id)
+    fireEvent.click(screen.getByRole('button', { name: '选择 AI 编程工具' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Claude Code/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动' }))
 
     await waitFor(() => expect(desktopBridge.requestClientLaunchV3).toHaveBeenCalledWith({
-      clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', terminalId: 'terminal', intent: 'start_with_context', teamId: team.id, agentId: agent.id,
-      taskId: undefined,
+      clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', terminalId: 'terminal', intent: 'start_with_context', teamId: team.id, agentId: agent.id, taskId: undefined,
     }))
-    expect(await screen.findByText(/上下文已准备/)).toBeInTheDocument()
+    expect(await screen.findByText(/启动请求已发送/)).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
-
 })

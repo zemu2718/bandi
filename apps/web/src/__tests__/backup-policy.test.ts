@@ -17,13 +17,6 @@ describe('备份策略', () => {
     expect(buildBackupPreview(context, { kind: 'files', paths: [] })).toBeUndefined()
   })
 
-  it('仅全部配置包含 Bandi 配置方案元数据', () => {
-    expect(buildBackupPreview(context, { kind: 'all' })?.includes).toContain('Bandi 配置方案元数据')
-    expect(buildBackupPreview(context, { kind: 'team', teamId: 'xinghe' })?.includes).not.toContain('Bandi 配置方案元数据')
-    expect(buildBackupPreview(context, { kind: 'agent', agentId: 'zhouce' })?.includes).not.toContain('Bandi 配置方案元数据')
-    expect(buildBackupPreview(context, { kind: 'files', paths: ['agent.yaml'] })?.includes).not.toContain('Bandi 配置方案元数据')
-  })
-
   it('固定排除敏感和执行数据', () => {
     const preview = buildBackupPreview(context, { kind: 'all' })!
     expect(preview.excludes).toEqual(NEVER_BACKED_UP)

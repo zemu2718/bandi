@@ -1,25 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { initialState, reducer } from '../state'
-import type { AiClient } from '../mock'
-import type { ConfigurationEnvironment } from '../domain'
 import { buildBackupPreview, createDemoSnapshot } from '../backup-policy'
-
-const customClient: AiClient = {
-  id: 'custom-demo',
-  kind: 'custom',
-  name: 'Demo CLI',
-  shortName: 'DE',
-  description: '自定义演示客户端',
-  detection: 'not-checked',
-  persistence: 'memory-only',
-}
-
-const customEnvironment: ConfigurationEnvironment = {
-  id: 'test-environment',
-  name: '测试环境',
-  clientIds: ['claude-code', 'codex'],
-  evidence: 'memory-only',
-}
 
 describe('演示状态', () => {
   it('只保留未完成的 Agent 恢复摘要并在完成后移除', () => {
@@ -42,8 +23,6 @@ describe('演示状态', () => {
   })
 
   it('包含九个唯一内置客户端和空的会话最近 Agent', () => {
-    expect(initialState.currentConfigurationEnvironmentId).toBe('personal')
-    expect(initialState.configurationEnvironments[0]).toMatchObject({ id: 'personal', name: '个人配置' })
     expect(initialState.aiClients.map((client) => client.id)).toEqual([
       'claude-code',
       'claude-desktop',
@@ -157,6 +136,7 @@ describe('演示状态', () => {
     expect(initialState.onboarding).toEqual({ status: 'active' })
     const completed = reducer(initialState, { type: 'COMPLETE_ONBOARDING' })
     expect(completed.onboarding).toEqual({ status: 'completed' })
+    expect(completed.uiPreferences.firstUseTeamSetupDismissed).toBe(true)
     expect(completed).not.toBe(initialState)
     expect(initialState.onboarding).toEqual({ status: 'active' })
     expect(reducer(completed, { type: 'COMPLETE_ONBOARDING' })).toBe(completed)
@@ -236,42 +216,6 @@ describe('演示状态', () => {
     expect(result.configRevisions[0].restoredFromRevisionId).toBeUndefined()
   })
 
-  it('创建配置环境并统一切换，切换本身不生成版本', () => {
-    const created = reducer(initialState, { type: 'CREATE_CONFIGURATION_ENVIRONMENT', environment: customEnvironment })
-    expect(created.configurationEnvironments.find((item) => item.id === customEnvironment.id)).toMatchObject(customEnvironment)
-    expect(created.currentConfigurationEnvironmentId).toBe(customEnvironment.id)
-    expect(created.configRevisions[0]).toMatchObject({ ownerType: 'configuration-environment', ownerId: customEnvironment.id, path: 'configuration-environments/test-environment.yaml' })
-    const switched = reducer(created, { type: 'SELECT_CONFIGURATION_ENVIRONMENT', environmentId: 'personal' })
-    expect(switched.currentConfigurationEnvironmentId).toBe('personal')
-    expect(switched.configRevisions).toBe(created.configRevisions)
-  })
-
-  it('复制方案后可独立修改工具登记', () => {
-    const copied = reducer(initialState, { type: 'CREATE_CONFIGURATION_ENVIRONMENT', environment: { ...customEnvironment, clientIds: [] }, sourceEnvironmentId: 'team-demo' })
-    const copy = copied.configurationEnvironments.find((item) => item.id === customEnvironment.id)!
-    expect(copy.clientIds).toEqual(['claude-code', 'codex'])
-    const changed = reducer(copied, { type: 'SET_ENVIRONMENT_CLIENT_REGISTRATION', environmentId: customEnvironment.id, clientId: 'claude-code', registered: false })
-    expect(changed.configurationEnvironments.find((item) => item.id === customEnvironment.id)?.clientIds).toEqual(['codex'])
-    expect(changed.configurationEnvironments.find((item) => item.id === 'team-demo')?.clientIds).toEqual(['claude-code', 'codex'])
-  })
-
-  it('拒绝重名配置方案并保持现有方案不变', () => {
-    const personal = initialState.configurationEnvironments.find((item) => item.id === 'personal')!
-    const result = reducer(initialState, { type: 'SAVE_CONFIGURATION_ENVIRONMENT', environment: { ...personal, name: '  团队配置（演示）  ' } })
-    expect(result.configurationEnvironments).toBe(initialState.configurationEnvironments)
-    expect(result.configRevisions).toBe(initialState.configRevisions)
-    expect(result.notice?.title).toBe('无法记录配置方案')
-  })
-
-  it('恢复配置环境历史时生成新版本并记录来源', () => {
-    const first = reducer(initialState, { type: 'SAVE_CONFIGURATION_ENVIRONMENT', environment: customEnvironment })
-    const changed = reducer(first, { type: 'SAVE_CONFIGURATION_ENVIRONMENT', environment: { ...customEnvironment, name: '已修改环境' } })
-    const target = first.configRevisions[0]
-    const restored = reducer(changed, { type: 'RESTORE_CONFIG_REVISION', revisionId: target.id })
-    expect(restored.configurationEnvironments.find((item) => item.id === customEnvironment.id)?.name).toBe(customEnvironment.name)
-    expect(restored.configRevisions[0].restoredFromRevisionId).toBe(target.id)
-  })
-
   it('按首次访问顺序记录 Agent、重复访问保持排序并限制为六项', () => {
     const extraAgents = Array.from({ length: 3 }, (_, index) => ({
       ...initialState.agents[0], id: `extra-${index}`, name: `额外 ${index}`,
@@ -297,18 +241,6 @@ describe('演示状态', () => {
     expect(cleared.recentAgentIds).toEqual([])
     expect(cleared.uiPreferences).toBe(state.uiPreferences)
     expect(reducer(cleared, { type: 'CLEAR_RECENT_AGENTS' })).toBe(cleared)
-  })
-
-  it('添加自定义客户端只登记配置对象，且拒绝重复 ID 或名称', () => {
-    const added = reducer(initialState, { type: 'ADD_CUSTOM_AI_CLIENT', client: customClient })
-    const duplicateId = reducer(added, { type: 'ADD_CUSTOM_AI_CLIENT', client: customClient })
-    const duplicateName = reducer(added, { type: 'ADD_CUSTOM_AI_CLIENT', client: { ...customClient, id: 'custom-other', name: '  demo cli  ' } })
-    expect(added.aiClients).toHaveLength(initialState.aiClients.length + 1)
-    expect(added.aiClients.at(-1)).toMatchObject({ id: customClient.id, name: customClient.name, persistence: 'memory-only' })
-    expect(added.recentAgentIds).toEqual([])
-    expect(added.notice?.description).toContain('当前页面')
-    expect(duplicateId).toBe(added)
-    expect(duplicateName).toBe(added)
   })
 
   it('Desktop 拒绝技能与插件模拟操作', () => {

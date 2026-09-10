@@ -5,7 +5,7 @@ import type { ClaudeAgentPreviewDto } from '../../contracts'
 const toolNames: Record<BuiltInClientId, string> = {
   'claude-code': 'Claude Code',
   'claude-desktop': 'Claude Desktop',
-  codex: 'Codex',
+  codex: 'ChatGPT',
   'gemini-cli': 'Gemini CLI',
   'grok-build': 'Grok Build',
   opencode: 'OpenCode',

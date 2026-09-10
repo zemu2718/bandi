@@ -2,6 +2,8 @@ import Ajv2020 from 'ajv/dist/2020'
 import addFormats from 'ajv-formats'
 import { describe, expect, it } from 'vitest'
 import assetReferenceFixture from '../../../../packages/contracts/fixtures/asset-reference-graph.valid.json'
+import invalidAiToolHostFixture from '../../../../packages/contracts/fixtures/ai-tool-host.invalid.json'
+import aiToolHostFixture from '../../../../packages/contracts/fixtures/ai-tool-host.valid.json'
 import backupFixture from '../../../../packages/contracts/fixtures/backup-local.valid.json'
 import invalidClientLaunchV3 from '../../../../packages/contracts/fixtures/client-launch-v3.invalid.json'
 import validClientLaunchV3 from '../../../../packages/contracts/fixtures/client-launch-v3.valid.json'
@@ -10,6 +12,7 @@ import memoryV4Fixture from '../../../../packages/contracts/fixtures/formal-memo
 import invalidTeamV4Fixture from '../../../../packages/contracts/fixtures/team-snapshot-v4.invalid.json'
 import teamV4Fixture from '../../../../packages/contracts/fixtures/team-snapshot-v4.valid.json'
 import assetReferenceSchema from '../../../../packages/contracts/schemas/asset-reference-graph.schema.json'
+import aiToolHostSchema from '../../../../packages/contracts/schemas/ai-tool-host.schema.json'
 import backupSchema from '../../../../packages/contracts/schemas/backup-local.schema.json'
 import clientLaunchV3Schema from '../../../../packages/contracts/schemas/client-launch-v3.schema.json'
 import memoryV4Schema from '../../../../packages/contracts/schemas/formal-memory-v4.schema.json'
@@ -24,6 +27,7 @@ function validator(schema: object) {
 describe('共享 JSON Schema', () => {
   it.each([
     ['共享资产引用图', assetReferenceSchema, assetReferenceFixture],
+    ['AI 工具主机请求', aiToolHostSchema, aiToolHostFixture],
     ['本地备份', backupSchema, backupFixture],
   ])('%s 的有效 fixture 通过 Draft 2020-12 校验', (_name, schema, fixture) => {
     const validate = validator(schema)
@@ -41,6 +45,7 @@ describe('共享 JSON Schema', () => {
 
   it.each([
     ['Team 快照 v4', teamV4Schema, invalidTeamV4Fixture],
+    ['AI 工具主机请求', aiToolHostSchema, invalidAiToolHostFixture],
     ['正式记忆 v4', memoryV4Schema, invalidMemoryV4Fixture],
     ['客户端启动 v3', clientLaunchV3Schema, invalidClientLaunchV3],
   ])('%s 拒绝无效 fixture', (_name, schema, fixture) => {

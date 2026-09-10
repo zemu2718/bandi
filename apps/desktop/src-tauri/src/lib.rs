@@ -13,6 +13,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod agent_service;
 mod ai_adapters;
+mod ai_tool_host;
 mod backup_service;
 mod claude_agent_import;
 pub mod cli_service;
@@ -25,7 +26,6 @@ mod local_service;
 mod memory_service;
 mod memory_target;
 mod shared_assets;
-mod tool_configuration;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -408,76 +408,6 @@ fn allocate_agent_id(request_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn load_tool_configuration(
-    app: tauri::AppHandle,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    tool_configuration::load_snapshot_at(&domain_database_path(&app)?)
-}
-
-#[tauri::command]
-fn save_tool_plan(
-    app: tauri::AppHandle,
-    request: tool_configuration::SaveToolPlanRequest,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    tool_configuration::save_plan_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn create_tool_plan(
-    app: tauri::AppHandle,
-    request: tool_configuration::CreateToolPlanRequest,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    tool_configuration::create_plan_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn copy_tool_plan(
-    app: tauri::AppHandle,
-    request: tool_configuration::CopyToolPlanRequest,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    tool_configuration::copy_plan_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn delete_tool_plan(
-    app: tauri::AppHandle,
-    request: tool_configuration::PlanMutationRequest,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    tool_configuration::delete_plan_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn select_tool_plan(
-    app: tauri::AppHandle,
-    request: tool_configuration::PlanMutationRequest,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    tool_configuration::select_plan_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn save_custom_tool(
-    app: tauri::AppHandle,
-    request: tool_configuration::SaveCustomToolRequest,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    tool_configuration::save_custom_tool_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
-fn delete_custom_tool(
-    app: tauri::AppHandle,
-    request: tool_configuration::DeleteCustomToolRequest,
-) -> Result<tool_configuration::ToolConfigurationSnapshotDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    tool_configuration::delete_custom_tool_at(&domain_database_path(&app)?, request)
-}
-
-#[tauri::command]
 fn discover_config(
     app: tauri::AppHandle,
     request: local_service::DiscoveryRequest,
@@ -495,6 +425,133 @@ fn discover_config(
         true,
         request,
     ))
+}
+
+#[tauri::command]
+fn create_shared_asset(
+    app: tauri::AppHandle,
+    request: shared_assets::CreateSharedAssetRequest,
+) -> Result<shared_assets::SharedAssetMutationResult, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    shared_assets::create_at(
+        &domain_database_path(&app)?,
+        &shared_assets_root(&app)?,
+        &revisions_root(&app)?.join("shared-assets"),
+        request,
+        shared_assets::SharedAssetSourceDto::Authored,
+    )
+}
+
+#[tauri::command]
+fn select_shared_asset_import(
+    app: tauri::AppHandle,
+    request: shared_assets::SelectSharedAssetImportRequest,
+) -> Result<Option<shared_assets::SharedAssetImportPreviewDto>, String> {
+    let Some(selected) = app.dialog().file().blocking_pick_file() else {
+        return Ok(None);
+    };
+    let path = selected
+        .into_path()
+        .map_err(|_| "SHARED_ASSET_SOURCE_INVALID: 选择结果不是本机文件".to_string())?;
+    shared_assets::preview_import_at(path, request).map(Some)
+}
+
+#[tauri::command]
+fn commit_shared_asset_import(
+    app: tauri::AppHandle,
+    request: shared_assets::CommitSharedAssetImportRequest,
+) -> Result<shared_assets::SharedAssetMutationResult, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    shared_assets::commit_import_at(
+        &domain_database_path(&app)?,
+        &shared_assets_root(&app)?,
+        &revisions_root(&app)?.join("shared-assets"),
+        request,
+    )
+}
+
+#[tauri::command]
+fn load_shared_asset_editor(
+    app: tauri::AppHandle,
+    request: shared_assets::SharedAssetIdentityRequest,
+) -> Result<shared_assets::SharedAssetEditorDto, String> {
+    let snapshot =
+        domain_store::load_long_term_domain_snapshot_v4_at(&domain_database_path(&app)?)?;
+    shared_assets::load_editor_at(
+        &shared_assets_root(&app)?,
+        &revisions_root(&app)?.join("shared-assets"),
+        &snapshot,
+        request,
+    )
+}
+
+#[tauri::command]
+fn save_shared_asset(
+    app: tauri::AppHandle,
+    request: shared_assets::SaveSharedAssetRequest,
+) -> Result<shared_assets::SharedAssetMutationResult, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    let database = domain_database_path(&app)?;
+    let snapshot = domain_store::load_long_term_domain_snapshot_v4_at(&database)?;
+    let managed = managed_agent_dir(&app, "probe")?
+        .parent()
+        .ok_or_else(|| "AGENT_STORAGE_UNAVAILABLE: Agent 根目录无效".to_string())?
+        .to_path_buf();
+    let discovery = local_service::discover_with_shared_at(
+        &managed,
+        &shared_assets_root(&app)?,
+        &snapshot,
+        true,
+        local_service::DiscoveryRequest {
+            request_id: request.request_id.clone(),
+            include_claude_user_root: false,
+        },
+    );
+    let mut affected_agent_ids = discovery
+        .references
+        .iter()
+        .filter(|reference| reference.target_asset_id == request.asset_id)
+        .map(|reference| reference.referrer_id.clone())
+        .collect::<Vec<_>>();
+    affected_agent_ids.sort();
+    affected_agent_ids.dedup();
+    shared_assets::save_at(
+        &shared_assets_root(&app)?,
+        &revisions_root(&app)?.join("shared-assets"),
+        &snapshot,
+        request,
+        affected_agent_ids,
+    )
+}
+
+#[tauri::command]
+fn repair_shared_asset_registration(
+    app: tauri::AppHandle,
+    request: shared_assets::SharedAssetIdentityRequest,
+) -> Result<shared_assets::SharedAssetMutationResult, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    shared_assets::repair_registration_at(
+        &domain_database_path(&app)?,
+        &shared_assets_root(&app)?,
+        &revisions_root(&app)?.join("shared-assets"),
+        request,
+    )
+}
+
+#[tauri::command]
+fn recover_shared_asset_revision(
+    app: tauri::AppHandle,
+    request: shared_assets::RecoverSharedAssetRevisionRequest,
+) -> Result<shared_assets::SharedAssetMutationResult, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    let snapshot =
+        domain_store::load_long_term_domain_snapshot_v4_at(&domain_database_path(&app)?)?;
+    shared_assets::recover_revision_at(
+        &shared_assets_root(&app)?,
+        &revisions_root(&app)?.join("shared-assets"),
+        &snapshot,
+        request,
+    )
 }
 
 #[tauri::command]
@@ -787,13 +844,42 @@ fn reveal_host_directory(
 }
 
 #[tauri::command]
+fn list_ai_tool_host_statuses(
+    app: tauri::AppHandle,
+) -> Result<Vec<ai_tool_host::AiToolHostStatusDto>, String> {
+    Ok(ai_tool_host::list_at(&app.path().home_dir().map_err(
+        |_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录",
+    )?))
+}
+
+#[tauri::command]
+fn open_ai_tool_install_page(
+    request: ai_tool_host::AiToolHostRequest,
+) -> Result<ai_tool_host::AiToolHostActionResultDto, String> {
+    ai_tool_host::open_install_page(request)
+}
+
+#[tauri::command]
+fn reveal_ai_tool_config_location(
+    app: tauri::AppHandle,
+    request: ai_tool_host::AiToolHostRequest,
+) -> Result<ai_tool_host::AiToolHostActionResultDto, String> {
+    ai_tool_host::reveal_config(
+        &app.path()
+            .home_dir()
+            .map_err(|_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
 fn request_client_launch_v3(
     app: tauri::AppHandle,
     request: ai_adapters::ClientLaunchRequestV3,
 ) -> Result<ai_adapters::ClientLaunchResultV3, String> {
     let database = domain_database_path(&app)?;
     let agents_root = managed_agents_root(&app)?;
-    ai_adapters::prepare_context(request, |context| {
+    ai_adapters::request_launch(request, |context| {
         domain_store::validate_client_launch_context_at(
             &database,
             &agents_root,
@@ -1010,6 +1096,17 @@ fn validate_agent_package_files(files: &[AgentPackageFile]) -> Result<(), String
     Ok(())
 }
 
+const AGENT_FUNCTION_IDS: &[&str] = &[
+    "product",
+    "design",
+    "engineering",
+    "testing",
+    "research",
+    "operations",
+    "general",
+    "other",
+];
+
 fn validate_agent_record(
     agent_id: &str,
     agent: &serde_json::Value,
@@ -1043,6 +1140,13 @@ fn validate_agent_record(
         .ok_or_else(|| "INVALID_AGENT_RECORD: Agent 名称必须是字符串".to_string())?;
     agent_service::validate_agent_name(name)
         .map_err(|message| format!("INVALID_AGENT_RECORD: {message}"))?;
+    if object.get("functionId").is_some_and(|value| {
+        value
+            .as_str()
+            .is_none_or(|function_id| !AGENT_FUNCTION_IDS.contains(&function_id))
+    }) {
+        return Err("INVALID_AGENT_RECORD: Agent 职能标识不受支持".into());
+    }
     let avatar = object.get("avatarPath").and_then(serde_json::Value::as_str);
     if avatar.is_some_and(|value| value != "avatar.png")
         || has_avatar != (avatar == Some("avatar.png"))
@@ -1742,6 +1846,7 @@ fn agent_record_for_manifest(
         "teamId",
         "avatarPath",
         "mission",
+        "functionId",
         "responsibilities",
         "deliverables",
         "decisionBoundaries",
@@ -2928,14 +3033,6 @@ pub fn run() {
             remove_task_brief_v4,
             generate_entity_id,
             allocate_agent_id,
-            load_tool_configuration,
-            save_tool_plan,
-            create_tool_plan,
-            copy_tool_plan,
-            delete_tool_plan,
-            select_tool_plan,
-            save_custom_tool,
-            delete_custom_tool,
             discover_memory_spaces,
             load_memory,
             save_memory,
@@ -2949,6 +3046,13 @@ pub fn run() {
             preview_backup_restore,
             restore_backup_snapshot,
             discover_config,
+            create_shared_asset,
+            select_shared_asset_import,
+            commit_shared_asset_import,
+            load_shared_asset_editor,
+            save_shared_asset,
+            repair_shared_asset_registration,
+            recover_shared_asset_revision,
             load_config_editor,
             list_config_revisions,
             read_config_revision_content,
@@ -2961,6 +3065,9 @@ pub fn run() {
             preview_host_integration_uninstall,
             commit_host_integration_uninstall,
             reveal_host_directory,
+            list_ai_tool_host_statuses,
+            open_ai_tool_install_page,
+            reveal_ai_tool_config_location,
             request_client_launch_v3,
             import_ui_asset,
             read_ui_asset,

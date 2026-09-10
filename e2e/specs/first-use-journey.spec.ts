@@ -147,14 +147,20 @@ async function assertPersistedFacts(session: WebdriverIO.Browser) {
       taskId: taskBriefId,
     },
   })
-  expect(launch).toMatchObject({ teamId, agentId: workerAgentId, taskId: taskBriefId, outcome: 'context_prepared' })
+  expect(launch).toMatchObject({
+    teamId,
+    agentId: workerAgentId,
+    taskId: taskBriefId,
+    outcome: 'terminal_launch_requested',
+    contextDelivery: 'initial_prompt',
+  })
   expect(launch.acceptedAt).toBeUndefined()
-  expect(launch.capability.evidence).toContain('仅复核 Team、Agent 与可选 TaskBrief，未访问目录或调用外部进程')
+  expect(launch.capability.evidence).toContain('Team、Agent 与可选 TaskBrief 已由后端重取并复核')
 
   await session.execute((id: string) => { window.location.hash = `#/agents/${id}` }, workerAgentId)
   await expect(session.$(`button[aria-label="切换 Team，当前为${teamName}"]`)).toBeDisplayed()
   await session.execute(() => { window.location.hash = '#/agents' })
-  await expect(session.$('h1=先新建或导入一个长期 Agent')).not.toExist()
+  await expect(session.$('h1=建立你的长期 Agent Team')).not.toExist()
   expect(await session.$('body').getText()).not.toContain('知衡')
   await expect(session.$('h1=Agent')).toBeDisplayed()
   await session.waitUntil(
@@ -175,7 +181,10 @@ describe('Desktop 首次使用真实闭环', () => {
       return
     }
 
-    await expect(browser.$('h1=先新建或导入一个长期 Agent')).toBeDisplayed()
+    await browser.execute(() => localStorage.removeItem('bandi-ui-preferences-v1'))
+    await browser.refresh()
+    await expect(browser.$('h1=建立你的长期 Agent Team')).toBeDisplayed()
+    await expect(browser.$('button=创建产品研发团队')).toBeDisplayed()
 
     await invoke(browser, 'save_team_v4', { team })
     await createAgent(browser, managerAgentId, managerAgentName)

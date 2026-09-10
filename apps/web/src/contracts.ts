@@ -365,7 +365,35 @@ export type ClientLaunchResultV3 = RequestClientLaunchV3 & {
     evidence: string[]
     remediation: string[]
   }
-  outcome: 'context_prepared'
+  outcome: 'terminal_launch_requested' | 'application_launch_requested' | 'manual_context_required'
+  contextDelivery: 'initial_prompt' | 'manual_copy' | 'none'
+  manualPrompt?: string
+}
+
+export type AiToolAvailability = 'installed' | 'not_found' | 'unsupported_platform' | 'detection_failed'
+export type AiToolContextMode = 'initial_prompt' | 'manual_context' | 'unavailable'
+
+export type AiToolHostStatusDto = {
+  toolId: import('./client-adapters').BuiltInClientId
+  availability: AiToolAvailability
+  contextMode: AiToolContextMode
+  configLocationLabel: string
+  canRevealConfig: boolean
+  canOpenOfficialInstallPage: boolean
+  reasonCode: string
+}
+
+export type AiToolHostRequest = {
+  toolId: import('./client-adapters').BuiltInClientId
+  requestId: Id
+}
+
+export type OpenAiToolInstallPageResultDto = AiToolHostRequest & {
+  outcome: 'open_requested'
+}
+
+export type RevealAiToolConfigLocationResultDto = AiToolHostRequest & {
+  outcome: 'revealed'
 }
 
 export type FormalMemoryScopeType = 'agent_long_term'
@@ -502,16 +530,90 @@ export type DiscoveryRequest = {
 }
 
 export type SharedAssetKind = 'rule' | 'skill' | 'mcp' | 'sop' | 'hook' | 'command' | 'output_profile'
+export type ManageableSharedAssetKind = Extract<SharedAssetKind, 'rule' | 'skill' | 'mcp' | 'sop'>
+
+export type SharedAssetSourceDto =
+  | { kind: 'authored' }
+  | { kind: 'imported'; fileName: string; importedHash: ContentHash; importedAt: Timestamp }
+  | { kind: 'legacy' }
 
 export type SharedAssetNodeDto = {
   id: Id
+  name: string
   kind: SharedAssetKind | 'unknown'
   teamId: Id
   locator: AssetLocatorDto
   contentHash: ContentHash
+  containerContentHash: ContentHash
+  writable: boolean
+  source: SharedAssetSourceDto
+  currentRevisionId?: Id
   parseStatus: 'parsed' | 'invalid'
   diagnostics: Diagnostic[]
 }
+
+export type SharedAssetWriteState = 'verified_written_registration_pending' | 'verified_written_revision_pending'
+
+export type SharedAssetMutationResult =
+  | { kind: 'saved'; requestId: Id; asset: SharedAssetNodeDto; revision: ConfigRevisionDto; writeReceipt: WriteReceiptDto }
+  | { kind: 'registration_pending'; requestId: Id; asset: SharedAssetNodeDto; fileState: 'verified_written_registration_pending'; diagnostics?: Diagnostic[] }
+  | { kind: 'revision_pending'; requestId: Id; asset: SharedAssetNodeDto; fileState: 'verified_written_revision_pending'; recoveryRef: Id; diagnostics?: Diagnostic[] }
+
+export type SaveSharedAssetResult =
+  | Exclude<SaveConfigResult, { kind: 'confirmation_required' }>
+  | (Extract<SaveConfigResult, { kind: 'confirmation_required' }> & { affectedAgentIds?: Id[] })
+
+export type CreateSharedAssetRequest = {
+  requestId: Id
+  teamId: Id
+  assetId: Id
+  name: string
+  kind: ManageableSharedAssetKind
+  content: string
+}
+
+export type SharedAssetImportPreviewDto = {
+  requestId: Id
+  previewRef: Id
+  expiresAt: Timestamp
+  fileName: string
+  kind: ManageableSharedAssetKind
+  size: number
+  sourceHash: ContentHash
+  suggestedName: string
+  suggestedId: Id
+  diagnostics: Diagnostic[]
+}
+
+export type CommitSharedAssetImportRequest = {
+  requestId: Id
+  previewRef: Id
+  expectedSourceHash: ContentHash
+  teamId: Id
+  assetId: Id
+  name: string
+  confirmed: boolean
+}
+
+export type SharedAssetEditorDto = {
+  requestId: Id
+  asset: SharedAssetNodeDto
+  canonicalContent: string
+  baselineRef: BaselineRefDto
+  currentRevisionId?: Id
+}
+
+export type SaveSharedAssetRequest = {
+  requestId: Id
+  assetId: Id
+  expectedBaseline: BaselineRefDto
+  baseContent: string
+  proposedContent: string
+  confirmationRef?: Id
+}
+
+export type RepairSharedAssetRegistrationRequest = { requestId: Id; assetId: Id }
+export type RecoverSharedAssetRevisionRequest = { requestId: Id; assetId: Id; recoveryRef: Id }
 
 export type AssetReferenceDto = {
   sourceAssetId: Id

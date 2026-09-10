@@ -9,6 +9,7 @@ import { TaskBriefsPage } from './pages/tasks/task-briefs-page'
 import { AssetDetailPage, AssetsPage } from './pages/assets/asset-pages'
 import { SkillsPage } from './pages/assets/skills-page'
 import { SettingsPage } from './pages/settings/settings-pages'
+import { ToolsPage } from './pages/tools/tools-page'
 import { GuidePage } from './pages/guide-page'
 import { NotFoundPage } from './pages/not-found-page'
 import { RouteErrorPage } from './pages/route-error-page'
@@ -28,10 +29,10 @@ export const router = createHashRouter([{
     { path: 'assets', element: <AssetsPage /> },
     { path: 'assets/skills', element: <SkillsPage /> },
     { path: 'assets/:id', element: <AssetDetailPage /> },
+    { path: 'tools', element: <ToolsPage /> },
     { path: 'settings', element: <SettingsPage /> },
-    { path: 'guide', element: <GuidePage /> },
-    { path: 'settings/claude-code', element: <Navigate to="/settings?section=tools" replace /> },
     { path: 'settings/backup', element: <Navigate to="/settings?section=recovery" replace /> },
+    { path: 'guide', element: <GuidePage /> },
     { path: '*', element: <NotFoundPage /> },
   ],
 }])

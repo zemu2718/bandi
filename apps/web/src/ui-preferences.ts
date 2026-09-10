@@ -39,6 +39,7 @@ export type UiPreferences = {
   shellLabel?: string
   logoAsset?: LocalUiAssetRef
   backgroundAsset?: LocalUiAssetRef
+  firstUseTeamSetupDismissed: boolean
 }
 
 export const DEFAULT_UI_PREFERENCES: UiPreferences = {
@@ -54,6 +55,7 @@ export const DEFAULT_UI_PREFERENCES: UiPreferences = {
   backgroundFit: 'cover',
   backgroundDim: 36,
   terminal: 'terminal',
+  firstUseTeamSetupDismissed: false,
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -102,6 +104,9 @@ export function parseUiPreferences(value: unknown): UiPreferences {
     shellLabel: normalizeShellLabel(value.shellLabel),
     logoAsset: parseAssetRef(value.logoAsset, 'logo'),
     backgroundAsset: parseAssetRef(value.backgroundAsset, 'background'),
+    firstUseTeamSetupDismissed: typeof value.firstUseTeamSetupDismissed === 'boolean'
+      ? value.firstUseTeamSetupDismissed
+      : DEFAULT_UI_PREFERENCES.firstUseTeamSetupDismissed,
   }
 }
 

@@ -29,7 +29,7 @@ export type ConfigStatus = {
 
 type SelectorState = {
   runtime: 'web' | 'desktop'
-  hydration: Record<'managedAgents' | 'organization' | 'sharedAssets' | 'agentRecovery' | 'toolConfiguration', 'idle' | 'loading' | 'succeeded' | 'failed'>
+  hydration: Record<'managedAgents' | 'organization' | 'sharedAssets' | 'agentRecovery', 'idle' | 'loading' | 'succeeded' | 'failed'>
   onboarding: { status: 'active' | 'completed' }
   agents: FullAgent[]
   teams: TeamDto[]
@@ -130,7 +130,7 @@ export function getConfigurationStatusSummary(state: SelectorState): Configurati
   if (state.runtime === 'desktop' && Object.values(state.hydration).some((status) => status === 'failed')) return { phase: 'failed', items }
   if (items.length) return { phase: 'pending', items }
   if (state.runtime === 'desktop' && Object.values(state.hydration).some((status) => status === 'loading')) return { phase: 'loading', items }
-  if (state.onboarding.status === 'active' || !state.agents.length) return { phase: 'first-use', items }
+  if (state.onboarding.status === 'active' && !state.agents.length) return { phase: 'first-use', items }
   return { phase: 'healthy', items }
 }
 

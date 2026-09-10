@@ -7,6 +7,7 @@ import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { Shell } from '../shell'
 import { EditorSessionProvider } from '../editor-session'
 import { NotFoundPage } from '../pages/not-found-page'
+import { GuidePage } from '../pages/guide-page'
 import { PageHeader } from '../components/app/page'
 import { Button } from '../components/ui/button'
 import { AppProvider, initialState, type State } from '../state'
@@ -76,7 +77,9 @@ function renderShell(
               <Route path="organization" element={<div>组织内容</div>} />
               <Route path="tasks" element={<><PageHeader title="需求池" description="任务说明" action={<Button>新建需求</Button>} /><div>任务内容</div></>} />
               <Route path="assets" element={<div>资产内容</div>} />
+              <Route path="tools" element={<div>AI 工具内容</div>} />
               <Route path="settings" element={<div>设置内容</div>} />
+              <Route path="guide" element={<GuidePage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Routes>
@@ -132,14 +135,15 @@ describe('应用壳导航布局', () => {
     const rail = screen.getByLabelText('Bandi 配置管理')
     const navigation = within(rail).getByRole('navigation', { name: '一级导航' })
 
-    for (const name of ['需求池', 'Agent', '配置资产']) {
+    for (const name of ['需求池', 'Agent', '配置资产', 'AI 工具']) {
       expect(within(navigation).getByRole('link', { name })).toBeInTheDocument()
     }
     expect(within(navigation).queryByRole('link', { name: '组织治理' })).not.toBeInTheDocument()
     expect(within(navigation).queryByRole('link', { name: /概览/ })).not.toBeInTheDocument()
     expect(within(navigation).queryByRole('link', { name: '项目' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toBeInTheDocument()
-    expect(within(rail).getByRole('button', { name: '切换到深色' })).toBeInTheDocument()
+    expect(within(rail).queryByRole('button', { name: '切换到深色' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { name: '全局工具' })).getByRole('button', { name: '切换到深色' })).toBeInTheDocument()
   })
 
   it('页面标题和主操作进入顶栏，正文不重复', () => {
@@ -151,6 +155,66 @@ describe('应用壳导航布局', () => {
     expect(within(header).getByText('任务说明')).toBeInTheDocument()
     expect(within(header).getByRole('button', { name: '新建需求' })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+
+  it('使用指南和设置固定在窗口顶栏，指南按当前页面显示相关主题', async () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/tasks')
+
+    const pageHeader = screen.getByRole('banner')
+    const rail = screen.getByLabelText('Bandi 配置管理')
+    const globalTools = screen.getByRole('navigation', { name: '全局工具' })
+    const titlebar = globalTools.parentElement
+    const sidebarButton = within(titlebar!).getByRole('button', { name: '收起侧栏' })
+    expect(titlebar?.querySelector('[data-tauri-drag-region]')).toBeEmptyDOMElement()
+    expect(titlebar).not.toHaveTextContent('需求池 · Bandi')
+    expect(within(rail).queryByRole('button', { name: /侧栏/ })).not.toBeInTheDocument()
+    expect(sidebarButton.compareDocumentPosition(globalTools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const guideButton = within(globalTools).getByRole('button', { name: '使用指南' })
+    const themeButton = within(globalTools).getByRole('button', { name: '切换到深色' })
+    const settingsLink = within(globalTools).getByRole('link', { name: '设置' })
+    expect(guideButton.compareDocumentPosition(themeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(themeButton.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(settingsLink).toHaveAttribute('href', '/settings')
+    expect(within(screen.getByLabelText('Bandi 配置管理')).queryByRole('link', { name: '设置' })).not.toBeInTheDocument()
+    expect(within(pageHeader).queryByRole('button', { name: '使用指南' })).not.toBeInTheDocument()
+    expect(within(pageHeader).getByRole('button', { name: '新建需求' })).toBeInTheDocument()
+
+    guideButton.focus()
+    fireEvent.click(guideButton)
+    expect(screen.getByRole('dialog')).toHaveTextContent('整理需求并在外部工具中继续')
+    expect(screen.getByRole('dialog')).toHaveTextContent('不关联 Agent，也不记录执行状态')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(guideButton).toHaveFocus()
+  })
+
+  it('可在指南弹窗中切换主题并进入相关页面', async () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/agents/zhouce')
+
+    fireEvent.click(screen.getByRole('button', { name: '使用指南' }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('维护 Agent 配置与长期记忆')
+    expect(within(within(dialog).getByRole('navigation', { name: '使用指南主题' })).getAllByRole('button')).toHaveLength(6)
+    expect(within(dialog).getByRole('button', { name: '配置与记忆' })).toHaveAttribute('aria-current', 'page')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '需求与 AI 工具' }))
+    expect(dialog).toHaveTextContent('整理需求并在外部工具中继续')
+    expect(within(dialog).getByRole('button', { name: '需求与 AI 工具' })).toHaveAttribute('aria-current', 'page')
+    fireEvent.click(within(dialog).getByRole('button', { name: '选择 AI 工具' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByText('AI 工具内容')).toBeInTheDocument()
+  })
+
+  it('旧指南地址回到首页并打开默认指南弹窗', async () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/guide')
+
+    await waitFor(() => expect(screen.getByText('配置状态内容')).toBeInTheDocument())
+    expect(screen.getByRole('dialog')).toHaveTextContent('开始管理长期 Agent')
+    expect(screen.queryByRole('heading', { level: 1, name: '使用指南' })).not.toBeInTheDocument()
   })
 
   it('待处理配置只从顶栏进入，不加入一级菜单', () => {
@@ -190,22 +254,23 @@ describe('应用壳导航布局', () => {
     createMatchMedia(1440)
     const { container } = renderShell('expanded')
     const rail = screen.getByLabelText('Bandi 配置管理')
+    const titlebar = screen.getByRole('navigation', { name: '全局工具' }).parentElement!
 
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'expanded')
-    const collapseButton = within(rail).getByRole('button', { name: '收起侧栏' })
-    const settingsLink = within(rail).getByRole('link', { name: '设置' })
+    const collapseButton = within(titlebar).getByRole('button', { name: '收起侧栏' })
     expect(collapseButton).toHaveAttribute('aria-expanded', 'true')
-    expect(collapseButton.compareDocumentPosition(settingsLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(rail).queryByRole('button', { name: /侧栏/ })).not.toBeInTheDocument()
+    expect(within(rail).queryByRole('link', { name: '设置' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toHaveTextContent('星河科技')
     expect(within(rail).getByText('需求池')).toBeInTheDocument()
 
-    fireEvent.click(within(rail).getByRole('button', { name: '收起侧栏' }))
+    fireEvent.click(collapseButton)
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'compact')
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toHaveTextContent('星河')
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).not.toHaveTextContent('星河科技')
     expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'expanded')
 
-    fireEvent.click(within(rail).getByRole('button', { name: '展开侧栏' }))
+    fireEvent.click(within(titlebar).getByRole('button', { name: '展开侧栏' }))
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'expanded')
   })
 
@@ -282,11 +347,11 @@ describe('应用壳导航布局', () => {
       uiPreferences: { ...initialState.uiPreferences, theme: 'system' },
     })
 
-    const rail = screen.getByLabelText('Bandi 配置管理')
-    fireEvent.click(within(rail).getByRole('button', { name: '切换到浅色' }))
+    const globalTools = screen.getByRole('navigation', { name: '全局工具' })
+    fireEvent.click(within(globalTools).getByRole('button', { name: '切换到浅色' }))
 
     await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'light'))
-    expect(within(rail).getByRole('button', { name: '切换到深色' })).toBeInTheDocument()
+    expect(within(globalTools).getByRole('button', { name: '切换到深色' })).toBeInTheDocument()
     expect(JSON.parse(localStorage.getItem('bandi-ui-preferences-v1') ?? '{}').theme).toBe('light')
   })
 
@@ -310,6 +375,18 @@ describe('应用壳导航布局', () => {
       expect.stringMatching(/^林序/),
     ])
     expect(links[0]).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('Agent 项不显示左侧竖线，并可移除最近访问记录', () => {
+    createMatchMedia(1440)
+    const { container } = renderShell('expanded', 'light', '/', ['zhouce'])
+    const agentMenu = screen.getByRole('complementary', { name: '当前 Team Agent' })
+    const link = within(agentMenu).getByRole('link', { name: /周策/ })
+
+    expect(link.className).not.toContain('before:')
+    for (const button of within(agentMenu).getAllByRole('button', { name: /移除 .* 的最近访问记录/ })) fireEvent.click(button)
+    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'hidden')
+    expect(screen.queryByRole('complementary', { name: '当前 Team Agent' })).not.toBeInTheDocument()
   })
 
   it('当前 Team Agent 栏隔离其他 Team，最近访问只影响排序', () => {
@@ -350,14 +427,16 @@ describe('应用壳导航布局', () => {
     await waitFor(() => expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'expanded'))
   })
 
-  it('AI 工具入口位于全局侧栏而非页面顶栏', () => {
+  it('AI 工具紧跟配置资产位于一级导航', () => {
     createMatchMedia(1440)
     renderShell('expanded', 'light', '/tasks', ['zhouce'])
 
-    const rail = screen.getByLabelText('Bandi 配置管理')
-    expect(within(rail).getByRole('button', { name: 'Claude Code' })).toBeInTheDocument()
-    expect(within(screen.getByRole('banner')).queryByRole('button', { name: /Claude Code|AI 工具/ })).not.toBeInTheDocument()
-    expect(screen.queryByText(/浏览器演示|本机配置管理/)).not.toBeInTheDocument()
+    const navigation = within(screen.getByLabelText('Bandi 配置管理')).getByRole('navigation', { name: '一级导航' })
+    const assetsLink = within(navigation).getByRole('link', { name: '配置资产' })
+    const toolsLink = within(navigation).getByRole('link', { name: 'AI 工具' })
+    expect(toolsLink).toHaveAttribute('href', '/tools')
+    expect(assetsLink.compareDocumentPosition(toolsLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(screen.getByRole('banner')).queryByRole('link', { name: 'AI 工具' })).not.toBeInTheDocument()
   })
 
   it.each(['committed', 'restarting'] as const)('%s 时只显示重新打开终态', (status) => {

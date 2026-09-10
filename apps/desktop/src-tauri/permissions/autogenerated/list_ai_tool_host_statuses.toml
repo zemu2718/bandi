@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-ai-tool-host-statuses"
+description = "Enables the list_ai_tool_host_statuses command without any pre-configured scope."
+commands.allow = ["list_ai_tool_host_statuses"]
+
+[[permission]]
+identifier = "deny-list-ai-tool-host-statuses"
+description = "Denies the list_ai_tool_host_statuses command without any pre-configured scope."
+commands.deny = ["list_ai_tool_host_statuses"]

@@ -219,16 +219,16 @@
           "markdownDescription": "Enables the commit_managed_agent_identity command without any pre-configured scope."
         },
         {
+          "description": "Enables the commit_shared_asset_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-commit-shared-asset-import",
+          "markdownDescription": "Enables the commit_shared_asset_import command without any pre-configured scope."
+        },
+        {
           "description": "Enables the continue_agent_recovery command without any pre-configured scope.",
           "type": "string",
           "const": "allow-continue-agent-recovery",
           "markdownDescription": "Enables the continue_agent_recovery command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the copy_tool_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-copy-tool-plan",
-          "markdownDescription": "Enables the copy_tool_plan command without any pre-configured scope."
         },
         {
           "description": "Enables the create_backup_snapshot command without any pre-configured scope.",
@@ -237,22 +237,10 @@
           "markdownDescription": "Enables the create_backup_snapshot command without any pre-configured scope."
         },
         {
-          "description": "Enables the create_tool_plan command without any pre-configured scope.",
+          "description": "Enables the create_shared_asset command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-create-tool-plan",
-          "markdownDescription": "Enables the create_tool_plan command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the delete_custom_tool command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-delete-custom-tool",
-          "markdownDescription": "Enables the delete_custom_tool command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the delete_tool_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-delete-tool-plan",
-          "markdownDescription": "Enables the delete_tool_plan command without any pre-configured scope."
+          "const": "allow-create-shared-asset",
+          "markdownDescription": "Enables the create_shared_asset command without any pre-configured scope."
         },
         {
           "description": "Enables the delete_ui_asset command without any pre-configured scope.",
@@ -301,6 +289,12 @@
           "type": "string",
           "const": "allow-list-agents",
           "markdownDescription": "Enables the list_agents command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_ai_tool_host_statuses command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-ai-tool-host-statuses",
+          "markdownDescription": "Enables the list_ai_tool_host_statuses command without any pre-configured scope."
         },
         {
           "description": "Enables the list_backup_snapshots command without any pre-configured scope.",
@@ -357,10 +351,16 @@
           "markdownDescription": "Enables the load_memory command without any pre-configured scope."
         },
         {
-          "description": "Enables the load_tool_configuration command without any pre-configured scope.",
+          "description": "Enables the load_shared_asset_editor command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-load-tool-configuration",
-          "markdownDescription": "Enables the load_tool_configuration command without any pre-configured scope."
+          "const": "allow-load-shared-asset-editor",
+          "markdownDescription": "Enables the load_shared_asset_editor command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_ai_tool_install_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-ai-tool-install-page",
+          "markdownDescription": "Enables the open_ai_tool_install_page command without any pre-configured scope."
         },
         {
           "description": "Enables the preview_backup_restore command without any pre-configured scope.",
@@ -435,6 +435,12 @@
           "markdownDescription": "Enables the recover_memory_revision command without any pre-configured scope."
         },
         {
+          "description": "Enables the recover_shared_asset_revision command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-recover-shared-asset-revision",
+          "markdownDescription": "Enables the recover_shared_asset_revision command without any pre-configured scope."
+        },
+        {
           "description": "Enables the remove_task_brief_v4 command without any pre-configured scope.",
           "type": "string",
           "const": "allow-remove-task-brief-v4",
@@ -445,6 +451,12 @@
           "type": "string",
           "const": "allow-remove-team-v4",
           "markdownDescription": "Enables the remove_team_v4 command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the repair_shared_asset_registration command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-repair-shared-asset-registration",
+          "markdownDescription": "Enables the repair_shared_asset_registration command without any pre-configured scope."
         },
         {
           "description": "Enables the request_client_launch_v3 command without any pre-configured scope.",
@@ -477,6 +489,12 @@
           "markdownDescription": "Enables the restore_managed_agent_identity command without any pre-configured scope."
         },
         {
+          "description": "Enables the reveal_ai_tool_config_location command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reveal-ai-tool-config-location",
+          "markdownDescription": "Enables the reveal_ai_tool_config_location command without any pre-configured scope."
+        },
+        {
           "description": "Enables the reveal_host_directory command without any pre-configured scope.",
           "type": "string",
           "const": "allow-reveal-host-directory",
@@ -489,16 +507,16 @@
           "markdownDescription": "Enables the save_config command without any pre-configured scope."
         },
         {
-          "description": "Enables the save_custom_tool command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-save-custom-tool",
-          "markdownDescription": "Enables the save_custom_tool command without any pre-configured scope."
-        },
-        {
           "description": "Enables the save_memory command without any pre-configured scope.",
           "type": "string",
           "const": "allow-save-memory",
           "markdownDescription": "Enables the save_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_shared_asset command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-shared-asset",
+          "markdownDescription": "Enables the save_shared_asset command without any pre-configured scope."
         },
         {
           "description": "Enables the save_task_brief_v4 command without any pre-configured scope.",
@@ -513,16 +531,10 @@
           "markdownDescription": "Enables the save_team_v4 command without any pre-configured scope."
         },
         {
-          "description": "Enables the save_tool_plan command without any pre-configured scope.",
+          "description": "Enables the select_shared_asset_import command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-save-tool-plan",
-          "markdownDescription": "Enables the save_tool_plan command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the select_tool_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-select-tool-plan",
-          "markdownDescription": "Enables the select_tool_plan command without any pre-configured scope."
+          "const": "allow-select-shared-asset-import",
+          "markdownDescription": "Enables the select_shared_asset_import command without any pre-configured scope."
         },
         {
           "description": "Denies the allocate_agent_id command without any pre-configured scope.",
@@ -567,16 +579,16 @@
           "markdownDescription": "Denies the commit_managed_agent_identity command without any pre-configured scope."
         },
         {
+          "description": "Denies the commit_shared_asset_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-commit-shared-asset-import",
+          "markdownDescription": "Denies the commit_shared_asset_import command without any pre-configured scope."
+        },
+        {
           "description": "Denies the continue_agent_recovery command without any pre-configured scope.",
           "type": "string",
           "const": "deny-continue-agent-recovery",
           "markdownDescription": "Denies the continue_agent_recovery command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the copy_tool_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-copy-tool-plan",
-          "markdownDescription": "Denies the copy_tool_plan command without any pre-configured scope."
         },
         {
           "description": "Denies the create_backup_snapshot command without any pre-configured scope.",
@@ -585,22 +597,10 @@
           "markdownDescription": "Denies the create_backup_snapshot command without any pre-configured scope."
         },
         {
-          "description": "Denies the create_tool_plan command without any pre-configured scope.",
+          "description": "Denies the create_shared_asset command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-create-tool-plan",
-          "markdownDescription": "Denies the create_tool_plan command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the delete_custom_tool command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-delete-custom-tool",
-          "markdownDescription": "Denies the delete_custom_tool command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the delete_tool_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-delete-tool-plan",
-          "markdownDescription": "Denies the delete_tool_plan command without any pre-configured scope."
+          "const": "deny-create-shared-asset",
+          "markdownDescription": "Denies the create_shared_asset command without any pre-configured scope."
         },
         {
           "description": "Denies the delete_ui_asset command without any pre-configured scope.",
@@ -649,6 +649,12 @@
           "type": "string",
           "const": "deny-list-agents",
           "markdownDescription": "Denies the list_agents command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_ai_tool_host_statuses command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-ai-tool-host-statuses",
+          "markdownDescription": "Denies the list_ai_tool_host_statuses command without any pre-configured scope."
         },
         {
           "description": "Denies the list_backup_snapshots command without any pre-configured scope.",
@@ -705,10 +711,16 @@
           "markdownDescription": "Denies the load_memory command without any pre-configured scope."
         },
         {
-          "description": "Denies the load_tool_configuration command without any pre-configured scope.",
+          "description": "Denies the load_shared_asset_editor command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-load-tool-configuration",
-          "markdownDescription": "Denies the load_tool_configuration command without any pre-configured scope."
+          "const": "deny-load-shared-asset-editor",
+          "markdownDescription": "Denies the load_shared_asset_editor command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_ai_tool_install_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-ai-tool-install-page",
+          "markdownDescription": "Denies the open_ai_tool_install_page command without any pre-configured scope."
         },
         {
           "description": "Denies the preview_backup_restore command without any pre-configured scope.",
@@ -783,6 +795,12 @@
           "markdownDescription": "Denies the recover_memory_revision command without any pre-configured scope."
         },
         {
+          "description": "Denies the recover_shared_asset_revision command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-recover-shared-asset-revision",
+          "markdownDescription": "Denies the recover_shared_asset_revision command without any pre-configured scope."
+        },
+        {
           "description": "Denies the remove_task_brief_v4 command without any pre-configured scope.",
           "type": "string",
           "const": "deny-remove-task-brief-v4",
@@ -793,6 +811,12 @@
           "type": "string",
           "const": "deny-remove-team-v4",
           "markdownDescription": "Denies the remove_team_v4 command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the repair_shared_asset_registration command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-repair-shared-asset-registration",
+          "markdownDescription": "Denies the repair_shared_asset_registration command without any pre-configured scope."
         },
         {
           "description": "Denies the request_client_launch_v3 command without any pre-configured scope.",
@@ -825,6 +849,12 @@
           "markdownDescription": "Denies the restore_managed_agent_identity command without any pre-configured scope."
         },
         {
+          "description": "Denies the reveal_ai_tool_config_location command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reveal-ai-tool-config-location",
+          "markdownDescription": "Denies the reveal_ai_tool_config_location command without any pre-configured scope."
+        },
+        {
           "description": "Denies the reveal_host_directory command without any pre-configured scope.",
           "type": "string",
           "const": "deny-reveal-host-directory",
@@ -837,16 +867,16 @@
           "markdownDescription": "Denies the save_config command without any pre-configured scope."
         },
         {
-          "description": "Denies the save_custom_tool command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-save-custom-tool",
-          "markdownDescription": "Denies the save_custom_tool command without any pre-configured scope."
-        },
-        {
           "description": "Denies the save_memory command without any pre-configured scope.",
           "type": "string",
           "const": "deny-save-memory",
           "markdownDescription": "Denies the save_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_shared_asset command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-shared-asset",
+          "markdownDescription": "Denies the save_shared_asset command without any pre-configured scope."
         },
         {
           "description": "Denies the save_task_brief_v4 command without any pre-configured scope.",
@@ -861,16 +891,10 @@
           "markdownDescription": "Denies the save_team_v4 command without any pre-configured scope."
         },
         {
-          "description": "Denies the save_tool_plan command without any pre-configured scope.",
+          "description": "Denies the select_shared_asset_import command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-save-tool-plan",
-          "markdownDescription": "Denies the save_tool_plan command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the select_tool_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-select-tool-plan",
-          "markdownDescription": "Denies the select_tool_plan command without any pre-configured scope."
+          "const": "deny-select-shared-asset-import",
+          "markdownDescription": "Denies the select_shared_asset_import command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
@@ -2953,6 +2977,90 @@
           "type": "string",
           "const": "dialog:deny-save",
           "markdownDescription": "Denies the save command without any pre-configured scope."
+        },
+        {
+          "description": "Allows all WebDriverIO plugin commands for testing\n#### This default permission set includes:\n\n- `wdio:allow-execute`\n- `wdio:allow-log-frontend`\n- `wdio:allow-debug-plugin`\n- `wdio:allow-get-active-window-label`\n- `wdio:allow-get-window-states`\n- `wdio:allow-list-windows`",
+          "type": "string",
+          "const": "wdio:default",
+          "markdownDescription": "Allows all WebDriverIO plugin commands for testing\n#### This default permission set includes:\n\n- `wdio:allow-execute`\n- `wdio:allow-log-frontend`\n- `wdio:allow-debug-plugin`\n- `wdio:allow-get-active-window-label`\n- `wdio:allow-get-window-states`\n- `wdio:allow-list-windows`"
+        },
+        {
+          "description": "Enables the debug_plugin command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:allow-debug-plugin",
+          "markdownDescription": "Enables the debug_plugin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the execute command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:allow-execute",
+          "markdownDescription": "Enables the execute command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_active_window_label command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:allow-get-active-window-label",
+          "markdownDescription": "Enables the get_active_window_label command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_window_states command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:allow-get-window-states",
+          "markdownDescription": "Enables the get_window_states command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_windows command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:allow-list-windows",
+          "markdownDescription": "Enables the list_windows command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the log_frontend command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:allow-log-frontend",
+          "markdownDescription": "Enables the log_frontend command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the debug_plugin command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:deny-debug-plugin",
+          "markdownDescription": "Denies the debug_plugin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the execute command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:deny-execute",
+          "markdownDescription": "Denies the execute command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_active_window_label command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:deny-get-active-window-label",
+          "markdownDescription": "Denies the get_active_window_label command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_window_states command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:deny-get-window-states",
+          "markdownDescription": "Denies the get_window_states command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_windows command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:deny-list-windows",
+          "markdownDescription": "Denies the list_windows command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the log_frontend command without any pre-configured scope.",
+          "type": "string",
+          "const": "wdio:deny-log-frontend",
+          "markdownDescription": "Denies the log_frontend command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the plugin",
+          "type": "string",
+          "const": "wdio-webdriver:default",
+          "markdownDescription": "Default permissions for the plugin"
         }
       ]
     },

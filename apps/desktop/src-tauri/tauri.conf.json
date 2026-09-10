@@ -17,7 +17,9 @@
       "height": 800,
       "minWidth": 960,
       "minHeight": 640,
-      "resizable": true
+      "resizable": true,
+      "titleBarStyle": "Overlay",
+      "hiddenTitle": true
     }],
     "security": {
       "csp": "default-src 'self'; img-src 'self' asset: blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"

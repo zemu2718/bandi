@@ -2,14 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { aiClients as initialAiClients, type AiClient } from './mock'
 import {
   initialAgents,
-  initialConfigurationEnvironments,
   initialAssets,
   initialBackupSnapshots,
   initialTeams,
   initialConfigRevisions,
   initialMemorySpaces,
   initialPluginInstallations,
-  type ConfigurationEnvironment,
   type BackupSnapshot,
   type ConfigRevision,
   type FullAgent,
@@ -22,13 +20,12 @@ import { getAgentPackageEditability } from './agent-package-schema'
 import { applyAgentConfig, describeAgentConfigFile, getAgentConfigPath, isAgentConfigPayload, serializeAgentConfig, snapshotAgentConfig, type AgentConfigPayload, type SaveAgentConfigInput } from './agent-config-model'
 import { appendConfigRevision } from './config-revisions'
 import { projectSharedAssets } from './discovered-assets'
-import { configurationEnvironmentPath, isConfigurationEnvironment, normalizeConfigurationEnvironment, serializeConfigurationEnvironment, validateConfigurationEnvironment } from './configuration-environment-model'
-import type { AgentRecoveryOperationSummaryDto, Diagnostic, LongTermDomainSnapshotDtoV4, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentRecoveryOperationSummaryDto, AssetReferenceDto, Diagnostic, LongTermDomainSnapshotDtoV4, SharedAssetNodeDto, TaskBriefDto, TeamDto } from './contracts'
 import type { TerminalId } from './terminal-model'
 import type { MainMenuLayoutPreference } from './navigation-layout'
-import { discoverConfig, isDesktopRuntime, listAgentRecoveryOperations, listAgents, loadLongTermDomainSnapshotV4, loadToolConfiguration, type ToolConfigurationSnapshotDto } from './desktop-bridge'
+import type { UsageGuideTopic } from './components/usage-guide'
+import { discoverConfig, isDesktopRuntime, listAgentRecoveryOperations, listAgents, loadLongTermDomainSnapshotV4 } from './desktop-bridge'
 import { longTermDomainV4ToView } from './long-term-domain'
-import { applyToolConfigurationSnapshot, emptyToolConfiguration, type ToolConfigurationState } from './tool-configuration'
 import {
   DEFAULT_UI_PREFERENCES,
   getAccessibleAccent,
@@ -56,6 +53,7 @@ export type DialogState =
   | { kind: 'conflict'; assetId?: string; agentId?: string }
   | { kind: 'permission'; agentId: string; nextFiles?: string }
   | { kind: 'client-guide'; clientId?: string; agentId?: string }
+  | { kind: 'usage-guide'; topic: UsageGuideTopic }
   | { kind: 'config-history'; ownerType: ConfigRevision['ownerType']; ownerId: string; path: string }
   | { kind: 'backup-restore'; snapshotId: string }
   | { kind: 'organization'; entity: 'team'; id?: string; mode: 'create' | 'edit'; returnTo?: '/agents' }
@@ -88,7 +86,7 @@ export type OnboardingState = {
 }
 
 export type HydrationStatus = 'idle' | 'loading' | 'succeeded' | 'failed'
-export type HydrationKey = 'managedAgents' | 'organization' | 'sharedAssets' | 'agentRecovery' | 'toolConfiguration'
+export type HydrationKey = 'managedAgents' | 'organization' | 'sharedAssets' | 'agentRecovery'
 export type FactoryResetLifecycle =
   | { status: 'idle' }
   | { status: 'legacy-database-required'; technicalDetails: string }
@@ -109,6 +107,8 @@ export type State = {
   currentTeamId: string
   taskBriefs: TaskBriefDto[]
   assets: FullAsset[]
+  sharedAssets: SharedAssetNodeDto[]
+  assetReferences: AssetReferenceDto[]
   pluginInstallations: PluginInstallation[]
   memorySpaces: MemorySpace[]
   configRevisions: ConfigRevision[]
@@ -116,9 +116,6 @@ export type State = {
   backupSettings: BackupSettings
   settings: SettingsState
   aiClients: AiClient[]
-  configurationEnvironments: ConfigurationEnvironment[]
-  currentConfigurationEnvironmentId: string
-  toolConfiguration: ToolConfigurationState
   recentAgentIds: string[]
   uiPreferences: UiPreferences
   theme: EffectiveTheme
@@ -152,11 +149,8 @@ export type Action =
   | { type: 'FAIL_AGENT_RECOVERY_HYDRATION'; message: string }
   | { type: 'HYDRATE_ORGANIZATION'; snapshot: LongTermDomainSnapshotDtoV4 }
   | { type: 'FAIL_ORGANIZATION_HYDRATION'; message: string }
-  | { type: 'HYDRATE_SHARED_ASSETS'; assets: FullAsset[] }
+  | { type: 'HYDRATE_SHARED_ASSETS'; sharedAssets: SharedAssetNodeDto[]; references: AssetReferenceDto[] }
   | { type: 'FAIL_SHARED_ASSETS_HYDRATION'; message: string }
-  | { type: 'HYDRATE_TOOL_CONFIGURATION'; snapshot: ToolConfigurationSnapshotDto }
-  | { type: 'FAIL_TOOL_CONFIGURATION_HYDRATION'; message: string }
-  | { type: 'SYNC_TOOL_CONFIGURATION'; snapshot: ToolConfigurationSnapshotDto; message?: string }
   | { type: 'SYNC_PERSISTED_TEAMS'; teams: TeamDto[] }
   | { type: 'UPSERT_TASK_BRIEF'; taskBrief: TaskBriefDto }
   | { type: 'REMOVE_TASK_BRIEF'; taskBriefId: string }
@@ -179,11 +173,6 @@ export type Action =
   | { type: 'RECORD_RECENT_AGENT'; agentId: string }
   | { type: 'REMOVE_RECENT_AGENT'; agentId: string }
   | { type: 'CLEAR_RECENT_AGENTS' }
-  | { type: 'ADD_CUSTOM_AI_CLIENT'; client: AiClient }
-  | { type: 'SAVE_CONFIGURATION_ENVIRONMENT'; environment: ConfigurationEnvironment }
-  | { type: 'CREATE_CONFIGURATION_ENVIRONMENT'; environment: ConfigurationEnvironment; sourceEnvironmentId?: string }
-  | { type: 'SELECT_CONFIGURATION_ENVIRONMENT'; environmentId: string }
-  | { type: 'SET_ENVIRONMENT_CLIENT_REGISTRATION'; environmentId: string; clientId: string; registered: boolean }
   | { type: 'SHOW_NOTICE'; notice: Omit<Notice, 'id'> }
   | { type: 'CLEAR_NOTICE'; id?: string }
   | { type: 'TOAST'; text?: string }
@@ -216,7 +205,7 @@ const initialUiPreferences = getInitialUiPreferences()
 
 export const initialState: State = {
   runtime: 'web',
-  hydration: { managedAgents: 'idle', organization: 'idle', sharedAssets: 'idle', agentRecovery: 'idle', toolConfiguration: 'idle' },
+  hydration: { managedAgents: 'idle', organization: 'idle', sharedAssets: 'idle', agentRecovery: 'idle' },
   hydrationErrors: {},
   factoryReset: { status: 'idle' },
   agentDiagnostics: [],
@@ -227,6 +216,8 @@ export const initialState: State = {
   currentTeamId: initialTeams[0]?.id ?? '',
   taskBriefs: [],
   assets: initialAssets,
+  sharedAssets: [],
+  assetReferences: [],
   pluginInstallations: initialPluginInstallations,
   memorySpaces: initialMemorySpaces,
   configRevisions: initialConfigRevisions,
@@ -241,9 +232,6 @@ export const initialState: State = {
     networkProxy: { mode: 'system', httpProxy: '', httpsProxy: '', socksProxy: '', noProxy: '' },
   },
   aiClients: initialAiClients,
-  configurationEnvironments: initialConfigurationEnvironments,
-  currentConfigurationEnvironmentId: initialConfigurationEnvironments[0].id,
-  toolConfiguration: emptyToolConfiguration,
   recentAgentIds: [],
   uiPreferences: initialUiPreferences,
   theme: resolveTheme(initialUiPreferences.theme, false),
@@ -252,25 +240,25 @@ export const initialState: State = {
 }
 
 function createDesktopInitialState(): State {
+  const teams = reconcileAgentTeamMembership([], [])
   return {
     ...initialState,
     runtime: 'desktop',
-    hydration: { managedAgents: 'loading', organization: 'loading', sharedAssets: 'loading', agentRecovery: 'loading', toolConfiguration: 'loading' },
+    hydration: { managedAgents: 'loading', organization: 'loading', sharedAssets: 'loading', agentRecovery: 'loading' },
     hydrationErrors: {},
     agentRecoveryOperations: [],
     agents: [],
-    teams: [],
-    currentTeamId: '',
+    teams,
+    currentTeamId: resolveCurrentTeamId(teams, ''),
     taskBriefs: [],
-      assets: [],
+    assets: [],
+    sharedAssets: [],
+    assetReferences: [],
     pluginInstallations: [],
     memorySpaces: [],
     configRevisions: [],
     backupSnapshots: [],
-    aiClients: [],
-    configurationEnvironments: [],
-    currentConfigurationEnvironmentId: '',
-    toolConfiguration: emptyToolConfiguration,
+    aiClients: initialAiClients,
     recentAgentIds: [],
   }
 }
@@ -387,9 +375,13 @@ export function reducer(state: State, action: Action): State {
         ? { ...state, currentTeamId: action.teamId }
         : state
     case 'COMPLETE_ONBOARDING':
-      return state.onboarding.status === 'completed'
+      return state.onboarding.status === 'completed' && state.uiPreferences.firstUseTeamSetupDismissed
         ? state
-        : { ...state, onboarding: { status: 'completed' } }
+        : {
+            ...state,
+            onboarding: { status: 'completed' },
+            uiPreferences: { ...state.uiPreferences, firstUseTeamSetupDismissed: true },
+          }
     case 'OPEN_DIALOG':
       return { ...state, dialog: action.dialog }
     case 'CLOSE_DIALOG':
@@ -405,7 +397,7 @@ export function reducer(state: State, action: Action): State {
     case 'START_DESKTOP_HYDRATION':
       return {
         ...state,
-        hydration: { managedAgents: 'loading', organization: 'loading', sharedAssets: 'loading', agentRecovery: 'loading', toolConfiguration: 'loading' },
+        hydration: { managedAgents: 'loading', organization: 'loading', sharedAssets: 'loading', agentRecovery: 'loading' },
         hydrationErrors: {},
       }
     case 'FACTORY_RESET_LEGACY_REQUIRED':
@@ -453,7 +445,7 @@ export function reducer(state: State, action: Action): State {
         hydration: { ...state.hydration, managedAgents: 'succeeded' },
         hydrationErrors: withoutHydrationError(state.hydrationErrors, 'managedAgents'),
         onboarding: state.runtime === 'desktop'
-          ? { status: action.agents.length || action.diagnostics.length ? 'completed' : 'active' }
+          ? { status: action.agents.length || action.diagnostics.length || state.uiPreferences.firstUseTeamSetupDismissed ? 'completed' : 'active' }
           : state.onboarding,
         agentDiagnostics: action.diagnostics,
         agents,
@@ -497,7 +489,9 @@ export function reducer(state: State, action: Action): State {
         ...state,
         hydration: { ...state.hydration, organization: 'succeeded' },
         hydrationErrors: withoutHydrationError(state.hydrationErrors, 'organization'),
-        onboarding: state.runtime === 'desktop' ? { status: state.agents.length ? 'completed' : 'active' } : state.onboarding,
+        onboarding: state.runtime === 'desktop'
+          ? { status: state.agents.length || state.uiPreferences.firstUseTeamSetupDismissed ? 'completed' : 'active' }
+          : state.onboarding,
         teams,
         currentTeamId: resolveCurrentTeamId(teams, state.currentTeamId),
         taskBriefs: view.taskBriefs,
@@ -514,32 +508,15 @@ export function reducer(state: State, action: Action): State {
         ...state,
         hydration: { ...state.hydration, sharedAssets: 'succeeded' },
         hydrationErrors: withoutHydrationError(state.hydrationErrors, 'sharedAssets'),
-        assets: action.assets,
+        sharedAssets: action.sharedAssets,
+        assetReferences: action.references,
+        assets: projectSharedAssets(action.sharedAssets, action.references),
       }
     case 'FAIL_SHARED_ASSETS_HYDRATION':
       return {
         ...state,
         hydration: { ...state.hydration, sharedAssets: 'failed' },
         hydrationErrors: { ...state.hydrationErrors, sharedAssets: action.message },
-      }
-    case 'HYDRATE_TOOL_CONFIGURATION':
-      return {
-        ...state,
-        ...applyToolConfigurationSnapshot(action.snapshot),
-        hydration: { ...state.hydration, toolConfiguration: 'succeeded' },
-        hydrationErrors: withoutHydrationError(state.hydrationErrors, 'toolConfiguration'),
-      }
-    case 'SYNC_TOOL_CONFIGURATION':
-      return {
-        ...state,
-        ...applyToolConfigurationSnapshot(action.snapshot),
-        notice: action.message ? notice('success', action.message, '已保存到 Bandi 本机工具方案') : state.notice,
-      }
-    case 'FAIL_TOOL_CONFIGURATION_HYDRATION':
-      return {
-        ...state,
-        hydration: { ...state.hydration, toolConfiguration: 'failed' },
-        hydrationErrors: { ...state.hydrationErrors, toolConfiguration: action.message },
       }
     case 'SYNC_PERSISTED_TEAMS': {
       const persisted = new Map(action.teams.map((team) => [team.id, team]))
@@ -605,16 +582,6 @@ export function reducer(state: State, action: Action): State {
         if (!payload || getAgentConfigPath(payload) !== target.path) return { ...state, notice: notice('warning', '无法恢复配置版本', '该版本没有与目标路径匹配的可验证结构化快照') }
         const restored = saveAgentConfig(state, target.ownerId, payload, `恢复自 ${target.id}`)
         if (restored.configRevisions === state.configRevisions) return { ...restored, notice: notice('info', '无需恢复配置版本', '目标版本与当前结构化配置相同，未生成重复版本') }
-        const latest = restored.configRevisions[0]
-        return { ...restored, dialog: null, configRevisions: [{ ...latest, restoredFromRevisionId: target.id }, ...restored.configRevisions.slice(1)] }
-      }
-      if (target.ownerType === 'configuration-environment') {
-        if (!isConfigurationEnvironment(target.payload)) return { ...state, notice: notice('warning', '无法恢复配置版本', '该配置方案版本没有可验证结构化快照') }
-        const candidate = target.payload
-        const clientIds = state.aiClients.map((client) => client.id)
-        if (configurationEnvironmentPath(candidate) !== target.path || Object.keys(validateConfigurationEnvironment(candidate, clientIds)).length) return { ...state, notice: notice('warning', '无法恢复配置版本', '该配置方案版本与目标路径不匹配或字段无效') }
-        const restored = reducer(state, { type: 'SAVE_CONFIGURATION_ENVIRONMENT', environment: candidate })
-        if (restored.configRevisions === state.configRevisions) return { ...restored, notice: notice('info', '无需恢复配置版本', '目标版本与当前配置方案相同') }
         const latest = restored.configRevisions[0]
         return { ...restored, dialog: null, configRevisions: [{ ...latest, restoredFromRevisionId: target.id }, ...restored.configRevisions.slice(1)] }
       }
@@ -699,61 +666,6 @@ export function reducer(state: State, action: Action): State {
       return state.recentAgentIds.length
         ? { ...state, recentAgentIds: [], notice: notice('info', '最近访问记录已清空', '仅影响当前页面') }
         : state
-    case 'ADD_CUSTOM_AI_CLIENT': {
-      const normalizedName = action.client.name.trim()
-      const duplicate = state.aiClients.some((item) => item.id === action.client.id || item.name.trim().toLowerCase() === normalizedName.toLowerCase())
-      if (!normalizedName || duplicate) return state
-      const client = { ...action.client, name: normalizedName, persistence: 'memory-only' as const }
-      return { ...state, aiClients: [...state.aiClients, client], notice: notice('info', `${client.name} 已添加`, '仅添加到当前页面 · 未检查电脑或写入文件') }
-    }
-    case 'SAVE_CONFIGURATION_ENVIRONMENT': {
-      const environment = normalizeConfigurationEnvironment(action.environment)
-      const clientIds = state.aiClients.map((client) => client.id)
-      const errors = validateConfigurationEnvironment(environment, clientIds)
-      const path = configurationEnvironmentPath(environment)
-      const content = serializeConfigurationEnvironment(environment, clientIds)
-      const duplicateName = state.configurationEnvironments.some((item) => item.id !== environment.id && item.name.trim().toLowerCase() === environment.name.toLowerCase())
-      if (Object.keys(errors).length || !path || content === undefined || duplicateName) return { ...state, notice: notice('error', '无法记录配置方案', duplicateName ? '方案名称重复' : '方案字段、工具引用或路径无效') }
-      const appended = appendConfigRevision(state.configRevisions, {
-        ownerType: 'configuration-environment', ownerId: environment.id, path, content,
-        summary: `保存 ${environment.name} 演示配置方案`, payload: environment, evidence: 'memory-only',
-      })
-      if (!appended.created) return state
-      const exists = state.configurationEnvironments.some((item) => item.id === environment.id)
-      return {
-        ...state,
-        configurationEnvironments: exists
-          ? state.configurationEnvironments.map((item) => item.id === environment.id ? { ...environment, evidence: 'memory-only' } : item)
-          : [...state.configurationEnvironments, { ...environment, evidence: 'memory-only' }],
-        configRevisions: appended.revisions,
-        notice: notice('success', '配置方案已记录', `${path} · 未读取或修改真实工具配置`),
-      }
-    }
-    case 'CREATE_CONFIGURATION_ENVIRONMENT': {
-      const source = action.sourceEnvironmentId
-        ? state.configurationEnvironments.find((item) => item.id === action.sourceEnvironmentId)
-        : undefined
-      if (action.sourceEnvironmentId && !source) return { ...state, notice: notice('error', '无法创建配置方案', '复制来源不存在') }
-      if (state.configurationEnvironments.some((item) => item.id === action.environment.id || item.name.trim().toLowerCase() === action.environment.name.trim().toLowerCase())) return { ...state, notice: notice('error', '无法创建配置方案', '方案 ID 或名称重复') }
-      const environment = {
-        ...action.environment,
-        clientIds: source ? [...source.clientIds] : [...action.environment.clientIds],
-      }
-      const saved = reducer(state, { type: 'SAVE_CONFIGURATION_ENVIRONMENT', environment })
-      return saved.configRevisions === state.configRevisions ? saved : { ...saved, currentConfigurationEnvironmentId: environment.id }
-    }
-    case 'SELECT_CONFIGURATION_ENVIRONMENT':
-      return state.configurationEnvironments.some((item) => item.id === action.environmentId)
-        ? { ...state, currentConfigurationEnvironmentId: action.environmentId, notice: notice('info', '当前配置方案已切换', '仅影响当前页面，未切换真实工具配置') }
-        : { ...state, notice: notice('error', '无法切换配置方案', '目标方案不存在') }
-    case 'SET_ENVIRONMENT_CLIENT_REGISTRATION': {
-      const environment = state.configurationEnvironments.find((item) => item.id === action.environmentId)
-      if (!environment || !state.aiClients.some((item) => item.id === action.clientId)) return { ...state, notice: notice('error', '无法更新工具关联', '配置方案或工具不存在') }
-      const clientIds = action.registered
-        ? [...new Set([...environment.clientIds, action.clientId])]
-        : environment.clientIds.filter((id) => id !== action.clientId)
-      return reducer(state, { type: 'SAVE_CONFIGURATION_ENVIRONMENT', environment: { ...environment, clientIds } })
-    }
     case 'SHOW_NOTICE':
       return { ...state, notice: notice(action.notice.tone, action.notice.title, action.notice.description, action.notice.duration) }
     case 'CLEAR_NOTICE':
@@ -804,14 +716,11 @@ export function AppProvider({ children, initialState: providedState }: { childre
       .then((snapshot) => dispatch({ type: 'HYDRATE_ORGANIZATION', snapshot }))
       .catch((error) => hydrationFailure(error, { type: 'FAIL_ORGANIZATION_HYDRATION', message: errorMessage(error) }))
     void discoverConfig({ requestId: 'hydrate-shared-assets', includeClaudeUserRoot: false })
-      .then(({ sharedAssets }) => dispatch({ type: 'HYDRATE_SHARED_ASSETS', assets: projectSharedAssets(sharedAssets) }))
+      .then(({ sharedAssets, references }) => dispatch({ type: 'HYDRATE_SHARED_ASSETS', sharedAssets, references }))
       .catch((error) => hydrationFailure(error, { type: 'FAIL_SHARED_ASSETS_HYDRATION', message: errorMessage(error) }))
     void listAgentRecoveryOperations()
       .then((operations) => dispatch({ type: 'HYDRATE_AGENT_RECOVERY', operations }))
       .catch((error) => hydrationFailure(error, { type: 'FAIL_AGENT_RECOVERY_HYDRATION', message: errorMessage(error) }))
-    void loadToolConfiguration()
-      .then((snapshot) => dispatch({ type: 'HYDRATE_TOOL_CONFIGURATION', snapshot }))
-      .catch((error) => hydrationFailure(error, { type: 'FAIL_TOOL_CONFIGURATION_HYDRATION', message: errorMessage(error) }))
   }, [providedState])
 
   useEffect(() => {

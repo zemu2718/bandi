@@ -5,6 +5,25 @@ import type { PluginInstallation } from './plugin-installation'
 
 export type AgentLifecycle = 'active' | 'inactive' | 'archived'
 
+export const agentFunctionLabels = {
+  product: '产品',
+  design: '设计',
+  engineering: '研发',
+  testing: '测试',
+  research: '研究',
+  operations: '运营',
+  general: '通用',
+  other: '其他',
+} as const
+
+export type AgentFunction = keyof typeof agentFunctionLabels
+
+export function agentFunctionLabel(functionId?: string): string {
+  return functionId && functionId in agentFunctionLabels
+    ? agentFunctionLabels[functionId as AgentFunction]
+    : '未分类'
+}
+
 export type { TaskBriefDto as TaskBrief, TeamDto as Team } from './contracts'
 
 export type EvidenceKind = 'demo-fixture' | 'memory-only'
@@ -33,13 +52,6 @@ export type ComponentReference = {
   parameterBindings: ParameterBinding[]
 }
 
-export type ConfigurationEnvironment = {
-  id: string
-  name: string
-  clientIds: string[]
-  evidence: EvidenceKind
-}
-
 export type AgentPackageSource =
   | { kind: 'bandi-demo'; strategy: 'create-demo' }
   | { kind: 'bandi-managed'; packageId: string; strategy: 'managed'; identityBaseline?: string }
@@ -62,6 +74,7 @@ export type FullAgent = Omit<Agent, 'status'> & {
   status: AgentLifecycle
   packageSchema: AgentPackageSchema
   teamId: string
+  functionId?: AgentFunction
   mission: string
   responsibilities: string[]
   deliverables: string[]
@@ -131,6 +144,8 @@ export type FullAsset = Asset & {
   kind: AssetKind
   teamId?: string
   sourceType: 'Bandi 自有' | '显式共享' | '跨公司授权' | '外部来源'
+  sharedParseStatus?: 'parsed' | 'invalid'
+  writable?: boolean
   summary: string
   content: string
   references: AssetReference[]
@@ -149,7 +164,7 @@ export type FullAsset = Asset & {
 
 export type ConfigRevision = {
   id: string
-  ownerType: 'agent' | 'asset' | 'configuration-environment'
+  ownerType: 'agent' | 'asset'
   ownerId: string
   path: string
   parentRevisionId?: string
@@ -216,6 +231,7 @@ const baseAgent = (agent: Agent, details: Partial<FullAgent>): FullAgent => ({
   status: lifecycleByStatus[agent.status],
   packageSchema: { schemaVersion: 1, compatibility: 'current' },
   teamId: 'xinghe',
+  functionId: undefined,
   mission: '依据长期配置完成可验证的交付。',
   responsibilities: ['维护自身长期配置资产'],
   deliverables: ['配置变更与验证证据'],
@@ -235,21 +251,6 @@ const baseAgent = (agent: Agent, details: Partial<FullAgent>): FullAgent => ({
   sopRefs: ['sop-delivery'], files: defaultFiles(agent.id), ...details,
 })
 
-export const initialConfigurationEnvironments: ConfigurationEnvironment[] = [
-  {
-    id: 'personal',
-    name: '个人配置',
-    clientIds: ['claude-code'],
-    evidence: 'demo-fixture',
-  },
-  {
-    id: 'team-demo',
-    name: '团队配置（演示）',
-    clientIds: ['claude-code', 'codex'],
-    evidence: 'demo-fixture',
-  },
-]
-
 export const initialTeams: import('./contracts').TeamDto[] = [
   { id: 'xinghe', name: '星河科技', mission: '以清晰的产品判断和可靠的软件交付创造长期价值。', boundary: 'Team 身份与组织关系不自动授予文件、命令、网络或委派权限。', memberAgentIds: ['zhiheng', 'zhouce', 'linxu', 'songyan'], sharedAssetIds: ['rule-common', 'skill-review', 'sop-delivery'] },
   { id: 'studio', name: '独立工作室', mission: '支持独立研究与实验性配置。', boundary: '与星河科技资产完全隔离，跨 Team 共享需单独注册授权。', memberAgentIds: [], sharedAssetIds: [] },
@@ -257,10 +258,10 @@ export const initialTeams: import('./contracts').TeamDto[] = [
 ]
 
 export const initialAgents: FullAgent[] = [
-  baseAgent({ id: 'zhiheng', name: '知衡', status: '启用', config: '配置完整', updated: '2 小时前' }, { mission: '按明确目标整理信息并汇总结果。' }),
-  baseAgent({ id: 'zhouce', name: '周策', status: '启用', config: '外部变化', updated: '8 分钟前' }, { mission: '把已确认目标交付为可验证的软件成果。' }),
-  baseAgent({ id: 'linxu', name: '林序', status: '启用', config: '缺少 Rules', updated: '昨天' }, {}),
-  baseAgent({ id: 'songyan', name: '宋研', status: '归档', config: '配置完整', updated: '3 天前' }, {}),
+  baseAgent({ id: 'zhiheng', name: '知衡', status: '启用', config: '配置完整', updated: '2 小时前' }, { functionId: 'product', mission: '按明确目标整理信息并汇总结果。' }),
+  baseAgent({ id: 'zhouce', name: '周策', status: '启用', config: '外部变化', updated: '8 分钟前' }, { functionId: 'engineering', mission: '把已确认目标交付为可验证的软件成果。' }),
+  baseAgent({ id: 'linxu', name: '林序', status: '启用', config: '缺少 Rules', updated: '昨天' }, { functionId: 'design' }),
+  baseAgent({ id: 'songyan', name: '宋研', status: '归档', config: '配置完整', updated: '3 天前' }, { functionId: 'research' }),
 ]
 
 export const initialAssets: FullAsset[] = [

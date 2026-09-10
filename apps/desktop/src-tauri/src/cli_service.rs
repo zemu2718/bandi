@@ -96,6 +96,8 @@ pub struct AgentFact {
     pub team_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mission: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_id: Option<String>,
     #[serde(default)]
     pub responsibilities: Vec<String>,
     #[serde(default)]
@@ -365,6 +367,21 @@ fn read_agent(paths: &LocalServicePaths, agent_id: &str) -> Result<AgentFact, St
     .map_err(|_| "Agent 身份字段无效".to_string())?;
     if manifest.id != agent_id || !valid_id(&manifest.team_id) {
         return Err("Agent 身份稳定标识无效或不一致".into());
+    }
+    if manifest.function_id.as_deref().is_some_and(|function_id| {
+        ![
+            "product",
+            "design",
+            "engineering",
+            "testing",
+            "research",
+            "operations",
+            "general",
+            "other",
+        ]
+        .contains(&function_id)
+    }) {
+        return Err("Agent 职能标识不受支持".into());
     }
     Ok(manifest)
 }

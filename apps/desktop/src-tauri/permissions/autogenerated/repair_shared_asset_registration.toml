@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-repair-shared-asset-registration"
+description = "Enables the repair_shared_asset_registration command without any pre-configured scope."
+commands.allow = ["repair_shared_asset_registration"]
+
+[[permission]]
+identifier = "deny-repair-shared-asset-registration"
+description = "Denies the repair_shared_asset_registration command without any pre-configured scope."
+commands.deny = ["repair_shared_asset_registration"]

@@ -27,7 +27,6 @@ export function buildBackupPreview(context: BackupContext, scope: BackupScope): 
   const includes = scope.kind === 'files'
     ? [...scope.paths, 'Agent 长期记忆（若选中文件包含）']
     : [
-        ...(scope.kind === 'all' ? ['Bandi 配置方案元数据'] : []),
         'Agent 配置',
         '组织关系',
         '项目与目录授权信息',

@@ -14,58 +14,31 @@
     "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "kind": { "enum": ["rule", "skill", "mcp", "sop", "hook", "command", "output_profile"] },
     "locator": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["rootKind", "displayPath"],
-      "properties": {
-        "rootKind": { "const": "bandi" },
-        "displayPath": { "type": "string", "minLength": 1, "maxLength": 4096 },
-        "relativePath": { "type": "string", "minLength": 1, "maxLength": 4096 }
-      }
+      "type": "object", "additionalProperties": false, "required": ["rootKind", "displayPath"],
+      "properties": { "rootKind": { "const": "bandi" }, "displayPath": { "type": "string", "minLength": 1, "maxLength": 4096 }, "relativePath": { "type": "string", "minLength": 1, "maxLength": 4096 } }
     },
     "diagnostic": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["code", "severity", "message"],
-      "properties": {
-        "code": { "type": "string", "minLength": 1 },
-        "severity": { "enum": ["error", "warning", "info"] },
-        "message": { "type": "string", "minLength": 1 },
-        "field": { "type": "string" },
-        "path": { "type": "string" },
-        "remediation": { "type": "string" }
-      }
+      "type": "object", "additionalProperties": false, "required": ["code", "severity", "message"],
+      "properties": { "code": { "type": "string", "minLength": 1 }, "severity": { "enum": ["error", "warning", "info"] }, "message": { "type": "string", "minLength": 1 }, "source": { "type": "string" }, "field": { "type": "string" }, "path": { "type": "string" }, "remediation": { "type": "string" } }
+    },
+    "source": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "authored" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "fileName", "importedHash", "importedAt"], "properties": { "kind": { "const": "imported" }, "fileName": { "type": "string", "minLength": 1, "maxLength": 255 }, "importedHash": { "$ref": "#/$defs/hash" }, "importedAt": { "type": "string", "format": "date-time" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "legacy" } } }
+      ]
     },
     "sharedAsset": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "kind", "teamId", "locator", "contentHash", "parseStatus", "diagnostics"],
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "kind", "teamId", "locator", "contentHash", "containerContentHash", "writable", "source", "parseStatus", "diagnostics"],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "kind": { "oneOf": [{ "$ref": "#/$defs/kind" }, { "const": "unknown" }] },
-        "teamId": { "$ref": "#/$defs/id" },
-        "locator": { "$ref": "#/$defs/locator" },
-        "contentHash": { "$ref": "#/$defs/hash" },
-        "parseStatus": { "enum": ["parsed", "invalid"] },
-        "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+        "id": { "$ref": "#/$defs/id" }, "name": { "type": "string", "minLength": 1, "maxLength": 200 }, "kind": { "oneOf": [{ "$ref": "#/$defs/kind" }, { "const": "unknown" }] }, "teamId": { "$ref": "#/$defs/id" }, "locator": { "$ref": "#/$defs/locator" }, "contentHash": { "$ref": "#/$defs/hash" }, "containerContentHash": { "$ref": "#/$defs/hash" }, "writable": { "type": "boolean" }, "source": { "$ref": "#/$defs/source" }, "currentRevisionId": { "$ref": "#/$defs/id" }, "parseStatus": { "enum": ["parsed", "invalid"] }, "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
       }
     },
     "reference": {
-      "type": "object",
-      "additionalProperties": false,
+      "type": "object", "additionalProperties": false,
       "required": ["sourceAssetId", "sourceContainerId", "referrerKind", "referrerId", "targetAssetId", "targetKind", "state", "sourcePath"],
-      "properties": {
-        "sourceAssetId": { "$ref": "#/$defs/id" },
-        "sourceContainerId": { "$ref": "#/$defs/id" },
-        "referrerKind": { "const": "agent" },
-        "referrerId": { "$ref": "#/$defs/id" },
-        "targetAssetId": { "$ref": "#/$defs/id" },
-        "targetKind": { "$ref": "#/$defs/kind" },
-        "state": { "enum": ["resolved", "unresolved", "dangling", "type_mismatch", "out_of_scope", "target_invalid"] },
-        "targetLocator": { "$ref": "#/$defs/locator" },
-        "targetTeamId": { "$ref": "#/$defs/id" },
-        "sourcePath": { "type": "string", "minLength": 1, "maxLength": 4096 }
-      }
+      "properties": { "sourceAssetId": { "$ref": "#/$defs/id" }, "sourceContainerId": { "$ref": "#/$defs/id" }, "referrerKind": { "const": "agent" }, "referrerId": { "$ref": "#/$defs/id" }, "targetAssetId": { "$ref": "#/$defs/id" }, "targetKind": { "$ref": "#/$defs/kind" }, "state": { "enum": ["resolved", "unresolved", "dangling", "type_mismatch", "out_of_scope", "target_invalid"] }, "targetLocator": { "$ref": "#/$defs/locator" }, "targetTeamId": { "$ref": "#/$defs/id" }, "sourcePath": { "type": "string", "minLength": 1, "maxLength": 4096 } }
     }
   }
 }

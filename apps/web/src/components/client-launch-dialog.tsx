@@ -83,22 +83,25 @@ export function ClientLaunchDialog({ client, initialAgentId, close }: { client: 
         taskId: task?.id,
       })
       setCapability(result.capability)
-      if (result.outcome === 'context_prepared') {
+      if (result.outcome === 'manual_context_required') {
+        if (result.manualPrompt) {
+          await navigator.clipboard.writeText(result.manualPrompt)
+          setCopied(true)
+        }
         close()
-        dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: '上下文已准备', description: `请在 ${client.name} 中继续；Bandi 不会打开工具或跟踪其中的任务。`, duration: 5000 } })
+        dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'info', title: `${client.name} 打开请求已发送`, description: result.manualPrompt ? '上下文已复制，请在工具中粘贴后继续。' : '此工具暂不支持自动携带上下文。', duration: 6000 } })
       } else {
-        setError(result.capability.status === 'degraded'
-          ? '只能准备部分上下文。请查看技术详情，并按提示继续。'
-          : '无法准备上下文。请查看技术详情，并按提示重试。')
+        close()
+        dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: `${client.name} 启动请求已发送`, description: 'Bandi 不会跟踪工具中的会话、任务或输出。', duration: 5000 } })
       }
     } catch {
-      setError('无法准备上下文。请确认正在使用 Bandi Desktop 后重试。')
+      setError('无法启动工具。请确认工具和首选终端可用后重试。')
     } finally {
       setOpening(false)
     }
   }
 
-  return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={`在 ${client.name} 中继续`} description="选择 Agent，并可附加一条需求作为上下文。" size="lg" footer={<><Button variant="outline" onClick={close}>取消</Button>{desktop ? <Button disabled={!team || !agent || opening} onClick={launch}>{opening ? '正在准备…' : '准备上下文'}</Button> : <Button disabled={!team || !agent} onClick={copySummary}>{copied ? '上下文已复制' : '复制上下文'}</Button>}</>}>
+  return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={`在 ${client.name} 中继续`} description="选择 Agent，并可附加一条需求作为上下文。" size="lg" footer={<><Button variant="outline" onClick={close}>取消</Button>{desktop ? <Button disabled={!team || !agent || opening} onClick={launch}>{opening ? '正在启动…' : '启动'}</Button> : <Button disabled={!team || !agent} onClick={copySummary}>{copied ? '上下文已复制' : '复制上下文'}</Button>}</>}>
     <div className="space-y-5">
       {state.teams.length > 1 && <label className="block text-sm font-medium">1. Team<select className="mt-2 h-10 w-full px-3" value={teamId} onChange={(event) => selectTeam(event.target.value)}>{state.teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
       {state.teams.length === 1 && <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm"><span className="text-muted-foreground">Team</span><b className="ml-3">{team?.name}</b></div>}
@@ -108,7 +111,7 @@ export function ClientLaunchDialog({ client, initialAgentId, close }: { client: 
         <div><label htmlFor="client-launch-task" className="block text-sm font-medium">需求（可选）</label><select id="client-launch-task" className="mt-2 h-10 w-full px-3" value={taskId} onChange={(event) => setTaskId(event.target.value)}><option value="">不附加需求</option>{tasks.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><span className="mt-1 block text-xs text-muted-foreground">需求只作为上下文，不会在 Bandi 中创建或跟踪执行进度。</span></div>
         <section className="rounded-lg border border-border bg-muted/30 p-4" aria-labelledby="launch-context-summary"><div className="flex items-center justify-between gap-3"><h3 id="launch-context-summary" className="text-sm font-semibold">本次上下文</h3><Button variant="ghost" size="sm" disabled={!team || !agent} onClick={copySummary}>{copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}{copied ? '已复制' : '复制'}</Button></div><pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">{summary}</pre></section>
       </>}
-      <div className="flex gap-2 rounded-md bg-muted p-3 text-sm leading-6 text-muted-foreground"><Info size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span>Bandi 只准备所选长期上下文，不会打开 AI 编程工具、授予更多权限或跟踪工具中的任务。</span></div>
+      <div className="flex gap-2 rounded-md bg-muted p-3 text-sm leading-6 text-muted-foreground"><Info size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span>Bandi 只把所选长期上下文交给固定工具入口；不会授予更多权限，也不会跟踪工具中的会话、任务或输出。</span></div>
       {capability && <details className="rounded-md border border-border p-3 text-sm"><summary className="cursor-pointer font-medium">技术详情</summary><p className="mt-2 text-xs text-muted-foreground">{capability.reason}</p>{capability.remediation.map((item) => <p key={item} className="mt-1 text-xs text-muted-foreground">{item}</p>)}</details>}
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     </div>

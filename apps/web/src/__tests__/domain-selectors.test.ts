@@ -39,7 +39,9 @@ describe('配置事实 selectors', () => {
     const healthyAgents = initialState.agents.filter((agent) => getAgentConfigStatus(initialState, agent).level === 'healthy')
     const healthy = { ...initialState, onboarding: { status: 'completed' as const }, agents: healthyAgents, agentDiagnostics: [], agentRecoveryOperations: [] }
     expect(getConfigurationStatusSummary(healthy).phase).toBe('healthy')
+    expect(getConfigurationStatusSummary({ ...healthy, onboarding: { status: 'active' } }).phase).toBe('healthy')
     expect(getConfigurationStatusSummary({ ...healthy, agents: [], onboarding: { status: 'active' } }).phase).toBe('first-use')
+    expect(getConfigurationStatusSummary({ ...healthy, agents: [] }).phase).toBe('healthy')
     expect(getConfigurationStatusSummary({ ...healthy, runtime: 'desktop', hydration: { ...healthy.hydration, managedAgents: 'loading' } }).phase).toBe('loading')
     expect(getConfigurationStatusSummary({ ...healthy, runtime: 'desktop', agentDiagnostics: [{ code: 'invalid-agent', severity: 'error', message: 'Agent 配置无效' }], hydration: { ...healthy.hydration, managedAgents: 'loading' } }).phase).toBe('pending')
     expect(getConfigurationStatusSummary({ ...healthy, runtime: 'desktop', hydration: { ...healthy.hydration, managedAgents: 'failed' } }).phase).toBe('failed')

@@ -4,20 +4,18 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FactoryResetPanel } from '../pages/settings/factory-reset-panel'
-import { ToolsConfigurationSection } from '../pages/settings/tools-configuration-section'
+import { ToolsPage } from '../pages/tools/tools-page'
 import { AppProvider, initialState, useApp } from '../state'
-import { applyToolConfigurationSnapshot } from '../tool-configuration'
 import { MAIN_MENU_LAYOUT_STORAGE_KEY } from '../navigation-layout'
 import { LEGACY_THEME_STORAGE_KEY, UI_PREFERENCES_STORAGE_KEY } from '../ui-preferences'
 
 const bridge = vi.hoisted(() => ({
+  isDesktopRuntime: () => true,
   commitFactoryReset: vi.fn(),
   restartAfterFactoryReset: vi.fn(),
-  createToolPlan: vi.fn(),
-  copyToolPlan: vi.fn(),
-  deleteCustomTool: vi.fn(),
-  deleteToolPlan: vi.fn(),
-  loadToolConfiguration: vi.fn(),
+  listAiToolHostStatuses: vi.fn(),
+  openAiToolInstallPage: vi.fn(),
+  revealAiToolConfigLocation: vi.fn(),
   listHostIntegrations: vi.fn(),
   previewHostIntegrationInstall: vi.fn(),
   commitHostIntegrationInstall: vi.fn(),
@@ -25,30 +23,24 @@ const bridge = vi.hoisted(() => ({
   commitHostIntegrationUninstall: vi.fn(),
   revealHostDirectory: vi.fn(),
   previewFactoryReset: vi.fn(),
-  saveCustomTool: vi.fn(),
-  saveToolPlan: vi.fn(),
-  selectToolPlan: vi.fn(),
 }))
 
 vi.mock('../desktop-bridge', () => bridge)
 
-const initialSnapshot = {
-  revision: 2,
-  selectedPlanId: 'default',
-  builtInToolIds: ['claude-code'],
-  plans: [{ id: 'default', name: '默认方案', toolIds: [] }],
-  customTools: [],
-}
+const hostStatuses = initialState.aiClients.map((client) => ({
+  toolId: client.id,
+  availability: client.id === 'claude-code' ? 'installed' : 'not_found',
+  contextMode: client.id === 'claude-code' ? 'initial_prompt' : 'manual_context',
+  configLocationLabel: `~/.config/${client.id}`,
+  canRevealConfig: client.id === 'claude-code',
+  canOpenOfficialInstallPage: true,
+  reasonCode: client.id === 'claude-code' ? 'TOOL_INSTALLED' : 'TOOL_NOT_FOUND',
+}))
 
 function renderTools() {
   render(
-    <AppProvider initialState={{
-      ...initialState,
-      runtime: 'desktop',
-      hydration: { ...initialState.hydration, toolConfiguration: 'succeeded' },
-      ...applyToolConfigurationSnapshot(initialSnapshot),
-    }}>
-      <ToolsConfigurationSection />
+    <AppProvider initialState={{ ...initialState, runtime: 'desktop' }}>
+      <ToolsPage />
     </AppProvider>,
   )
 }
@@ -56,6 +48,7 @@ function renderTools() {
 const storage = new Map<string, string>()
 beforeEach(() => {
   vi.clearAllMocks()
+  bridge.listAiToolHostStatuses.mockResolvedValue(hostStatuses)
   bridge.listHostIntegrations.mockResolvedValue([])
   storage.clear()
   vi.stubGlobal('localStorage', {
@@ -71,55 +64,28 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('Desktop 工具方案', () => {
-  it('以后端返回快照创建并切换方案', async () => {
-    const created = {
-      ...initialSnapshot,
-      revision: 3,
-      selectedPlanId: 'review',
-      plans: [...initialSnapshot.plans, { id: 'review', name: '评审方案', toolIds: [] }],
-    }
-    bridge.createToolPlan.mockResolvedValue(created)
+describe('Desktop AI 工具', () => {
+  it('按本机状态筛选，并以稳定标识打开官方入口和配置位置', async () => {
+    bridge.openAiToolInstallPage.mockResolvedValue({ toolId: 'codex', requestId: '00000000-0000-4000-8000-000000000001', outcome: 'open_requested' })
+    bridge.revealAiToolConfigLocation.mockResolvedValue({ toolId: 'claude-code', requestId: '00000000-0000-4000-8000-000000000001', outcome: 'revealed' })
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001')
     renderTools()
 
-    fireEvent.click(screen.getByRole('button', { name: '新建方案' }))
-    fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '评审方案' } })
-    fireEvent.click(screen.getByRole('button', { name: '创建方案' }))
+    expect((await screen.findAllByText('Claude Code')).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: '已安装' }))
+    expect(screen.getAllByText('Claude Code')).toHaveLength(2)
+    expect(screen.queryByText('ChatGPT')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '在文件管理器中显示' }))
+    await waitFor(() => expect(bridge.revealAiToolConfigLocation).toHaveBeenCalledWith({
+      toolId: 'claude-code', requestId: '00000000-0000-4000-8000-000000000001',
+    }))
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '当前工具方案' })).toHaveValue('review'))
-    expect(bridge.createToolPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ name: '评审方案', toolIds: [] }),
-      2,
-    )
-  })
-
-  it('按操作显示进行态和成功反馈', async () => {
-    let resolve!: (value: typeof initialSnapshot) => void
-    bridge.selectToolPlan.mockReturnValue(new Promise((done) => { resolve = done }))
-    renderTools()
-    fireEvent.change(screen.getByRole('combobox', { name: '当前工具方案' }), { target: { value: 'default' } })
-    expect(screen.getByText('正在更新工具方案…')).toHaveAttribute('role', 'status')
-    resolve(initialSnapshot)
-    await waitFor(() => expect(screen.getByText('工具方案已切换')).toHaveAttribute('role', 'status'))
-  })
-
-  it('重名错误与名称字段关联', () => {
-    renderTools()
-    fireEvent.click(screen.getByRole('button', { name: '新建方案' }))
-    fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '默认方案' } })
-    const input = screen.getByRole('textbox', { name: '名称' })
-    expect(input).toHaveAttribute('aria-describedby', 'tool-editor-name-error')
-    expect(screen.getByText('已有名为“默认方案”的方案，请使用其他名称。')).toHaveAttribute('id', 'tool-editor-name-error')
-  })
-
-  it('写入失败时保留当前工具方案并显示错误', async () => {
-    bridge.saveToolPlan.mockRejectedValue(new Error('revision conflict'))
-    renderTools()
-
-    fireEvent.click(screen.getByRole('button', { name: '加入当前方案' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('revision conflict')
-    expect(screen.getByRole('combobox', { name: '当前工具方案' })).toHaveValue('default')
+    fireEvent.click(screen.getByRole('button', { name: '未安装' }))
+    fireEvent.click(screen.getByRole('button', { name: /ChatGPT/ }))
+    fireEvent.click(screen.getByRole('button', { name: '查看官方安装方式' }))
+    await waitFor(() => expect(bridge.openAiToolInstallPage).toHaveBeenCalledWith({
+      toolId: 'codex', requestId: '00000000-0000-4000-8000-000000000001',
+    }))
   })
 
   it('宿主入口安装先预览并使用稳定标识提交', async () => {
@@ -153,120 +119,6 @@ describe('Desktop 工具方案', () => {
     }))
   })
 
-  it('固定配置目录不可用时禁用打开操作', async () => {
-    bridge.listHostIntegrations.mockResolvedValue([{
-      toolId: 'claude-code', targetId: 'claude-code-user-skill-v1', status: 'not_checked',
-      installationState: 'not_installed', canInstall: false, canUninstall: false, canReveal: false,
-      reason: '固定配置目录不存在或不是普通目录',
-    }])
-    renderTools()
-
-    expect(await screen.findByRole('button', { name: '在文件管理器中显示' })).toBeDisabled()
-    expect(bridge.revealHostDirectory).not.toHaveBeenCalled()
-  })
-
-  it('打开固定配置目录只提交稳定标识', async () => {
-    bridge.listHostIntegrations.mockResolvedValue([{
-      toolId: 'codex', targetId: 'agents-user-skill-v1', status: 'not_checked',
-      installationState: 'not_installed', canInstall: true, canUninstall: false, canReveal: true,
-      reason: '只检查 Bandi 集成文件；工具是否已识别该集成尚未验证',
-    }])
-    bridge.revealHostDirectory.mockResolvedValue({
-      toolId: 'codex', targetId: 'agents-user-skill-v1',
-      requestId: '00000000-0000-4000-8000-000000000001', status: 'not_checked', revealed: true,
-      reason: '已在系统文件管理器中打开固定配置目录；Bandi 未读取目录内容',
-    })
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001')
-    renderTools()
-
-    fireEvent.click(await screen.findByRole('button', { name: '在文件管理器中显示' }))
-
-    await waitFor(() => expect(bridge.revealHostDirectory).toHaveBeenCalledWith({
-      toolId: 'codex', targetId: 'agents-user-skill-v1', requestId: '00000000-0000-4000-8000-000000000001',
-    }))
-    const feedback = await screen.findByRole('status', { name: '' })
-    expect(feedback).toHaveTextContent('预设安装位置已在文件管理器中显示')
-    expect(feedback).toHaveTextContent('Bandi 未读取文件夹内容；工具是否已识别该集成尚未验证')
-  })
-
-  it('分开展示入口状态和工具加载状态，并只统计需要处理的入口', async () => {
-    bridge.listHostIntegrations.mockResolvedValue([
-      {
-        toolId: 'claude-code', targetId: 'claude-code-user-skill-v1', status: 'not_checked',
-        installationState: 'installed', canInstall: false, canUninstall: true, canReveal: true,
-        reason: '固定入口文件与当前版本一致',
-      },
-      {
-        toolId: 'codex', targetId: 'agents-user-skill-v1', status: 'not_checked',
-        installationState: 'not_installed', canInstall: true, canUninstall: false, canReveal: true,
-        reason: '固定入口尚未安装',
-      },
-      {
-        toolId: 'gemini-cli', targetId: 'gemini-extension-v1', status: 'degraded',
-        installationState: 'update_available', canInstall: true, canUninstall: true, canReveal: true,
-        reason: '入口版本可更新',
-      },
-      {
-        toolId: 'grok-build', targetId: 'grok-user-skill-v1', status: 'not_checked',
-        installationState: 'foreign_collision', canInstall: false, canUninstall: false, canReveal: true,
-        reason: '目标位置存在非 Bandi 文件',
-      },
-      {
-        toolId: 'claude-desktop', targetId: 'claude-desktop-mcpb-v1', status: 'degraded',
-        installationState: 'unsupported', canInstall: false, canUninstall: false, canReveal: false,
-        reason: '需要在官方界面完成安装',
-      },
-      {
-        toolId: 'opencode', targetId: 'opencode-user-skill-v1', status: 'not_checked',
-        installationState: 'unknown', canInstall: false, canUninstall: false, canReveal: false,
-        reason: '无法确认固定入口状态',
-      },
-    ])
-    renderTools()
-
-    expect(await screen.findByText('共 6 个集成 · 4 个需处理')).toBeInTheDocument()
-    expect(screen.getByText('已安装')).toBeInTheDocument()
-    expect(screen.getAllByText('工具是否识别该集成')).toHaveLength(6)
-    expect(screen.queryByText('宿主验证')).not.toBeInTheDocument()
-    expect(screen.getAllByText('尚未验证').length).toBeGreaterThan(0)
-    expect(screen.getByText('有可用更新')).toBeInTheDocument()
-    expect(screen.getByText('目标位置已被占用')).toBeInTheDocument()
-    expect(screen.getByText('需在工具中安装')).toBeInTheDocument()
-    expect(screen.getByText('无法检查')).toBeInTheDocument()
-    expect(screen.getAllByText('部分能力可用')).toHaveLength(2)
-    expect(screen.queryByText('已加载')).not.toBeInTheDocument()
-    expect(screen.queryByText('可运行')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '需处理（4）' }))
-    expect(screen.queryByText('固定入口文件与当前版本一致')).not.toBeInTheDocument()
-    expect(screen.queryByText('固定入口尚未安装')).not.toBeInTheDocument()
-    expect(screen.getByText('入口版本可更新')).toBeInTheDocument()
-  })
-
-  it('没有需处理入口时显示筛选空状态', async () => {
-    bridge.listHostIntegrations.mockResolvedValue([{
-      toolId: 'codex', targetId: 'agents-user-skill-v1', status: 'not_checked',
-      installationState: 'not_installed', canInstall: true, canUninstall: false, canReveal: true,
-      reason: '固定入口尚未安装',
-    }])
-    renderTools()
-
-    fireEvent.click(await screen.findByRole('button', { name: '需处理（0）' }))
-    expect(screen.getByText('没有需要处理的集成')).toBeInTheDocument()
-    expect(screen.getByText(/工具是否已识别集成仍需单独确认/)).toBeInTheDocument()
-  })
-
-  it('重新检查失败时保留上次成功检查时间', async () => {
-    bridge.listHostIntegrations.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('service unavailable'))
-    renderTools()
-
-    const checkedAt = await screen.findByText(/安装状态上次检查：/)
-    const previousText = checkedAt.textContent
-    fireEvent.click(screen.getByRole('button', { name: '重新检查 Bandi 集成状态' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('service unavailable')
-    expect(screen.getByText(previousText ?? '')).toBeInTheDocument()
-  })
 })
 
 describe('重置 Bandi 面板', () => {

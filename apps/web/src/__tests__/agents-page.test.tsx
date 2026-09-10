@@ -21,8 +21,9 @@ describe('Agents 列表入口', () => {
   it('新建和导入 Agent 使用各自的页面入口', () => {
     renderAgents()
 
-    expect(screen.getByRole('link', { name: '新建 Agent' })).toHaveAttribute('href', '/agents/new')
-    expect(screen.getByRole('link', { name: '导入 Agent' })).toHaveAttribute('href', '/agents/new?mode=import')
+    const trigger = screen.getByRole('button', { name: '添加 Agent' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('link', { name: '仅登记外部引用' })).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '新建 Agent' })).not.toBeInTheDocument()
   })
@@ -30,12 +31,27 @@ describe('Agents 列表入口', () => {
   it('首次空状态隐藏筛选并就近提供创建与导入入口', () => {
     renderAgents({ ...initialState, agents: [], agentDiagnostics: [] })
 
-    expect(screen.getByText('还没有 Agent')).toBeInTheDocument()
-    expect(screen.queryByText('新建 Agent，或导入已有 Claude Code Agent 配置。')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: '新建 Agent' })).toHaveLength(1)
+    expect(screen.getByText('当前 Team 还没有 Agent')).toBeInTheDocument()
+    expect(screen.getByText('添加一个长期 Agent，或导入已有配置。')).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: '添加 Agent' })).toHaveLength(1)
     expect(screen.getAllByRole('link', { name: '导入已有 Agent' })).toHaveLength(1)
     expect(screen.queryByRole('textbox', { name: '搜索 Agent' })).not.toBeInTheDocument()
     expect(screen.queryByText(/显示 0 个/)).not.toBeInTheDocument()
+  })
+
+  it('已有 Agent 时不受未完成首次设置影响', () => {
+    const agent = initialState.agents.find((item) => item.teamId === initialState.currentTeamId)!
+    renderAgents({
+      ...initialState,
+      onboarding: { status: 'active' },
+      agents: [agent],
+      agentDiagnostics: [],
+      agentRecoveryOperations: [],
+    })
+
+    expect(screen.queryByText('还没有 Agent')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: new RegExp(`查看 ${agent.name} Agent 详情`) })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '添加 Agent' })).toBeInTheDocument()
   })
 
   it('筛选无结果时保留筛选并提供清除操作', () => {
@@ -80,6 +96,25 @@ describe('Agents 列表入口', () => {
     expect(screen.queryByRole('link', { name: /查看 其他 Team Agent/ })).not.toBeInTheDocument()
     const count = initialState.agents.filter((agent) => agent.teamId === initialState.currentTeamId).length
     expect(screen.getByText(`显示 ${count} 个，共 ${count} 个 Agent`)).toBeInTheDocument()
+  })
+
+  it('可按职能、职责和能力名称搜索，并按职能筛选', () => {
+    const teamAgents = initialState.agents.filter((agent) => agent.teamId === initialState.currentTeamId)
+    const target = teamAgents[0]
+    const skill = initialState.assets.find((asset) => asset.kind === 'Skill')
+    const searchable = {
+      ...target,
+      responsibilities: ['梳理验收标准'],
+      skillRefs: skill ? [skill.id] : [],
+    }
+    const state = { ...initialState, agents: initialState.agents.map((agent) => agent.id === target.id ? searchable : agent) }
+
+    const view = renderAgents(state, `/agents?q=${encodeURIComponent('梳理验收标准')}`)
+    expect(screen.getByRole('link', { name: new RegExp(`查看 ${target.name} Agent 详情`) })).toBeInTheDocument()
+    view.unmount()
+
+    renderAgents(state, `/agents?function=${target.functionId}`)
+    expect(screen.getAllByRole('link', { name: /查看 .* Agent 详情/ }).every((link) => link.textContent?.includes(target.name))).toBe(true)
   })
 
   it('外部变化缺少对应文件时安全降级到 AgentPackage', () => {

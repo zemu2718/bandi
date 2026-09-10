@@ -85,7 +85,7 @@ describe('Agent 创建页', () => {
     expect(screen.getByRole('dialog', { name: '新建 Agent' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Agent 名称/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '空白 Agent' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: '代码审查' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: '研发' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('textbox', { name: /一句话描述/ })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /角色定位/ })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /工作方法与约束/ })).toBeInTheDocument()
@@ -131,17 +131,18 @@ describe('Agent 创建页', () => {
     renderPage({ ...initialState, teams: [initialState.teams[0]] })
     enterName()
 
-    fireEvent.click(screen.getByRole('button', { name: '代码审查' }))
-    expect(screen.getByRole('textbox', { name: /一句话描述/ })).toHaveValue('审查代码的正确性、安全性与可维护性。')
-    expect(screen.getByRole('textbox', { name: /角色定位/ })).toHaveValue('你是一名严格、务实的代码审查 Agent，负责在代码合入前识别可复现且影响明确的问题。')
-    expect(screen.getByRole('textbox', { name: /工作方法与约束/ })).toHaveValue('先确认变更范围和验证证据。\n按影响排序，说明问题位置、后果和最小修复方向。\n不要把个人偏好表达成代码缺陷。')
+    fireEvent.click(screen.getByRole('button', { name: '研发' }))
+    expect(screen.getByRole('textbox', { name: /一句话描述/ })).toHaveValue('把已确认目标交付为可验证的软件成果。')
+    expect(screen.getByRole('textbox', { name: /角色定位/ })).toHaveValue('你是一名可靠的研发 Agent，负责实现、验证并说明技术取舍。')
+    expect(screen.getByRole('textbox', { name: /工作方法与约束/ })).toHaveValue('先理解现有代码和边界。\n保持改动聚焦并运行相关验证。\n不自行扩大权限或任务范围。')
     fireEvent.click(screen.getByRole('button', { name: '创建 Agent' }))
 
     await waitFor(() => expect(bridge.commitManagedAgentCreation).toHaveBeenCalledTimes(1))
     const agent = bridge.commitManagedAgentCreation.mock.calls[0][1]
-    expect(agent.mission).toBe('审查代码的正确性、安全性与可维护性。')
-    expect(agent.instructions).toContain('严格、务实的代码审查 Agent')
-    expect(agent.instructions).toContain('先确认变更范围和验证证据')
+    expect(agent.functionId).toBe('engineering')
+    expect(agent.mission).toBe('把已确认目标交付为可验证的软件成果。')
+    expect(agent.instructions).toContain('可靠的研发 Agent')
+    expect(agent.instructions).toContain('先理解现有代码和边界')
     expect(agent.responsibilities).toEqual([])
     expect(agent.ruleRefs).toEqual([])
     expect(agent.permissions).toEqual({ files: '未授予', commands: '未授予', network: '未授予', delegation: '未授予' })
@@ -154,17 +155,17 @@ describe('Agent 创建页', () => {
   it('修改模板字段后切换模板需要确认，且不覆盖名称', () => {
     renderPage()
     enterName()
-    fireEvent.click(screen.getByRole('button', { name: '代码审查' }))
+    fireEvent.click(screen.getByRole('button', { name: '研发' }))
     fireEvent.change(screen.getByRole('textbox', { name: /角色定位/ }), { target: { value: '自定义角色' } })
 
-    fireEvent.click(screen.getByRole('button', { name: '研究助理' }))
+    fireEvent.click(screen.getByRole('button', { name: '产品' }))
 
     expect(screen.getByRole('dialog', { name: '替换当前模板内容？' })).toBeInTheDocument()
     expect(document.getElementById('field-角色定位（可选）')).toHaveValue('自定义角色')
     fireEvent.click(screen.getByRole('button', { name: '替换内容' }))
     expect(screen.queryByRole('dialog', { name: '替换当前模板内容？' })).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Agent 名称/ })).toHaveValue('阿策')
-    expect(screen.getByRole('textbox', { name: /角色定位/ })).toHaveValue('你是一名严谨的研究助理，围绕明确问题收集、比较并归纳信息。')
+    expect(screen.getByRole('textbox', { name: /角色定位/ })).toHaveValue('你是一名务实的产品 Agent，负责澄清需求、收敛范围并定义可验证结果。')
   })
 
   it('关闭有内容的 Dialog 前确认放弃草稿', () => {
@@ -197,7 +198,7 @@ describe('Agent 创建页', () => {
 
     expect(screen.getByRole('dialog', { name: '导入 Agent' })).toBeInTheDocument()
     expect(screen.getByText(/当前仅支持导入 Claude Code 的 \.claude\/agents\/\*\.md 文件/)).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Codex（暂不支持导入）' })).toBeDisabled()
+    expect(screen.getByRole('option', { name: 'ChatGPT（暂不支持导入）' })).toBeDisabled()
     expect(screen.queryByText('1 身份与组织')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '导入 Agent' })).not.toBeInTheDocument()
 

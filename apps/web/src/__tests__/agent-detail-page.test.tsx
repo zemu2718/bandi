@@ -12,6 +12,7 @@ import * as desktopBridge from '../desktop-bridge'
 import type { DiscoveryResult, LoadEditorResult } from '../contracts'
 
 const NativeRequest = globalThis.Request
+const packageFixtureState = structuredClone(initialState)
 
 beforeEach(() => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
@@ -248,6 +249,59 @@ describe('Agent 双模式配置工作台', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '身份与职责版本历史' })).not.toBeInTheDocument())
   })
 
+  it('窄屏配置文件 Sheet 提供清晰层级、当前状态和键盘导航', async () => {
+    renderAgent('/agents/zhouce?tab=package&path=config%2Frules.yaml', packageFixtureState)
+
+    const trigger = screen.getByRole('button', { name: '选择文件' })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    const dialog = await screen.findByRole('dialog', { name: '配置文件' })
+    expect(dialog).toHaveClass('top-10', 'bottom-0')
+    expect(dialog).not.toHaveClass('inset-y-0')
+    expect(within(dialog).getByRole('tree')).toHaveClass('max-h-none', 'overflow-visible')
+    expect(within(dialog).getByRole('tree')).not.toHaveClass('overflow-auto')
+    expect(within(dialog).getByText('仅显示 Bandi 管理的配置文件')).toBeInTheDocument()
+    expect(within(dialog).getAllByRole('button', { name: '关闭' })).toHaveLength(1)
+    expect(within(dialog).queryByText(/文件记录/)).not.toBeInTheDocument()
+
+    const config = within(dialog).getByRole('treeitem', { name: 'config' })
+    const rules = within(dialog).getByRole('treeitem', { name: 'rules.yaml' })
+    expect(config).toHaveAttribute('aria-level', '1')
+    expect(config).toHaveAttribute('aria-expanded', 'true')
+    expect(rules).toHaveAttribute('aria-level', '2')
+    expect(rules).toHaveAttribute('aria-selected', 'true')
+    expect(rules).toHaveFocus()
+    expect(within(config).getByRole('group')).toContainElement(rules)
+
+    fireEvent.keyDown(rules, { key: 'ArrowLeft' })
+    expect(config).toHaveFocus()
+    fireEvent.keyDown(config, { key: 'ArrowLeft' })
+    expect(config).toHaveAttribute('aria-expanded', 'false')
+    expect(within(dialog).queryByRole('treeitem', { name: 'rules.yaml' })).not.toBeInTheDocument()
+    fireEvent.keyDown(config, { key: 'ArrowRight' })
+    expect(config).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('选择或退出配置文件 Sheet 后恢复触发按钮焦点', async () => {
+    const { router } = renderAgent('/agents/zhouce?tab=package&path=agent.yaml', packageFixtureState)
+    const trigger = screen.getByRole('button', { name: '选择文件' })
+
+    trigger.focus()
+    fireEvent.click(trigger)
+    const dialog = await screen.findByRole('dialog', { name: '配置文件' })
+    fireEvent.click(within(dialog).getByRole('treeitem', { name: 'instructions.md' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '配置文件' })).not.toBeInTheDocument())
+    expect(router.state.location.search).toContain('path=instructions.md')
+    expect(trigger).toHaveFocus()
+
+    fireEvent.click(trigger)
+    await screen.findByRole('dialog', { name: '配置文件' })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '配置文件' })).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
   it('受管 AgentPackage 未返回文件时提供安全重新读取', () => {
     const source = initialState.agents.find((item) => item.id === 'zhouce')!
     const state: State = {
@@ -471,6 +525,7 @@ describe('Agent 双模式配置工作台', () => {
     const state: State = {
       ...initialState,
       runtime: 'desktop',
+      sharedAssets: [{ id: 'rule-common', name: '公共安全边界', kind: 'rule', teamId: 'xinghe', locator: { rootKind: 'bandi', displayPath: 'rule-common/RULE.md', relativePath: 'rule-common/RULE.md' }, contentHash: `sha256:${'4'.repeat(64)}`, containerContentHash: `sha256:${'4'.repeat(64)}`, writable: true, source: { kind: 'authored' }, parseStatus: 'parsed', diagnostics: [] }],
       agents: initialState.agents.map((item) => item.id === source.id ? {
         ...item,
         packageSource: { kind: 'bandi-managed', packageId: 'agt_zhouce', strategy: 'managed' },
@@ -541,7 +596,7 @@ describe('Agent 双模式配置工作台', () => {
     renderAgent('/agents/zhouce?tab=skills', state)
 
     expect(screen.getByText('暂无可引用的技能')).toBeInTheDocument()
-    expect(screen.getByText(/当前没有可引用的共享.*Desktop 暂不支持创建或导入/)).toBeInTheDocument()
+    expect(screen.getByText(/当前没有可引用的共享.*请先前往.*配置资产.*新增或导入/)).toBeInTheDocument()
   })
 
   it('Desktop 受管 Skills 通过发现、加载与真实保存闭环', async () => {
@@ -618,7 +673,7 @@ describe('Agent 双模式配置工作台', () => {
     renderAgent('/agents/zhouce?tab=sop', state)
 
     expect(screen.getByText('暂无可引用的SOP')).toBeInTheDocument()
-    expect(screen.getByText(/当前没有可引用的共享.*Desktop 暂不支持创建或导入/)).toBeInTheDocument()
+    expect(screen.getByText(/当前没有可引用的共享.*请先前往.*配置资产.*新增或导入/)).toBeInTheDocument()
   })
 
   it('Desktop 受管 SOP 通过发现、加载与真实保存闭环', async () => {

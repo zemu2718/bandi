@@ -48,7 +48,7 @@ Each agent belongs to one team. For individual use, the built-in Personal Team p
 1. **Choose a team and agent.** Start with the Personal Team, or use teams to organize multiple persistent agents with different responsibilities.
 2. **View or edit persistent configuration.** Create an agent, then edit its Bandi-managed configuration in one interface.
 3. **Save safely and retain history.** The Local Service validates the target and baseline, writes atomically, reads the result back, and creates a revision after success.
-4. **Continue in your tool.** Client Launch v3 uses stable IDs only to prepare context for the selected team, agent, and optional requirement. The external tool performs the actual task.
+4. **Launch from AI Tools.** Choose one of the fixed tools on `/tools`, then temporarily select a team, agent, and optional requirement. Client Launch v3 reports launch or manual handoff through typed `outcome` and `contextDelivery` results; the external tool still performs the task.
 
 ### Fixed integration entry points
 
@@ -64,7 +64,7 @@ Each agent belongs to one team. For individual use, the built-in Personal Team p
 | Hermes | `~/.hermes/skills` |
 | Pi | `~/.pi/agent/skills` |
 
-A tool plan stores choices and configuration; it never installs integrations automatically. Host Integration installs to or reveals only a fixed allowlisted entry point after an explicit user action. Runtime capability without a real smoke test remains `not_checked`; a partial path is `degraded`.
+All nine tools have dedicated entries on the fixed `/tools` page. Local detection checks only fixed installation candidates; it does not run tools, scan `PATH`, or read configuration bodies. When a tool is not found, Bandi can open its fixed official installation page; when the fixed configuration location exists, the user can explicitly reveal it. Bandi never installs tools or integrations automatically, and opening an official page or revealing a location does not prove installation, loading, or runtime readiness.
 
 ### Persistent assets it manages
 
@@ -111,18 +111,18 @@ The Web app uses clearly labeled in-memory demonstrations. Real local storage, s
 By default, Bandi manages only its own persistent configuration assets:
 
 - **It does not execute or schedule tasks,** and provides no task center, approval workflow, or runtime monitoring console.
-- **It does not launch terminals or commands;** Client Launch v3 only prepares typed context.
+- **Launching stays constrained.** Client Launch v3 uses only fixed tool, adapter, and terminal enums plus stable IDs to submit a launch request or return context for manual copying; it accepts no arbitrary command, argument, or path.
 - **It does not manage sessions,** read terminal output, or mirror chats, todos, or logs.
 - **The app only displays Bandi-owned managed configuration.** It accepts no arbitrary paths and does not enumerate, scan, or read host configuration content.
-- **Host directories have one fixed-allowlist exception.** Only an explicit Host Integration action may install to or reveal a fixed entry point; Bandi exposes no general opener, file API, or shell.
+- **Host directories have one fixed-allowlist exception.** An explicit `/tools` action may only reveal an existing fixed configuration location. The installation action only opens a fixed official URL and never installs automatically; Bandi exposes no general opener, file API, or shell.
 - **It does not back up credentials or execution history;** tokens, cookies, private keys, keychain data, and Claude Code session content are excluded.
 - **Deletion and recovery affect Bandi-owned data only,** with separate confirmation and recovery boundaries for high-risk operations.
 
 ### More information
 
 - **Understand the product:** [Product and page architecture](./docs/产品与页面架构.md) · [Low-fidelity page wireframes](./docs/页面低保真线框图.md)
-- **Verify the implementation:** [Technical architecture](./docs/技术架构.md) · [Local service and frontend contract](./docs/本地服务与前端联调契约.md) · [Initial capability matrix](./docs/首版能力矩阵.md)
-- **Review acceptance:** [Initial acceptance report](./docs/首版验收报告.md) · [Report an issue](https://github.com/zemu2718/bandi/issues)
+- **Verify the implementation:** [Technical architecture](./docs/技术架构.md) · [Local service and frontend contract](./docs/本地服务与前端联调契约.md)
+- **Report an issue:** [GitHub Issues](https://github.com/zemu2718/bandi/issues)
 
 If Bandi helps you, consider giving the project a Star.
 

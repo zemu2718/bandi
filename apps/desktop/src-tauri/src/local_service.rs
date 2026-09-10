@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     fs,
-    io::ErrorKind,
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
 };
 
@@ -439,6 +439,12 @@ pub(crate) enum SaveConfigResult {
         #[serde(rename = "requestId")]
         request_id: String,
         challenge: ConfirmationChallengeDto,
+        #[serde(
+            rename = "affectedAgentIds",
+            default,
+            skip_serializing_if = "Vec::is_empty"
+        )]
+        affected_agent_ids: Vec<String>,
         diagnostics: Vec<DiagnosticDto>,
     },
     ValidationFailed {
@@ -1322,6 +1328,23 @@ pub(crate) fn project_managed_agent_at(
     let manifest = manifest
         .as_object()
         .ok_or_else(|| "AGENT_CANONICAL_INVALID: agent.yaml 必须是对象".to_string())?;
+    if manifest.get("functionId").is_some_and(|value| {
+        !matches!(
+            value.as_str(),
+            Some(
+                "product"
+                    | "design"
+                    | "engineering"
+                    | "testing"
+                    | "research"
+                    | "operations"
+                    | "general"
+                    | "other"
+            )
+        )
+    }) {
+        return Err("AGENT_CANONICAL_INVALID: agent.yaml 职能标识不受支持".into());
+    }
     const IDENTITY_FIELDS: &[&str] = &[
         "id",
         "name",
@@ -1329,6 +1352,7 @@ pub(crate) fn project_managed_agent_at(
         "teamId",
         "avatarPath",
         "mission",
+        "functionId",
         "responsibilities",
         "deliverables",
         "decisionBoundaries",
@@ -1804,14 +1828,12 @@ fn reference_diagnostic(state: &str, target_asset_id: &str) -> Option<Diagnostic
 fn reference_graph(
     assets: &[DiscoveredAsset],
     targets: &[SharedAssetNodeDto],
-    snapshot: &LongTermDomainSnapshotDtoV4,
     root_available: bool,
 ) -> (Vec<AssetReferenceDto>, Vec<DiagnosticDto>) {
     let target_index = targets
         .iter()
         .map(|target| (target.id.as_str(), target))
         .collect::<std::collections::HashMap<_, _>>();
-    let teams = shared_assets::agent_teams(snapshot);
     let mut references = Vec::new();
     let mut diagnostics = Vec::new();
     for asset in assets
@@ -1824,12 +1846,8 @@ fn reference_graph(
             .relative_path
             .clone()
             .unwrap_or_else(|| asset.container.locator.display_path.clone());
-        let referrer_id = source_path
-            .strip_prefix("agt_")
-            .and_then(|path| path.split('/').next())
-            .unwrap_or("unknown")
-            .to_string();
-        let referrer_team = teams.get(&referrer_id).map(String::as_str);
+        let referrer_id = asset.summary.agent_id.clone();
+        let referrer_team = Some(asset.summary.team_id.as_str());
         for (target_asset_id, target_kind) in referenced_assets(asset) {
             let target = target_index.get(target_asset_id.as_str()).copied();
             let state = reference_state(target, target_kind, referrer_team, root_available);
@@ -1901,12 +1919,8 @@ pub(crate) fn discover_with_shared_at(
         }
     };
     diagnostics.extend(shared_index.diagnostics);
-    let (references, mut reference_diagnostics) = reference_graph(
-        &assets,
-        &shared_index.nodes,
-        snapshot,
-        shared_index.root_available,
-    );
+    let (references, mut reference_diagnostics) =
+        reference_graph(&assets, &shared_index.nodes, shared_index.root_available);
     diagnostics.append(&mut reference_diagnostics);
     DiscoveryResult {
         request_id: request.request_id,
@@ -1939,16 +1953,27 @@ pub(crate) fn append_revision(
     let content_path = revisions_root.join(format!("{}.content", revision.id));
     let bytes =
         serde_json::to_vec(revision).map_err(|_| "ConfigRevision 无法序列化".to_string())?;
-    restricted_atomic_write(
-        &content_path,
-        content.as_bytes(),
-        false,
-        "ConfigRevision 正文",
-    )?;
-    if let Err(error) = restricted_atomic_write(&record_path, &bytes, false, "ConfigRevision 记录")
+    let mut content_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&content_path)
+        .map_err(|_| "ConfigRevision 已存在或无法创建".to_string())?;
+    if content_file
+        .write_all(content.as_bytes())
+        .and_then(|_| content_file.sync_all())
+        .is_err()
     {
+        let _ = fs::remove_file(&content_path);
+        return Err("ConfigRevision 正文无法完整写入".into());
+    }
+    let record_result = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&record_path)
+        .and_then(|mut file| file.write_all(&bytes).and_then(|_| file.sync_all()));
+    if record_result.is_err() {
         let _ = fs::remove_file(content_path);
-        return Err(error);
+        return Err("ConfigRevision 记录已存在或无法创建".into());
     }
     Ok(())
 }
@@ -2124,11 +2149,12 @@ fn permissions_expand(current: &PermissionsDocument, proposed: &PermissionsDocum
         || proposed.permissions.delegation != current.permissions.delegation
 }
 
-fn issue_confirmation(
+pub(crate) fn issue_confirmation(
     revisions_root: &Path,
     asset_id: &str,
     proposed_content_hash: &str,
     baseline_asset_hash: &str,
+    reason: &str,
 ) -> Result<ConfirmationChallengeDto, String> {
     let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
     let expires_at = expires.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
@@ -2155,11 +2181,11 @@ fn issue_confirmation(
         asset_id: asset_id.into(),
         proposed_content_hash: proposed_content_hash.into(),
         expires_at,
-        reason: "扩大 Agent 长期权限边界".into(),
+        reason: reason.into(),
     })
 }
 
-fn consume_confirmation(
+pub(crate) fn consume_confirmation(
     revisions_root: &Path,
     confirmation_ref: &str,
     asset_id: &str,
@@ -2427,6 +2453,7 @@ fn save_config_with_revision_source(
                     &item.summary.id,
                     &proposed_hash,
                     &baseline.asset_content_hash,
+                    "扩大 Agent 长期权限边界",
                 ) {
                     Ok(challenge) => challenge,
                     Err(message) => {
@@ -2448,6 +2475,7 @@ fn save_config_with_revision_source(
                 return SaveConfigResult::ConfirmationRequired {
                     request_id,
                     challenge,
+                    affected_agent_ids: Vec::new(),
                     diagnostics: vec![diagnostic(
                         "permission_expansion_confirmation_required",
                         "warning",

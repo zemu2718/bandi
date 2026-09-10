@@ -27,7 +27,7 @@ export type ClientLaunchDescriptor = {
 
 export const clientAdapterCatalog: Record<BuiltInClientId, {
   adapterId: ClientAdapterId
-  launch?: ClientLaunchDescriptor
+  launch: ClientLaunchDescriptor
   agentImport: { status: 'supported'; format: string } | { status: 'unavailable'; reason: string }
 }> = {
   'claude-code': {
@@ -35,18 +35,18 @@ export const clientAdapterCatalog: Record<BuiltInClientId, {
     launch: { clientId: 'claude-code', adapterId: 'claude-code-terminal-v1' },
     agentImport: { status: 'supported', format: '.claude/agents/*.md' },
   },
-  'claude-desktop': { adapterId: 'claude-desktop-config-v1', agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
+  'claude-desktop': { adapterId: 'claude-desktop-config-v1', launch: { clientId: 'claude-desktop', adapterId: 'claude-desktop-config-v1' }, agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
   codex: {
     adapterId: 'codex-terminal-v1',
     launch: { clientId: 'codex', adapterId: 'codex-terminal-v1' },
     agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' },
   },
-  'gemini-cli': { adapterId: 'gemini-cli-terminal-v1', agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
-  'grok-build': { adapterId: 'grok-build-config-v1', agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
-  opencode: { adapterId: 'opencode-terminal-v1', agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
-  openclaw: { adapterId: 'openclaw-terminal-v1', agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
-  hermes: { adapterId: 'hermes-terminal-v1', agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
-  pi: { adapterId: 'pi-terminal-v1', agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
+  'gemini-cli': { adapterId: 'gemini-cli-terminal-v1', launch: { clientId: 'gemini-cli', adapterId: 'gemini-cli-terminal-v1' }, agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
+  'grok-build': { adapterId: 'grok-build-config-v1', launch: { clientId: 'grok-build', adapterId: 'grok-build-config-v1' }, agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
+  opencode: { adapterId: 'opencode-terminal-v1', launch: { clientId: 'opencode', adapterId: 'opencode-terminal-v1' }, agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
+  openclaw: { adapterId: 'openclaw-terminal-v1', launch: { clientId: 'openclaw', adapterId: 'openclaw-terminal-v1' }, agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
+  hermes: { adapterId: 'hermes-terminal-v1', launch: { clientId: 'hermes', adapterId: 'hermes-terminal-v1' }, agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
+  pi: { adapterId: 'pi-terminal-v1', launch: { clientId: 'pi', adapterId: 'pi-terminal-v1' }, agentImport: { status: 'unavailable', reason: '未确认可导入的独立 Agent 文件格式' } },
 }
 
 export function launchDescriptor(clientId: string): ClientLaunchDescriptor | undefined {

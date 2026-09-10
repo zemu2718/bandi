@@ -17,7 +17,7 @@ Bandi Desktop 管理长期配置资产及其可追溯版本；用户选择的外
 核心高频流程固定为：
 
 ```text
-选择 Team → 选择 Agent → 查看或修改长期配置、按需整理 TaskBrief → 保存 → 在所选 AI 编程工具中继续
+查看或维护 Team、Agent 与 TaskBrief → 保存长期配置 → 进入 `/tools` → 选择固定工具 → 启动时临时选择 Team、Agent 和可选 TaskBrief → 提交受控启动请求
 ```
 
 设计与实现必须遵守：
@@ -41,10 +41,12 @@ Bandi Desktop 管理长期配置资产及其可追溯版本；用户选择的外
 - Agent 长期 Memory 通过受限目标、baseline 检查、原子写入和重读验证直接保存，成功后生成 `MemoryRevision`，失败时进入明确的 recovery；
 - 检测到旧非零开发数据库时，不迁移、不双读、不生成兼容投影，只提示恢复出厂并重新启动；恢复出厂仅清理 Bandi 自有数据；
 - Bandi 应用内只读取和展示 Bandi 自有受管配置，不接受任意路径，不枚举、不扫描、不读取宿主配置内容；删除与恢复只处理 Bandi 自有数据；
-- 唯一宿主目录例外是用户在独立 Host Integration 界面显式触发的固定 allowlist 原生入口安装或目录 reveal：前端只提交稳定工具 ID 与 `install | reveal`，目标由后端固定映射；不得暴露通用 opener、文件 API、Shell、脚本或可执行参数；
-- 九工具入口基线固定为：Claude Code plugin；Claude Desktop MCPB（转到官方 UI 安装，能力降级）；Codex `~/.agents/skills`；Gemini `~/.gemini/extensions`；Grok `~/.grok/skills`；OpenCode `~/.config/opencode/skills`；OpenClaw `~/.agents/skills` 或 `~/.openclaw/skills`（由固定平台规则选择）；Hermes `~/.hermes/skills`；Pi `~/.pi/agent/skills`；
-- Host Integration 独立于 Client Launch v3，工具方案不自动安装；未经真实 smoke 的运行态必须明确为 `not_checked`，部分链路可用时为 `degraded`；
-- Client Launch v3 仅准备由稳定 `teamId / agentId / taskId?` 标识的上下文，不打开目录、不启动终端或命令，也不管理 Session；
+- 九个内置 AI 工具统一位于固定 `/tools` 页面，不在设置中维护工具方案或自定义工具；
+- 前端只提交稳定 `toolId`；后端从固定九工具 catalog 解析本机安装候选、官方安装 URL 和固定配置位置；
+- 本机检测只检查固定候选是否存在，不运行工具、不扫描 PATH、不读取宿主配置内容；结果固定为 `installed | not_found | unsupported_platform | detection_failed`；
+- 用户可显式打开 catalog 内官方安装页面，或在原生文件管理器中 reveal 固定配置位置；接口不得接受路径、URL、bundle ID、executable、argv、Shell、AppleScript 或脚本；
+- reveal 仅显示固定配置位置；打开官方页面仅表示请求已提交，二者均不证明安装、登录、初始化或运行成功；
+- Client Launch v3 在启动时临时选择稳定 `teamId / agentId / taskId?`，由后端重取并验证上下文后按固定工具与终端映射提交受控启动请求；结果必须区分 `terminal_launch_requested | application_launch_requested | manual_context_required`，并用 `contextDelivery: initial_prompt | manual_copy | none` 表达上下文交付方式；不得把请求已提交写成工具已完成启动、登录或任务已开始，也不读取输出、保存 PID 或管理 Session；
 - 新增页面、导航、状态或流程前，必须确认其是否直接服务于多 Agent 配置管理；
 - 页面应减少导航层级、默认信息密度、技术术语和主操作数量，优先保证配置关系一眼可懂、编辑直接、保存结果明确。
 

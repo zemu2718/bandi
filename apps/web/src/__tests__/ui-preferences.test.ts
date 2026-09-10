@@ -27,6 +27,11 @@ describe('UiPreferences', () => {
     expect(parseUiPreferences({ version: 1, interfaceFont: 'unknown' }).interfaceFont).toBe(DEFAULT_UI_PREFERENCES.interfaceFont)
   })
 
+  it('只接受严格布尔值的首次 Team 初始化跳过偏好', () => {
+    expect(parseUiPreferences({ version: 1, firstUseTeamSetupDismissed: true }).firstUseTeamSetupDismissed).toBe(true)
+    expect(parseUiPreferences({ version: 1, firstUseTeamSetupDismissed: 'true' }).firstUseTeamSetupDismissed).toBe(false)
+  })
+
   it('保存并加载隐藏的 Agent 上下文栏偏好', () => {
     const data = new Map<string, string>()
     const storage = {

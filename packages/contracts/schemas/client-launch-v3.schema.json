@@ -140,6 +140,7 @@
         "teamId",
         "agentId",
         "capability",
+        "contextDelivery",
         "outcome"
       ],
       "properties": {
@@ -167,8 +168,22 @@
         "capability": {
           "$ref": "#/$defs/capability"
         },
+        "contextDelivery": {
+          "enum": [
+            "initial_prompt",
+            "manual_copy",
+            "none"
+          ]
+        },
+        "manualPrompt": {
+          "type": "string"
+        },
         "outcome": {
-          "const": "context_prepared"
+          "enum": [
+            "terminal_launch_requested",
+            "application_launch_requested",
+            "manual_context_required"
+          ]
         }
       }
     }

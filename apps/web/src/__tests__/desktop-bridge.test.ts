@@ -6,7 +6,9 @@ import type { FullAgent } from '../domain'
 import {
   commitManagedAgentCreation,
   commitManagedAgentIdentity,
+  commitSharedAssetImport,
   importClaudeAgent,
+  selectSharedAssetImport,
 } from '../desktop-bridge'
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }))
@@ -78,5 +80,34 @@ describe('Desktop bridge Agent Team 请求', () => {
         team: { teamId: agent.teamId },
       },
     })
+  })
+
+  it('共享资产导入只提交 opaque previewRef，不提交路径或文件内容', async () => {
+    await selectSharedAssetImport('request-4', 'team-product', 'skill')
+    expect(tauri.invoke).toHaveBeenCalledWith('select_shared_asset_import', {
+      request: { requestId: 'request-4', teamId: 'team-product', kind: 'skill' },
+    })
+
+    await commitSharedAssetImport({
+      requestId: 'request-5',
+      previewRef: 'preview-1',
+      expectedSourceHash: 'sha256:source',
+      teamId: 'team-product',
+      assetId: 'skill-review',
+      name: '代码审查',
+      confirmed: true,
+    })
+    expect(tauri.invoke).toHaveBeenLastCalledWith('commit_shared_asset_import', {
+      request: {
+        requestId: 'request-5',
+        previewRef: 'preview-1',
+        expectedSourceHash: 'sha256:source',
+        teamId: 'team-product',
+        assetId: 'skill-review',
+        name: '代码审查',
+        confirmed: true,
+      },
+    })
+    expect(JSON.stringify(tauri.invoke.mock.lastCall)).not.toMatch(/sourcePath|bytes/)
   })
 })

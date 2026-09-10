@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reveal-ai-tool-config-location"
+description = "Enables the reveal_ai_tool_config_location command without any pre-configured scope."
+commands.allow = ["reveal_ai_tool_config_location"]
+
+[[permission]]
+identifier = "deny-reveal-ai-tool-config-location"
+description = "Denies the reveal_ai_tool_config_location command without any pre-configured scope."
+commands.deny = ["reveal_ai_tool_config_location"]

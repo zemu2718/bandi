@@ -16,6 +16,15 @@ describe('Agent 配置模型', () => {
     expect(isAgentConfigPayload({ ...identity, value: { ...identity.value, name: '---' } })).toBe(false)
   })
 
+  it('保存已知职能并兼容旧身份数据', () => {
+    const payload = snapshotAgentConfig(agent, 'identity')
+    if (payload.kind !== 'identity') throw new Error('身份快照类型错误')
+    expect(payload.value.functionId).toBe('engineering')
+    expect(serializeAgentConfig(agent, payload)).toContain('functionId: "engineering"')
+    expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: undefined } })).toBe(true)
+    expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: 'unknown' } })).toBe(false)
+  })
+
   it('把普通配置映射到唯一规范路径', () => {
     expect(getAgentConfigPath({ kind: 'instructions', value: 'x' })).toBe('instructions.md')
     expect(getAgentConfigPath({ kind: 'rules', value: [] })).toBe('config/rules.yaml')

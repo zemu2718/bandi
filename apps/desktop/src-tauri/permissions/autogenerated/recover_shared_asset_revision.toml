@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recover-shared-asset-revision"
+description = "Enables the recover_shared_asset_revision command without any pre-configured scope."
+commands.allow = ["recover_shared_asset_revision"]
+
+[[permission]]
+identifier = "deny-recover-shared-asset-revision"
+description = "Denies the recover_shared_asset_revision command without any pre-configured scope."
+commands.deny = ["recover_shared_asset_revision"]

@@ -56,7 +56,7 @@ function requestFor(item: HostIntegrationDto) {
   return { toolId: item.toolId, targetId: item.targetId, requestId: crypto.randomUUID() }
 }
 
-export function HostIntegrationSection() {
+export function HostIntegrationSection({ toolId }: { toolId?: string }) {
   const { state } = useApp()
   const [items, setItems] = useState<HostIntegrationDto[]>([])
   const [loading, setLoading] = useState(true)
@@ -134,28 +134,29 @@ export function HostIntegrationSection() {
     } finally { setBusyToolId(undefined) }
   }
 
-  const attentionCount = items.filter((item) => needsAttention.has(item.installationState)).length
-  const visibleItems = filter === 'needs_attention' ? items.filter((item) => needsAttention.has(item.installationState)) : items
+  const scopedItems = toolId ? items.filter((item) => item.toolId === toolId) : items
+  const attentionCount = scopedItems.filter((item) => needsAttention.has(item.installationState)).length
+  const visibleItems = filter === 'needs_attention' ? scopedItems.filter((item) => needsAttention.has(item.installationState)) : scopedItems
   const busy = Boolean(busyToolId)
   const previewVerb = preview?.action === 'uninstall' ? '卸载' : preview?.installationState === 'update_available' ? '更新' : '安装'
 
   return <section className="panel overflow-hidden">
     <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border p-5">
-      <div><b>Bandi 集成</b><p className="mt-1 text-sm text-muted-foreground">管理各工具预设安装位置中的 Bandi 集成；工具方案不会自动安装或卸载集成。</p><p className="mt-2 text-xs text-muted-foreground">{lastCheckedAt ? `安装状态上次检查：${formatDisplayTimestamp(lastCheckedAt)}` : '本页尚未完成安装状态检查'}</p></div>
+      <div><b>Bandi 集成</b><p className="mt-1 text-sm text-muted-foreground">管理当前工具预设安装位置中的 Bandi 集成；工具本体安装状态与集成状态相互独立。</p><p className="mt-2 text-xs text-muted-foreground">{lastCheckedAt ? `安装状态上次检查：${formatDisplayTimestamp(lastCheckedAt)}` : '本页尚未完成安装状态检查'}</p></div>
       <Button size="sm" variant="outline" aria-label="重新检查 Bandi 集成状态" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={15} aria-hidden="true" />重新检查</Button>
     </div>
     {loading && <p role="status" className="p-5 text-sm text-muted-foreground">正在检查 Bandi 集成状态…</p>}
     {error && <ErrorNotice className="m-5" error={error} />}
     {feedback && <p role="status" className="mx-5 mt-4 rounded-lg border border-border bg-muted/30 p-3 text-sm">{feedback}</p>}
-    {!loading && items.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3"><p className="text-xs text-muted-foreground">共 {items.length} 个集成 · {attentionCount} 个需处理</p><div className="flex gap-2" aria-label="Bandi 集成筛选"><Button size="sm" variant={filter === 'all' ? 'default' : 'outline'} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>全部（{items.length}）</Button><Button size="sm" variant={filter === 'needs_attention' ? 'default' : 'outline'} aria-pressed={filter === 'needs_attention'} onClick={() => setFilter('needs_attention')}>需处理（{attentionCount}）</Button></div></div>}
-    {!loading && items.length === 0 && !error && <div className="p-5"><EmptyState title="没有可用的 Bandi 集成" description="Bandi Desktop 没有返回预设安装位置。" action={<Button size="sm" variant="outline" onClick={() => void load()}>重新检查</Button>} /></div>}
-    {!loading && items.length > 0 && visibleItems.length === 0 && <div className="p-5"><EmptyState title="没有需要处理的集成" description="当前没有待更新、位置占用或检查失败的集成；工具是否已识别集成仍需单独确认。" action={<Button size="sm" variant="outline" onClick={() => setFilter('all')}>查看全部</Button>} /></div>}
+    {!loading && !toolId && scopedItems.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3"><p className="text-xs text-muted-foreground">共 {scopedItems.length} 个集成 · {attentionCount} 个需处理</p><div className="flex gap-2" aria-label="Bandi 集成筛选"><Button size="sm" variant={filter === 'all' ? 'default' : 'outline'} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>全部（{scopedItems.length}）</Button><Button size="sm" variant={filter === 'needs_attention' ? 'default' : 'outline'} aria-pressed={filter === 'needs_attention'} onClick={() => setFilter('needs_attention')}>需处理（{attentionCount}）</Button></div></div>}
+    {!loading && scopedItems.length === 0 && !error && <div className="p-5"><EmptyState title="没有可用的 Bandi 集成" description="Bandi Desktop 没有返回此工具的预设安装位置。" action={<Button size="sm" variant="outline" onClick={() => void load()}>重新检查</Button>} /></div>}
+    {!loading && scopedItems.length > 0 && visibleItems.length === 0 && <div className="p-5"><EmptyState title="没有需要处理的集成" description="当前没有待更新、位置占用或检查失败的集成；工具是否已识别集成仍需单独确认。" action={<Button size="sm" variant="outline" onClick={() => setFilter('all')}>查看全部</Button>} /></div>}
     {!loading && visibleItems.length > 0 && <div className="divide-y divide-border">{visibleItems.map((item) => {
       const client = state.aiClients.find((candidate) => candidate.id === item.toolId) as AiClient | undefined
-      return <div key={`${item.toolId}:${item.targetId}`} className="grid min-w-0 gap-4 p-5 lg:grid-cols-[minmax(180px,0.8fr)_minmax(260px,1.2fr)_auto] lg:items-center">
+      return <div key={`${item.toolId}:${item.targetId}`} className="grid min-w-0 gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <div className="flex min-w-0 items-center gap-3">{client && <AiClientIcon client={client} size={36} tile />}<span className="min-w-0"><b className="block truncate">{client?.name ?? item.toolId}</b><small className="text-muted-foreground">{entryLabels[item.toolId]}</small></span></div>
-        <div className="min-w-0"><dl className="grid gap-3 text-xs sm:grid-cols-2"><div><dt className="mb-1 text-muted-foreground">Bandi 集成</dt><dd><StatusBadge tone={stateTones[item.installationState]}>{stateLabels[item.installationState]}</StatusBadge></dd></div><div><dt className="mb-1 text-muted-foreground">工具是否识别该集成</dt><dd><StatusBadge tone={statusTones[item.status]}>{statusLabels[item.status]}</StatusBadge></dd></div></dl><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.reason}</p></div>
-        <div className="flex flex-wrap gap-2 lg:justify-end">
+        <div className="min-w-0 sm:col-span-2"><dl className="grid gap-3 text-xs sm:grid-cols-2"><div><dt className="mb-1 text-muted-foreground">Bandi 集成</dt><dd><StatusBadge tone={stateTones[item.installationState]}>{stateLabels[item.installationState]}</StatusBadge></dd></div><div><dt className="mb-1 text-muted-foreground">工具是否识别该集成</dt><dd><StatusBadge tone={statusTones[item.status]}>{statusLabels[item.status]}</StatusBadge></dd></div></dl><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.reason}</p></div>
+        <div className="flex flex-wrap gap-2 sm:col-span-2">
           {item.canInstall && <Button size="sm" disabled={busy} onClick={() => void openPreview(item, 'install')}>{item.installationState === 'update_available' ? '更新集成' : '安装集成'}</Button>}
           {item.canUninstall && <Button size="sm" variant="outline" disabled={busy} onClick={() => void openPreview(item, 'uninstall')}>卸载集成</Button>}
           <Button size="sm" variant="outline" disabled={busy || !item.canReveal} title={!item.canReveal ? '当前后端未提供真实系统显示能力' : undefined} onClick={() => void reveal(item)}><FolderOpen size={15} aria-hidden="true" />在文件管理器中显示</Button>

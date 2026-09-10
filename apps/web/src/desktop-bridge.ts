@@ -1,6 +1,6 @@
 import type { AppCommandId } from './app-commands'
 import type { FullAgent } from './domain'
-import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, DiscoveryRequest, DiscoveryResult, HostIntegrationCommitRequest, HostIntegrationDto, HostIntegrationPreviewDto, HostIntegrationRequest, HostIntegrationResultDto, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, RevealHostDirectoryResultDto, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, AiToolHostRequest, AiToolHostStatusDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, CommitSharedAssetImportRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, CreateSharedAssetRequest, DiscoveryRequest, DiscoveryResult, HostIntegrationCommitRequest, HostIntegrationDto, HostIntegrationPreviewDto, HostIntegrationRequest, HostIntegrationResultDto, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, OpenAiToolInstallPageResultDto, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RecoverSharedAssetRevisionRequest, RepairSharedAssetRegistrationRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, RevealAiToolConfigLocationResultDto, RevealHostDirectoryResultDto, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, SaveSharedAssetRequest, SaveSharedAssetResult, SharedAssetEditorDto, SharedAssetImportPreviewDto, SharedAssetMutationResult, TaskBriefDto, TeamDto } from './contracts'
 
 const commandEvent = 'bandi://app-command'
 
@@ -67,16 +67,6 @@ export type FactoryResetResultDto = {
   requiresRestart: boolean
 }
 
-export type ToolPlanDto = { id: string; name: string; toolIds: string[] }
-export type CustomToolDto = { id: string; name: string }
-export type ToolConfigurationSnapshotDto = {
-  revision: number
-  selectedPlanId: string
-  builtInToolIds: string[]
-  plans: ToolPlanDto[]
-  customTools: CustomToolDto[]
-}
-
 type UiAssetPayload = { mimeType: string; bytes: number[] }
 
 async function invokeDesktop<T>(command: string, args: Record<string, unknown>): Promise<T> {
@@ -87,6 +77,18 @@ async function invokeDesktop<T>(command: string, args: Record<string, unknown>):
 
 export async function requestClientLaunchV3(input: RequestClientLaunchV3): Promise<ClientLaunchResultV3> {
   return invokeDesktop<ClientLaunchResultV3>('request_client_launch_v3', { request: input })
+}
+
+export async function listAiToolHostStatuses(): Promise<AiToolHostStatusDto[]> {
+  return invokeDesktop('list_ai_tool_host_statuses', {})
+}
+
+export async function openAiToolInstallPage(input: AiToolHostRequest): Promise<OpenAiToolInstallPageResultDto> {
+  return invokeDesktop('open_ai_tool_install_page', { request: input })
+}
+
+export async function revealAiToolConfigLocation(input: AiToolHostRequest): Promise<RevealAiToolConfigLocationResultDto> {
+  return invokeDesktop('reveal_ai_tool_config_location', { request: input })
 }
 
 export async function listHostIntegrations(): Promise<HostIntegrationDto[]> {
@@ -111,38 +113,6 @@ export async function commitHostIntegrationUninstall(input: HostIntegrationCommi
 
 export async function revealHostDirectory(input: HostIntegrationRequest): Promise<RevealHostDirectoryResultDto> {
   return invokeDesktop('reveal_host_directory', { request: input })
-}
-
-export async function loadToolConfiguration(): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('load_tool_configuration', {})
-}
-
-export async function saveToolPlan(plan: ToolPlanDto, expectedRevision: number): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('save_tool_plan', { request: { plan, expectedRevision } })
-}
-
-export async function createToolPlan(plan: ToolPlanDto, expectedRevision: number): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('create_tool_plan', { request: { plan, expectedRevision } })
-}
-
-export async function copyToolPlan(sourcePlanId: string, planId: string, name: string, expectedRevision: number): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('copy_tool_plan', { request: { sourcePlanId, planId, name, expectedRevision } })
-}
-
-export async function deleteToolPlan(planId: string, expectedRevision: number): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('delete_tool_plan', { request: { planId, expectedRevision } })
-}
-
-export async function selectToolPlan(planId: string, expectedRevision: number): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('select_tool_plan', { request: { planId, expectedRevision } })
-}
-
-export async function saveCustomTool(tool: CustomToolDto, expectedRevision: number): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('save_custom_tool', { request: { tool, expectedRevision } })
-}
-
-export async function deleteCustomTool(toolId: string, expectedRevision: number): Promise<ToolConfigurationSnapshotDto> {
-  return invokeDesktop('delete_custom_tool', { request: { toolId, expectedRevision } })
 }
 
 export async function previewFactoryReset(requestId: string): Promise<FactoryResetPreviewDto> {
@@ -201,6 +171,34 @@ export async function listMemoryRevisions(input: ListMemoryRevisionsRequest): Pr
 
 export async function discoverConfig(input: DiscoveryRequest): Promise<DiscoveryResult> {
   return invokeDesktop('discover_config', { request: input })
+}
+
+export async function createSharedAsset(input: CreateSharedAssetRequest): Promise<SharedAssetMutationResult> {
+  return invokeDesktop('create_shared_asset', { request: input })
+}
+
+export async function selectSharedAssetImport(requestId: string, teamId: string, kind: import('./contracts').ManageableSharedAssetKind): Promise<SharedAssetImportPreviewDto | null> {
+  return invokeDesktop('select_shared_asset_import', { request: { requestId, teamId, kind } })
+}
+
+export async function commitSharedAssetImport(input: CommitSharedAssetImportRequest): Promise<SharedAssetMutationResult> {
+  return invokeDesktop('commit_shared_asset_import', { request: input })
+}
+
+export async function loadSharedAssetEditor(requestId: string, assetId: string): Promise<SharedAssetEditorDto> {
+  return invokeDesktop('load_shared_asset_editor', { request: { requestId, assetId } })
+}
+
+export async function saveSharedAsset(input: SaveSharedAssetRequest): Promise<SaveSharedAssetResult> {
+  return invokeDesktop('save_shared_asset', { request: input })
+}
+
+export async function repairSharedAssetRegistration(input: RepairSharedAssetRegistrationRequest): Promise<SharedAssetMutationResult> {
+  return invokeDesktop('repair_shared_asset_registration', { request: input })
+}
+
+export async function recoverSharedAssetRevision(input: RecoverSharedAssetRevisionRequest): Promise<SharedAssetMutationResult> {
+  return invokeDesktop('recover_shared_asset_revision', { request: input })
 }
 
 export async function createBackupSnapshot(input: CreateBackupSnapshotRequest): Promise<BackupSnapshotDto> {

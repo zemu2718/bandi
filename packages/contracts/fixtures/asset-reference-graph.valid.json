@@ -2,14 +2,15 @@
   "sharedAssets": [
     {
       "id": "skill-review",
+      "name": "代码审查",
       "kind": "skill",
       "teamId": "xinghe",
-      "locator": {
-        "rootKind": "bandi",
-        "displayPath": "skill-review/SKILL.md",
-        "relativePath": "skill-review/SKILL.md"
-      },
+      "locator": { "rootKind": "bandi", "displayPath": "skill-review/SKILL.md", "relativePath": "skill-review/SKILL.md" },
       "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "containerContentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "writable": true,
+      "source": { "kind": "authored" },
+      "currentRevisionId": "revision-1",
       "parseStatus": "parsed",
       "diagnostics": []
     }
@@ -23,11 +24,7 @@
       "targetAssetId": "skill-review",
       "targetKind": "skill",
       "state": "resolved",
-      "targetLocator": {
-        "rootKind": "bandi",
-        "displayPath": "skill-review/SKILL.md",
-        "relativePath": "skill-review/SKILL.md"
-      },
+      "targetLocator": { "rootKind": "bandi", "displayPath": "skill-review/SKILL.md", "relativePath": "skill-review/SKILL.md" },
       "targetTeamId": "xinghe",
       "sourcePath": "agt_zhouce/skills.yaml"
     }
