@@ -8,7 +8,6 @@ import {
   restartAfterFactoryReset,
   type FactoryResetPreviewDto,
 } from '../../desktop-bridge'
-import { MAIN_MENU_LAYOUT_STORAGE_KEY } from '../../navigation-layout'
 import { useApp } from '../../state'
 import {
   LEGACY_THEME_STORAGE_KEY,
@@ -46,7 +45,6 @@ function clearUiPreferences() {
   try {
     localStorage.removeItem(UI_PREFERENCES_STORAGE_KEY)
     localStorage.removeItem(LEGACY_THEME_STORAGE_KEY)
-    localStorage.removeItem(MAIN_MENU_LAYOUT_STORAGE_KEY)
   } catch {
     // WebView 禁止存储时无需阻塞已提交的后端重置。
   }

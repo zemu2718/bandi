@@ -10,18 +10,14 @@ import { useApp } from '../../state'
 import {
   DEFAULT_UI_PREFERENCES,
   getAccessibleAccent,
-  normalizeShellLabel,
   type UiPreferences,
 } from '../../ui-preferences'
-import type { MainMenuLayoutPreference } from '../../navigation-layout'
 import { TEAM_COLOR_PRESETS } from '../../team-identity'
 
 const accentPresets = TEAM_COLOR_PRESETS
 const sections = [
-  ['personalization-brand', '品牌与标识'],
   ['personalization-theme', '主题与颜色'],
   ['personalization-display', '字体与显示'],
-  ['personalization-layout', '布局'],
   ['personalization-background', '工作台背景'],
 ] as const
 const fieldClass = 'mt-2 h-11 w-full rounded-lg px-3'
@@ -34,54 +30,45 @@ export function PersonalizationSection() {
   const cleanupRef = useRef<() => void>(() => undefined)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const [draft, setDraft] = useState(state.uiPreferences)
-  const [logoFile, setLogoFile] = useState<File>()
   const [backgroundFile, setBackgroundFile] = useState<File>()
-  const [removeLogo, setRemoveLogo] = useState(false)
   const [removeBackground, setRemoveBackground] = useState(false)
-  const [logoUrl, setLogoUrl] = useState<string>()
   const [backgroundUrl, setBackgroundUrl] = useState<string>()
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Errors>({})
   const [customAccentOpen, setCustomAccentOpen] = useState(() => !accentPresets.some(([, color]) => color === state.uiPreferences.accentColor))
   const [restoreDefaultsOpen, setRestoreDefaultsOpen] = useState(false)
-  const [activeSection, setActiveSection] = useState<SectionId>('personalization-brand')
+  const [activeSection, setActiveSection] = useState<SectionId>('personalization-theme')
   const desktop = isDesktopRuntime()
 
   useEffect(() => {
     if (!desktop) return
     let disposed = false
-    Promise.all([readUiAsset('logo'), readUiAsset('background')]).then(([logo, background]) => {
-      if (disposed) { if (logo) URL.revokeObjectURL(logo); if (background) URL.revokeObjectURL(background); return }
-      setLogoUrl(logo); setBackgroundUrl(background)
+    readUiAsset('background').then((background) => {
+      if (disposed) { if (background) URL.revokeObjectURL(background); return }
+      setBackgroundUrl(background)
     }).catch(() => undefined)
     return () => { disposed = true }
   }, [desktop])
-  useEffect(() => () => { if (logoUrl) URL.revokeObjectURL(logoUrl) }, [logoUrl])
   useEffect(() => () => { if (backgroundUrl) URL.revokeObjectURL(backgroundUrl) }, [backgroundUrl])
 
   const accent = getAccessibleAccent(draft.accentColor)
-  const labelInvalid = Boolean(draft.shellLabel?.trim()) && !normalizeShellLabel(draft.shellLabel)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(state.uiPreferences) || Boolean(logoFile || backgroundFile || removeLogo || removeBackground)
-  const canSave = dirty && !labelInvalid && Boolean(accent) && !saving
+  const dirty = JSON.stringify(draft) !== JSON.stringify(state.uiPreferences) || Boolean(backgroundFile || removeBackground)
+  const canSave = dirty && Boolean(accent) && !saving
   const update = <K extends keyof UiPreferences>(key: K, value: UiPreferences[K]) => setDraft((current) => ({ ...current, [key]: value }))
-  const logoPreview = useMemo(() => logoFile ? URL.createObjectURL(logoFile) : removeLogo || !draft.logoAsset ? undefined : logoUrl, [draft.logoAsset, logoFile, logoUrl, removeLogo])
   const backgroundPreview = useMemo(() => backgroundFile ? URL.createObjectURL(backgroundFile) : removeBackground || !draft.backgroundAsset ? undefined : backgroundUrl, [backgroundFile, backgroundUrl, draft.backgroundAsset, removeBackground])
-  useEffect(() => () => { if (logoFile && logoPreview) URL.revokeObjectURL(logoPreview) }, [logoFile, logoPreview])
   useEffect(() => () => { if (backgroundFile && backgroundPreview) URL.revokeObjectURL(backgroundPreview) }, [backgroundFile, backgroundPreview])
 
   const accentValid = Boolean(accent)
   const effectiveDraft = useMemo<UiPreferences>(() => ({
     ...draft,
     accentColor: accentValid ? draft.accentColor : state.uiPreferences.accentColor,
-    shellLabel: labelInvalid ? state.uiPreferences.shellLabel : draft.shellLabel,
-  }), [accentValid, draft, labelInvalid, state.uiPreferences.accentColor, state.uiPreferences.shellLabel])
+  }), [accentValid, draft, state.uiPreferences.accentColor])
   useEffect(() => {
     if (!dirty) { setUiPreferencesPreview(undefined); return }
     setUiPreferencesPreview(effectiveDraft, {
-      logo: logoFile ? logoPreview : removeLogo || !effectiveDraft.logoAsset ? null : logoPreview,
       background: backgroundFile ? backgroundPreview : removeBackground || !effectiveDraft.backgroundAsset ? null : backgroundPreview,
     })
-  }, [backgroundFile, backgroundPreview, dirty, effectiveDraft, logoFile, logoPreview, removeBackground, removeLogo, setUiPreferencesPreview])
+  }, [backgroundFile, backgroundPreview, dirty, effectiveDraft, removeBackground, setUiPreferencesPreview])
   cleanupRef.current = () => setUiPreferencesPreview(undefined)
   useEffect(() => () => cleanupRef.current(), [])
   const chooseFile = (slot: UiAssetSlot, file?: File) => {

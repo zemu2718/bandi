@@ -157,6 +157,24 @@ describe('应用壳导航布局', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 
+  it('历史导航固定在窗口顶栏并保留页面唯一标题', () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/tasks')
+
+    const titlebar = screen.getByRole('navigation', { name: '全局工具' }).parentElement!
+    const sidebarButton = within(titlebar).getByRole('button', { name: '收起侧栏' })
+    const history = within(titlebar).getByRole('navigation', { name: '浏览历史' })
+    const back = within(history).getByRole('button', { name: '后退' })
+    const forward = within(history).getByRole('button', { name: '前进' })
+
+    expect(back).toBeDisabled()
+    expect(forward).toBeDisabled()
+    expect(back).toHaveClass('size-11')
+    expect(sidebarButton.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(history.compareDocumentPosition(titlebar.querySelector('[data-tauri-drag-region]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getAllByRole('heading', { level: 1, name: '需求池' })).toHaveLength(1)
+  })
+
   it('使用指南和设置固定在窗口顶栏，指南按当前页面显示相关主题', async () => {
     createMatchMedia(1440)
     renderShell('expanded', 'light', '/tasks')
@@ -206,6 +224,26 @@ describe('应用壳导航布局', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(screen.getByText('AI 工具内容')).toBeInTheDocument()
+  })
+
+  it('按实际访问顺序后退和前进', async () => {
+    createMatchMedia(1440)
+    renderShell('expanded', 'light', '/agents')
+
+    fireEvent.click(screen.getByRole('link', { name: '进入周策' }))
+    const history = screen.getByRole('navigation', { name: '浏览历史' })
+    const back = within(history).getByRole('button', { name: '后退' })
+    const forward = within(history).getByRole('button', { name: '前进' })
+    await waitFor(() => expect(back).toBeEnabled())
+    expect(forward).toBeDisabled()
+
+    fireEvent.click(back)
+    await waitFor(() => expect(screen.getByText('Agents 内容')).toBeInTheDocument())
+    expect(forward).toBeEnabled()
+
+    fireEvent.click(forward)
+    await waitFor(() => expect(screen.getByText('Agent 详情')).toBeInTheDocument())
+    expect(back).toBeEnabled()
   })
 
   it('旧指南地址回到首页并打开默认指南弹窗', async () => {

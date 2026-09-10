@@ -1,7 +1,7 @@
 import { createContext, useContext, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Copy, Info } from 'lucide-react'
+import { Copy, Info } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib'
 import { useApp } from '../../state'
@@ -12,9 +12,9 @@ export function PageHeaderTargetProvider({ target, children }: { target: HTMLEle
   return <PageHeaderTargetContext value={target}>{children}</PageHeaderTargetContext>
 }
 
-export function PageHeader({ title, description, action, leading, backTo, backLabel = '返回' }: { title: string; description?: string; action?: ReactNode; leading?: ReactNode; backTo?: string; backLabel?: string }) {
+export function PageHeader({ title, description, action, leading }: { title: string; description?: string; action?: ReactNode; leading?: ReactNode }) {
   const target = useContext(PageHeaderTargetContext)
-  const content = <>{backTo && <Link to={backTo} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft size={16} aria-hidden="true" />{backLabel}</Link>}<div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-4"><div className="flex min-w-0 items-center gap-3">{leading}<div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">{description}</p>}</div></div>{action}</div></>
+  const content = <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-4"><div className="flex min-w-0 items-center gap-3">{leading}<div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-1 max-w-4xl text-sm leading-6 text-muted-foreground">{description}</p>}</div></div>{action}</div>
   if (target) return createPortal(<div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">{content}</div>, target)
   return <div className="mb-6 space-y-4">{content}</div>
 }

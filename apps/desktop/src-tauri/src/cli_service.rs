@@ -311,7 +311,6 @@ fn discovery(
         true,
         local_service::DiscoveryRequest {
             request_id: "bandi-cli-config-check".into(),
-            include_claude_user_root: false,
         },
     )
 }

@@ -83,19 +83,30 @@ export function ClientLaunchDialog({ client, initialAgentId, close }: { client: 
         taskId: task?.id,
       })
       setCapability(result.capability)
-      if (result.outcome === 'manual_context_required') {
-        if (result.manualPrompt) {
-          await navigator.clipboard.writeText(result.manualPrompt)
-          setCopied(true)
-        }
-        close()
-        dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'info', title: `${client.name} 打开请求已发送`, description: result.manualPrompt ? '上下文已复制，请在工具中粘贴后继续。' : '此工具暂不支持自动携带上下文。', duration: 6000 } })
-      } else {
-        close()
-        dispatch({ type: 'SHOW_NOTICE', notice: { tone: 'success', title: `${client.name} 启动请求已发送`, description: 'Bandi 不会跟踪工具中的会话、任务或输出。', duration: 5000 } })
+      const manualCopy = result.contextDelivery === 'manual_copy' && result.manualPrompt
+      const supportedOutcome = result.outcome === 'manual_context_required' || result.outcome === 'application_launch_requested'
+      if (!manualCopy || !supportedOutcome) {
+        setError('客户端返回了无法确认的启动结果。工具可能已打开，但上下文尚未交付，请手动复制。')
+        setContextExpanded(true)
+        return
       }
+      try {
+        await navigator.clipboard.writeText(manualCopy)
+        setCopied(true)
+      } catch {
+        setError('工具打开请求已发送，但系统未允许访问剪贴板。请手动选择并复制上下文。')
+        setContextExpanded(true)
+        return
+      }
+      close()
+      dispatch({
+        type: 'SHOW_NOTICE',
+        notice: result.outcome === 'application_launch_requested'
+          ? { tone: 'info', title: `${client.name} 应用打开请求已发送`, description: '上下文已复制，请手动粘贴。', duration: 6000 }
+          : { tone: 'info', title: '上下文已复制，请手动粘贴', description: `已请求打开 ${client.name} 使用的固定终端。`, duration: 6000 },
+      })
     } catch {
-      setError('无法启动工具。请确认工具和首选终端可用后重试。')
+      setError('无法提交工具打开请求。请确认工具和首选终端可用后重试。')
     } finally {
       setOpening(false)
     }

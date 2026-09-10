@@ -45,7 +45,7 @@ describe('资产索引', () => {
     expect(screen.getByRole('link', { name: '周策' })).toHaveAttribute('href', '/agents/zhouce?tab=skills&asset=shared-review')
     fireEvent.click(screen.getByRole('button', { name: '扫描资产' }))
     await waitFor(() => expect(discover).toHaveBeenCalledTimes(2))
-    expect(discover).toHaveBeenCalledWith(expect.objectContaining({ includeClaudeUserRoot: false }))
+    expect(discover).toHaveBeenCalledWith({ requestId: 'discover-assets' })
   })
 
   it('Desktop 保留分类深链、搜索、筛选和键盘切换', async () => {

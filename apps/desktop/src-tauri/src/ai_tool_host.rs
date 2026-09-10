@@ -5,7 +5,10 @@ use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai_adapters::BuiltInClientId;
+use crate::{
+    ai_adapters::BuiltInClientId,
+    ai_tool_versions::{self, InstallSource, VersionState},
+};
 
 #[derive(Clone, Copy)]
 struct ToolHostTarget {
@@ -50,6 +53,13 @@ pub(crate) struct AiToolHostStatusDto {
     pub(crate) can_reveal_config: bool,
     pub(crate) can_open_official_install_page: bool,
     pub(crate) reason_code: &'static str,
+    pub(crate) current_version: Option<String>,
+    pub(crate) latest_version: Option<String>,
+    pub(crate) install_source: InstallSource,
+    pub(crate) version_state: VersionState,
+    pub(crate) can_upgrade: bool,
+    pub(crate) version_reason_code: &'static str,
+    pub(crate) installation_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,7 +172,7 @@ const TARGETS: [ToolHostTarget; 9] = [
     },
 ];
 
-fn validate_request_id(value: &str) -> Result<(), String> {
+pub(crate) fn validate_request_id(value: &str) -> Result<(), String> {
     let valid = !value.is_empty()
         && value.len() <= 128
         && value != "."
@@ -222,6 +232,11 @@ pub(crate) fn list_at(home: &Path) -> Vec<AiToolHostStatusDto> {
     TARGETS
         .iter()
         .map(|target| {
+            let versions = if cfg!(target_os = "macos") {
+                ai_tool_versions::inspect(target.tool_id, home)
+            } else {
+                ai_tool_versions::unsupported()
+            };
             let availability = if cfg!(target_os = "macos") {
                 let detected = target
                     .mac_candidates
@@ -231,9 +246,13 @@ pub(crate) fn list_at(home: &Path) -> Vec<AiToolHostStatusDto> {
                     })
                     .collect::<Result<Vec<_>, _>>();
                 match detected {
-                    Ok(values) if values.iter().any(|exists| *exists) => {
+                    Ok(values)
+                        if values.iter().any(|exists| *exists)
+                            || versions.installation_count > 0 =>
+                    {
                         AiToolAvailability::Installed
                     }
+                    Ok(_) if versions.detection_failed => AiToolAvailability::DetectionFailed,
                     Ok(_) => AiToolAvailability::NotFound,
                     Err(()) => AiToolAvailability::DetectionFailed,
                 }
@@ -264,6 +283,13 @@ pub(crate) fn list_at(home: &Path) -> Vec<AiToolHostStatusDto> {
                     AiToolAvailability::UnsupportedPlatform => "unsupported_platform",
                     AiToolAvailability::DetectionFailed => "detection_failed",
                 },
+                current_version: versions.current_version,
+                latest_version: versions.latest_version,
+                install_source: versions.install_source,
+                version_state: versions.version_state,
+                can_upgrade: versions.can_upgrade,
+                version_reason_code: versions.version_reason_code,
+                installation_count: versions.installation_count,
             }
         })
         .collect()

@@ -101,7 +101,6 @@ fn is_true(value: &bool) -> bool {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct DiscoveryRequest {
     pub(crate) request_id: String,
-    pub(crate) include_claude_user_root: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1898,15 +1897,6 @@ pub(crate) fn discover_with_shared_at(
     request: DiscoveryRequest,
 ) -> DiscoveryResult {
     let mut diagnostics = Vec::new();
-    if request.include_claude_user_root {
-        diagnostics.push(diagnostic(
-            "claude_user_root_not_checked",
-            "info",
-            "Claude 用户配置根尚未进入 Instructions 首切片",
-            None,
-            Some("当前仅发现受管 AgentPackage"),
-        ));
-    }
     let (assets, mut asset_diagnostics) = discover_managed_assets(managed_root);
     diagnostics.append(&mut asset_diagnostics);
     let shared_index = if discover_shared {
@@ -3024,6 +3014,16 @@ pub(crate) fn load_editor_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovery_request_rejects_removed_host_scan_flag() {
+        let error = serde_json::from_value::<DiscoveryRequest>(serde_json::json!({
+            "requestId": "discover",
+            "includeClaudeUserRoot": false,
+        }))
+        .unwrap_err();
+        assert!(error.to_string().contains("includeClaudeUserRoot"));
+    }
 
     #[test]
     fn legacy_agent_fields_are_rejected() {

@@ -1,7 +1,10 @@
 # Bandi GitHub 竞品与实现参考
 
-> 调研日期：2026-09-09  
-> 状态：当前开发参考，非产品能力契约  
+> 调研日期：2026-09-10
+>
+> CC Switch 核验基准：`f3b18df12007d0fd79fd8ad8d310880664015197`（v3.20.2）
+>
+> 状态：当前开发参考，非产品能力契约
 > 用途：实现长期 Agent 配置管理能力前，优先复用成熟产品思路，减少重复设计和无效开发  
 > 产品边界以[《产品与页面架构》](./产品与页面架构.md)、[《技术架构》](./技术架构.md)和[《本地服务与前端联调契约》](./本地服务与前端联调契约.md)为准；本报告不得覆盖这些契约。
 
@@ -51,7 +54,7 @@ Team
 
 | 项目 | 调研时 Stars | 主要能力 | 对 Bandi 的参考价值 | 不应照搬 |
 | --- | ---: | --- | --- | --- |
-| [CC Switch](https://github.com/farion1231/cc-switch) | 131,755 | Provider、MCP、Prompt、Skills、多宿主同步、原子写入、备份 | 九工具能力矩阵、MCP 映射、写入与备份体验 | Provider 代理、宿主配置扫描、运行时故障转移 |
+| [CC Switch](https://github.com/farion1231/cc-switch) | 131,755 | Provider、MCP、Prompt、Skills、多宿主同步、原子写入、备份 | 固定 Adapter、staging 导入、schema/完整性检查、no-clobber 原子发布、恢复点、partial success 与真实性状态 | Provider/API Key/OAuth、宿主配置同步与扫描、代理流量、用量、运行时故障转移 |
 | [Rulesync](https://github.com/dyoshikawa/rulesync) | 1,403 | 从统一源生成 40+ 工具的 rules、MCP、commands、subagents、skills、hooks、permissions | Canonical schema、project/global scope、Adapter 能力声明 | 将全部 Agent 收敛为一套共享配置 |
 | [Ruler](https://github.com/intellectronica/ruler) | 2,918 | instructions 单一事实源、嵌套规则、MCP、skills、subagents 分发 | 规则组合、目标选择、生成式 Adapter | 把宿主文件作为 Agent 身份 |
 | [AI Config Sync Manager](https://github.com/slash9494/ai-config-sync-manager) | 37 | Claude Code 与 Codex 双向同步、dry-run、Diff、SHA-256 账本、风险分级 | Diff-first 保存、格式语义映射、冲突状态 | 双向扫描宿主目录、通用 apply |
@@ -130,9 +133,20 @@ Team
 2. 每个宿主 Adapter 显式声明支持、降级和不支持的字段。
 3. 转换时保留来源和诊断，不静默丢字段。
 4. 未知字段默认失败或返回明确 warning，不宣称完整兼容。
-5. AI 工具页只检查固定安装候选、打开固定官方 URL，并在用户显式操作后 reveal 固定配置位置；不自动安装。
+5. AI 工具页仅围绕固定九工具执行受限发现和版本检查，打开固定官方 URL，在用户显式操作后 reveal 固定配置位置，并在预览确认后执行来源可安全锚定的单项升级；不自动安装或后台升级。
 
-### 4.3 Skills 管理
+### 4.3 CC Switch 代码核验结论
+
+基于上述固定提交核验，Bandi 只采用与自身受管配置边界兼容的机制：
+
+- 外部输入先进入 staging，再校验 schema、数量、大小、路径深度、symlink 和完整性；
+- 明确区分 absent、empty、delete、unsupported，并允许 partial success 携带 warnings；
+- 发布使用原子替换或 no-clobber，恢复前先创建安全恢复点；
+- 分开表达“检测到”“位置存在”“请求已提交”“已加载”和“可运行”，不由进程退出或文件存在推导成功。
+
+不带入 Provider、API Key、OAuth、模型代理、协议转换、宿主 live config 双向同步、请求日志/用量、Session、聊天、终端输出扫描、通用安装器或 WebDAV/S3 全数据库同步。Bandi 已删除旧 Host Integration 安装/卸载链；固定 `/tools` 仅保留九工具检测与版本、独立升级确认、官方安装页、固定配置位置 reveal 和 Client Launch。
+
+### 4.4 Skills 管理
 
 **优先参考**
 
@@ -149,7 +163,7 @@ Team
 - 安装到宿主前预览目标和影响；
 - 不建设 Skill 市场、评分、推荐算法或自动更新守护进程。
 
-### 4.4 MCP 管理
+### 4.5 MCP 管理
 
 **优先参考**
 
@@ -164,7 +178,7 @@ Team
 - 各宿主字段差异由 Adapter 显式转换，不能依赖字符串替换。
 - 配置已保存、入口已安装和 MCP 已真实可用必须是三个不同状态。
 
-### 4.5 配置 Diff、冲突与安全写入
+### 4.6 配置 Diff、冲突与安全写入
 
 **优先参考**
 
@@ -186,7 +200,7 @@ Team
 
 现有安全写入契约已经比多数竞品更严格，后续优先完善 UI 证据，不另建第二套同步引擎。
 
-### 4.6 版本、来源与恢复
+### 4.7 版本、来源与恢复
 
 **优先参考**
 
@@ -203,7 +217,7 @@ Team
 - Backup 是独立设置能力，不代替每次保存的版本；
 - 不引入发布环境标签、审批流或完整 GitOps。
 
-### 4.7 权限
+### 4.8 权限
 
 **优先参考**
 
@@ -218,7 +232,7 @@ Team
 - Desktop 配置的是长期默认边界，不表示当前 Session 已获批准。
 - 当前任务的一次性权限请求仍由外部 AI 编程工具处理。
 
-### 4.8 多设备同步与备份
+### 4.9 多设备同步与备份
 
 **优先参考**
 
@@ -234,7 +248,7 @@ Team
 - Agent 长期 Memory 进入远程备份前单独确认。
 - 不为“可能需要”提前实现 WebDAV、模板系统或后台同步守护进程。
 
-### 4.9 AI 工具本机入口
+### 4.10 AI 工具本机入口
 
 竞品普遍扫描或直接修改 `~/.claude`、`~/.codex`、`~/.gemini` 等真实目录。Bandi 不采用该模式。
 
@@ -243,9 +257,9 @@ Team
 不可参考：
 
 - 任意路径或 URL 输入；
-- 扫描 PATH、运行工具或自动扫描用户目录；
+- 接受任意搜索根、递归扫描无关用户目录，或把 PATH/版本管理器发现扩展到固定九工具之外；
 - 读取宿主配置正文或用符号链接遍历、接管宿主配置；
-- 自动下载或安装工具、Plugin、MCPB、Skill 或其他集成；
+- 下载并执行远程安装脚本，或自动安装 Plugin、MCPB、Skill 等集成；
 - 把检测到文件、打开官方页面或 reveal 写成“已安装完成”“已加载”或“可运行”；
 - 通用 Shell、opener、文件或进程 API。
 

@@ -74,7 +74,7 @@ async function createAgent(session: WebdriverIO.Browser, id: string, name: strin
 
 async function assetEditor(session: WebdriverIO.Browser, kind: string) {
   const discovery = await invoke<Discovery>(session, 'discover_config', {
-    request: { requestId: `discover-${kind}`, includeClaudeUserRoot: false },
+    request: { requestId: `discover-${kind}` },
   })
   expect(discovery.diagnostics.filter((item) => item.severity === 'error')).toHaveLength(0)
   const relativePath = kind === 'instructions' ? 'instructions.md' : `config/${kind}.yaml`
@@ -151,8 +151,8 @@ async function assertPersistedFacts(session: WebdriverIO.Browser) {
     teamId,
     agentId: workerAgentId,
     taskId: taskBriefId,
-    outcome: 'terminal_launch_requested',
-    contextDelivery: 'initial_prompt',
+    outcome: 'manual_context_required',
+    contextDelivery: 'manual_copy',
   })
   expect(launch.acceptedAt).toBeUndefined()
   expect(launch.capability.evidence).toContain('Team、Agent 与可选 TaskBrief 已由后端重取并复核')

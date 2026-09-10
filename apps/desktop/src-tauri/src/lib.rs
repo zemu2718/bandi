@@ -14,15 +14,15 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 mod agent_service;
 mod ai_adapters;
 mod ai_tool_host;
+mod ai_tool_versions;
 mod backup_service;
 mod claude_agent_import;
 pub mod cli_service;
 mod config_fs;
 mod domain_store;
 mod factory_reset;
-mod host_integration;
-mod host_integration_targets;
 mod local_service;
+mod memory_history;
 mod memory_service;
 mod memory_target;
 mod shared_assets;
@@ -504,7 +504,6 @@ fn save_shared_asset(
         true,
         local_service::DiscoveryRequest {
             request_id: request.request_id.clone(),
-            include_claude_user_root: false,
         },
     );
     let mut affected_agent_ids = discovery
@@ -756,100 +755,16 @@ fn restore_config_revision(
 }
 
 #[tauri::command]
-fn list_host_integrations(
-    app: tauri::AppHandle,
-) -> Result<Vec<host_integration::HostIntegrationDto>, String> {
-    Ok(host_integration::list_at(&app.path().home_dir().map_err(
-        |_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录",
-    )?))
-}
-
-#[tauri::command]
-fn preview_host_integration_install(
-    app: tauri::AppHandle,
-    request: host_integration::HostIntegrationRequest,
-) -> Result<host_integration::HostIntegrationPreviewDto, String> {
-    host_integration::preview_install_at(
-        &app.path()
-            .app_data_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
-        &app.path()
-            .home_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn commit_host_integration_install(
-    app: tauri::AppHandle,
-    request: host_integration::HostIntegrationCommitRequest,
-) -> Result<host_integration::HostIntegrationResultDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    host_integration::commit_install_at(
-        &app.path()
-            .app_data_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
-        &app.path()
-            .home_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn preview_host_integration_uninstall(
-    app: tauri::AppHandle,
-    request: host_integration::HostIntegrationRequest,
-) -> Result<host_integration::HostIntegrationPreviewDto, String> {
-    host_integration::preview_uninstall_at(
-        &app.path()
-            .app_data_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
-        &app.path()
-            .home_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn commit_host_integration_uninstall(
-    app: tauri::AppHandle,
-    request: host_integration::HostIntegrationCommitRequest,
-) -> Result<host_integration::HostIntegrationResultDto, String> {
-    let _mutation = factory_reset::mutation_guard()?;
-    host_integration::commit_uninstall_at(
-        &app.path()
-            .app_data_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问应用数据目录")?,
-        &app.path()
-            .home_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn reveal_host_directory(
-    app: tauri::AppHandle,
-    request: host_integration::HostIntegrationRequest,
-) -> Result<host_integration::RevealHostDirectoryResultDto, String> {
-    host_integration::reveal_at(
-        &app.path()
-            .home_dir()
-            .map_err(|_| "HOST_INTEGRATION_UNAVAILABLE: 无法访问用户目录")?,
-        request,
-    )
-}
-
-#[tauri::command]
-fn list_ai_tool_host_statuses(
+async fn list_ai_tool_host_statuses(
     app: tauri::AppHandle,
 ) -> Result<Vec<ai_tool_host::AiToolHostStatusDto>, String> {
-    Ok(ai_tool_host::list_at(&app.path().home_dir().map_err(
-        |_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录",
-    )?))
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录")?;
+    tauri::async_runtime::spawn_blocking(move || ai_tool_host::list_at(&home))
+        .await
+        .map_err(|_| "AI_TOOL_HOST_FAILED: 工具检查任务异常结束".to_string())
 }
 
 #[tauri::command]
@@ -870,6 +785,44 @@ fn reveal_ai_tool_config_location(
             .map_err(|_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录")?,
         request,
     )
+}
+
+#[tauri::command]
+async fn preview_ai_tool_upgrade(
+    app: tauri::AppHandle,
+    request: ai_tool_versions::UpgradeRequest,
+) -> Result<ai_tool_versions::UpgradePreviewDto, String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_tool_versions::preview(request.tool_id, request.request_id, &home)
+    })
+    .await
+    .map_err(|_| "AI_TOOL_UPGRADE_FAILED: 升级预览任务异常结束".to_string())?
+}
+
+#[tauri::command]
+async fn commit_ai_tool_upgrade(
+    app: tauri::AppHandle,
+    request: ai_tool_versions::CommitUpgradeRequest,
+) -> Result<ai_tool_versions::UpgradeResultDto, String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_tool_versions::commit(
+            request.tool_id,
+            request.request_id,
+            request.preview_ref,
+            request.confirmation,
+            &home,
+        )
+    })
+    .await
+    .map_err(|_| "AI_TOOL_UPGRADE_FAILED: 升级任务异常结束".to_string())?
 }
 
 #[tauri::command]
@@ -2936,6 +2889,7 @@ fn save_memory(
     memory_service::save_memory_at(
         &domain_database_path(&app)?,
         &managed_agents_root(&app)?,
+        &revisions_root(&app)?,
         request,
     )
 }
@@ -2953,6 +2907,33 @@ fn list_memory_revisions(
 }
 
 #[tauri::command]
+fn read_memory_revision_content(
+    app: tauri::AppHandle,
+    request: memory_service::ReadMemoryRevisionContentRequest,
+) -> Result<String, String> {
+    memory_service::read_revision_content_at(
+        &domain_database_path(&app)?,
+        &managed_agents_root(&app)?,
+        &revisions_root(&app)?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn restore_memory_revision(
+    app: tauri::AppHandle,
+    request: memory_service::RestoreMemoryRevisionRequest,
+) -> Result<memory_service::SaveMemoryResult, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    memory_service::restore_revision_at(
+        &domain_database_path(&app)?,
+        &managed_agents_root(&app)?,
+        &revisions_root(&app)?,
+        request,
+    )
+}
+
+#[tauri::command]
 fn recover_memory_revision(
     app: tauri::AppHandle,
     request: memory_service::RecoverMemoryRevisionRequest,
@@ -2961,6 +2942,7 @@ fn recover_memory_revision(
     memory_service::recover_revision_at(
         &domain_database_path(&app)?,
         &managed_agents_root(&app)?,
+        &revisions_root(&app)?,
         request,
     )
 }
@@ -2981,6 +2963,8 @@ fn read_agent_avatar(app: tauri::AppHandle, agent_id: String) -> Result<Option<U
 
 const COMMAND_EVENT: &str = "bandi://app-command";
 const COMMAND_IDS: &[&str] = &[
+    "navigation.back",
+    "navigation.forward",
     "navigation.home",
     "navigation.agents",
     "navigation.organization",
@@ -3037,6 +3021,8 @@ pub fn run() {
             load_memory,
             save_memory,
             list_memory_revisions,
+            read_memory_revision_content,
+            restore_memory_revision,
             recover_memory_revision,
             preview_factory_reset,
             commit_factory_reset,
@@ -3059,15 +3045,11 @@ pub fn run() {
             save_config,
             recover_config_revision,
             restore_config_revision,
-            list_host_integrations,
-            preview_host_integration_install,
-            commit_host_integration_install,
-            preview_host_integration_uninstall,
-            commit_host_integration_uninstall,
-            reveal_host_directory,
             list_ai_tool_host_statuses,
             open_ai_tool_install_page,
             reveal_ai_tool_config_location,
+            preview_ai_tool_upgrade,
+            commit_ai_tool_upgrade,
             request_client_launch_v3,
             import_ui_asset,
             read_ui_asset,
@@ -3115,6 +3097,17 @@ pub fn run() {
                 .select_all()
                 .build()?;
             let navigate = SubmenuBuilder::new(app, "导航")
+                .item(
+                    &MenuItemBuilder::with_id("navigation.back", "后退")
+                        .accelerator("CmdOrCtrl+[")
+                        .build(app)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("navigation.forward", "前进")
+                        .accelerator("CmdOrCtrl+]")
+                        .build(app)?,
+                )
+                .separator()
                 .text("navigation.home", "配置状态")
                 .text("navigation.agents", "Agents")
                 .text("navigation.organization", "组织")
@@ -3191,6 +3184,8 @@ mod tests {
 
     #[test]
     fn menu_commands_are_whitelisted() {
+        assert!(COMMAND_IDS.contains(&"navigation.back"));
+        assert!(COMMAND_IDS.contains(&"navigation.forward"));
         assert!(COMMAND_IDS.contains(&"editor.save"));
         assert!(!COMMAND_IDS.contains(&"shell.exec"));
     }

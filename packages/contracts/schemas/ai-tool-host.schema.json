@@ -1,11 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bandi.local/contracts/ai-tool-host.schema.json",
-  "title": "Bandi AI Tool Host v1",
+  "title": "Bandi AI Tool Host v2",
   "oneOf": [
     { "$ref": "#/$defs/statusList" },
     { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/actionResult" }
+    { "$ref": "#/$defs/actionResult" },
+    { "$ref": "#/$defs/upgradePreview" },
+    { "$ref": "#/$defs/upgradeCommitRequest" },
+    { "$ref": "#/$defs/upgradeResult" }
   ],
   "$defs": {
     "toolId": {
@@ -17,10 +20,31 @@
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9._-]+$"
     },
+    "installSource": {
+      "enum": ["npm", "homebrew", "native", "app_bundle", "unknown", "not_applicable"]
+    },
+    "nullableVersion": {
+      "type": ["string", "null"]
+    },
     "status": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["toolId", "availability", "contextMode", "configLocationLabel", "canRevealConfig", "canOpenOfficialInstallPage", "reasonCode"],
+      "required": [
+        "toolId",
+        "availability",
+        "contextMode",
+        "configLocationLabel",
+        "canRevealConfig",
+        "canOpenOfficialInstallPage",
+        "reasonCode",
+        "currentVersion",
+        "latestVersion",
+        "installSource",
+        "versionState",
+        "canUpgrade",
+        "versionReasonCode",
+        "installationCount"
+      ],
       "properties": {
         "toolId": { "$ref": "#/$defs/toolId" },
         "availability": { "enum": ["installed", "not_found", "unsupported_platform", "detection_failed"] },
@@ -28,7 +52,14 @@
         "configLocationLabel": { "type": "string", "minLength": 1 },
         "canRevealConfig": { "type": "boolean" },
         "canOpenOfficialInstallPage": { "type": "boolean" },
-        "reasonCode": { "type": "string", "minLength": 1 }
+        "reasonCode": { "type": "string", "minLength": 1 },
+        "currentVersion": { "$ref": "#/$defs/nullableVersion" },
+        "latestVersion": { "$ref": "#/$defs/nullableVersion" },
+        "installSource": { "$ref": "#/$defs/installSource" },
+        "versionState": { "enum": ["not_applicable", "unknown", "up_to_date", "update_available", "ahead_or_prerelease", "conflicting_installs"] },
+        "canUpgrade": { "type": "boolean" },
+        "versionReasonCode": { "type": "string", "minLength": 1 },
+        "installationCount": { "type": "integer", "minimum": 0 }
       }
     },
     "statusList": {
@@ -54,6 +85,43 @@
         "toolId": { "$ref": "#/$defs/toolId" },
         "requestId": { "$ref": "#/$defs/requestId" },
         "outcome": { "enum": ["open_requested", "revealed"] }
+      }
+    },
+    "upgradePreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolId", "requestId", "previewRef", "currentVersion", "latestVersion", "installSource", "confirmationText"],
+      "properties": {
+        "toolId": { "$ref": "#/$defs/toolId" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "previewRef": { "type": "string", "minLength": 1 },
+        "currentVersion": { "type": "string", "minLength": 1 },
+        "latestVersion": { "type": "string", "minLength": 1 },
+        "installSource": { "$ref": "#/$defs/installSource" },
+        "confirmationText": { "type": "string", "minLength": 1 }
+      }
+    },
+    "upgradeCommitRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolId", "requestId", "previewRef", "confirmation"],
+      "properties": {
+        "toolId": { "$ref": "#/$defs/toolId" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "previewRef": { "type": "string", "minLength": 1 },
+        "confirmation": { "const": true }
+      }
+    },
+    "upgradeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolId", "requestId", "outcome", "previousVersion", "currentVersion"],
+      "properties": {
+        "toolId": { "$ref": "#/$defs/toolId" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "outcome": { "enum": ["updated", "already_current", "process_failed", "timed_out", "postcheck_failed", "version_unchanged", "target_changed", "unsupported_installation"] },
+        "previousVersion": { "$ref": "#/$defs/nullableVersion" },
+        "currentVersion": { "$ref": "#/$defs/nullableVersion" }
       }
     }
   }

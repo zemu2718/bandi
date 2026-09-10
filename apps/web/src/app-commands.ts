@@ -5,6 +5,8 @@ import type { EditorSession } from './editor-session'
 import type { EffectiveTheme } from './ui-preferences'
 
 export const appCommandIds = [
+  'navigation.back',
+  'navigation.forward',
   'navigation.home',
   'navigation.agents',
   'navigation.organization',
@@ -38,8 +40,20 @@ export function executeAppCommand(
     dispatch: Dispatch<Action>
     editor?: EditorSession
     effectiveTheme?: EffectiveTheme
+    canGoBack?: boolean
+    canGoForward?: boolean
   },
 ): boolean {
+  if (command === 'navigation.back') {
+    if (!context.canGoBack) return false
+    context.navigate(-1)
+    return true
+  }
+  if (command === 'navigation.forward') {
+    if (!context.canGoForward) return false
+    context.navigate(1)
+    return true
+  }
   const target = navigationTargets[command]
   if (target) {
     context.navigate(target)

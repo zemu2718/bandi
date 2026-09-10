@@ -233,7 +233,7 @@ export function AgentCreatePage({ open = true, onClose }: Partial<PersonalAgentC
       </fieldset>
       <TextField ref={nameInputRef} label="Agent 名称" value={name} onChange={setName} onBlur={() => setNameTouched(true)} error={visibleNameError} help="用于列表、组织关系和外部 AI 编程工具中识别这个 Agent。" />
       <label className="block text-sm font-medium" htmlFor="agent-function">职能（可选）<select id="agent-function" className="mt-2 h-10 w-full px-3" value={functionId} onChange={(event) => setFunctionId(event.target.value as AgentFunction | '')}><option value="">未分类</option>{Object.entries(agentFunctionLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select><span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">用于在当前 Team 中分类和查找 Agent。</span></label>
-      <TextField label="一句话描述（可选）" value={mission} onChange={setMission} help="概括这个 Agent 是做什么的，将保存为长期使命摘要。" />
+      <TextField label="一句话描述（可选）" value={mission} onChange={setMission} help="概括这个 Agent 是做什么的，将保存为一句话描述。" />
       <TextArea label="角色定位（可选）" value={rolePrompt} onChange={setRolePrompt} help="说明它是谁、负责什么，以及应如何回应。" />
       <TextArea label="工作方法与约束（可选）" value={workingConstraints} onChange={setWorkingConstraints} help="将写入主指令；不会创建 Rules 资产，也不会增加权限。" />
       <details className="rounded-lg border border-border">

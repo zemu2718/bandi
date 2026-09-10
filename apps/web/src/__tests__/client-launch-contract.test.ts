@@ -26,8 +26,9 @@ describe('客户端启动共享合同', () => {
         evidence: ['固定适配器'],
         remediation: ['无需处理'],
       },
-      outcome: 'terminal_launch_requested',
-      contextDelivery: 'initial_prompt',
+      outcome: 'manual_context_required',
+      contextDelivery: 'manual_copy',
+      manualPrompt: '已验证的上下文',
     } satisfies ClientLaunchResultV3).toBeTruthy()
   })
 

@@ -43,8 +43,8 @@ Bandi Desktop 管理长期配置资产及其可追溯版本；用户选择的外
 - Bandi 应用内只读取和展示 Bandi 自有受管配置，不接受任意路径，不枚举、不扫描、不读取宿主配置内容；删除与恢复只处理 Bandi 自有数据；
 - 九个内置 AI 工具统一位于固定 `/tools` 页面，不在设置中维护工具方案或自定义工具；
 - 前端只提交稳定 `toolId`；后端从固定九工具 catalog 解析本机安装候选、官方安装 URL 和固定配置位置；
-- 本机检测只检查固定候选是否存在，不运行工具、不扫描 PATH、不读取宿主配置内容；结果固定为 `installed | not_found | unsupported_platform | detection_failed`；
-- 用户可显式打开 catalog 内官方安装页面，或在原生文件管理器中 reveal 固定配置位置；接口不得接受路径、URL、bundle ID、executable、argv、Shell、AppleScript 或脚本；
+- macOS 本机检测仅围绕固定九工具 catalog：可从受限 PATH 与明确列出的包管理器、版本管理器目录发现工具，对命中项执行固定版本参数，并从固定官方源查询最新版本；不得读取宿主配置正文或接受调用方提供的路径、URL、executable、argv、Shell、环境变量或脚本；
+- 用户可显式打开 catalog 内官方安装页面、在原生文件管理器中 reveal 固定配置位置，或在预览并独立确认后升级可安全锚定的单个工具；升级动作、包名和参数必须由后端固定 catalog 生成，不得下载并执行远程安装脚本；
 - reveal 仅显示固定配置位置；打开官方页面仅表示请求已提交，二者均不证明安装、登录、初始化或运行成功；
 - Client Launch v3 在启动时临时选择稳定 `teamId / agentId / taskId?`，由后端重取并验证上下文后按固定工具与终端映射提交受控启动请求；结果必须区分 `terminal_launch_requested | application_launch_requested | manual_context_required`，并用 `contextDelivery: initial_prompt | manual_copy | none` 表达上下文交付方式；不得把请求已提交写成工具已完成启动、登录或任务已开始，也不读取输出、保存 PID 或管理 Session；
 - 新增页面、导航、状态或流程前，必须确认其是否直接服务于多 Agent 配置管理；

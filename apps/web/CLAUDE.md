@@ -29,8 +29,8 @@
 - Overlay 按用途选择：邻近快速选择使用 Popover，简短表单和业务内容使用 Dialog，需要补充上下文的窄屏内容才使用 Sheet；具体布局和断点遵循当前应用壳与页面契约。
 - 最近访问、选中态等导航上下文不得表达在线、运行、Session、任务或未读状态，也不得升级为执行期状态管理。
 - 本地图片等 Bandi 自有受管资产只能通过既有窄接口和固定槽位读写；不得保存用户原路径、远程 URL、base64 或 Blob URL，不得借资产入口接受、访问、扫描、修改或删除任意用户目录。
-- `/tools` 只调用固定九工具 DTO：列表检测、打开官方安装页面、reveal 固定配置位置和 Client Launch；不得提交路径、URL 或通用进程参数。九工具目标映射以联调契约为唯一事实源。
-- 本机状态使用 `installed | not_found | unsupported_platform | detection_failed`；上下文模式使用 `initial_prompt | manual_context | unavailable`。官方页面打开和 reveal 成功不得写成工具已安装或可运行。
+- `/tools` 只调用固定九工具 DTO：列表与版本检测、单项升级预览和确认、打开官方安装页面、reveal 固定配置位置及 Client Launch；不得提交路径、URL、安装来源或通用进程参数。九工具目标映射以联调契约为唯一事实源。
+- 本机状态使用 `installed | not_found | unsupported_platform | detection_failed`，版本状态与安装状态独立表达；上下文模式使用 `initial_prompt | manual_context | unavailable`。升级必须展示真实影响并独立确认，完成后以重新检测结果为准；官方页面打开、reveal 或升级进程退出成功均不得夸大为工具已可运行。
 - Client Launch 启动时临时选择 Team、Agent 和可选 TaskBrief。前端按 `outcome` 与 `contextDelivery` 映射为“启动请求已发送”“应用打开请求已发送”或“上下文已复制，请手动粘贴”，不得继续显示“上下文已准备”。
 - 品牌 Logo 使用本地官方资产或明确文字回退，不依赖远程 URL，不临摹品牌，不暗示官方背书。
 - 页面 body 不得横向滚动，宽内容必须在自身容器内滚动。

@@ -2,60 +2,6 @@ export type Id = string
 export type ContentHash = `sha256:${string}`
 export type Timestamp = string
 
-export type HostIntegrationStatus = 'not_checked' | 'degraded'
-export type HostIntegrationInstallationState =
-  | 'not_installed'
-  | 'installed'
-  | 'update_available'
-  | 'foreign_collision'
-  | 'unsupported'
-  | 'unknown'
-
-export type HostIntegrationDto = {
-  toolId: import('./client-adapters').BuiltInClientId
-  targetId: Id
-  status: HostIntegrationStatus
-  installationState: HostIntegrationInstallationState
-  canInstall: boolean
-  canUninstall: boolean
-  canReveal: boolean
-  reason: string
-}
-
-export type HostIntegrationRequest = {
-  toolId: import('./client-adapters').BuiltInClientId
-  targetId: Id
-  requestId: Id
-}
-
-export type HostIntegrationPreviewDto = HostIntegrationRequest & {
-  previewRef: Id
-  action: 'install' | 'uninstall'
-  status: HostIntegrationStatus
-  installationState: HostIntegrationInstallationState
-  canCommit: boolean
-  requiresConfirmation: boolean
-  reason: string
-}
-
-export type HostIntegrationCommitRequest = HostIntegrationRequest & {
-  previewRef: Id
-  confirmation: boolean
-}
-
-export type HostIntegrationResultDto = HostIntegrationRequest & {
-  status: HostIntegrationStatus
-  installationState: HostIntegrationInstallationState
-  changed: boolean
-  reason: string
-}
-
-export type RevealHostDirectoryResultDto = HostIntegrationRequest & {
-  status: HostIntegrationStatus
-  revealed: boolean
-  reason: string
-}
-
 export type BaselineRefDto = {
   id: Id
   assetId: Id
@@ -372,6 +318,8 @@ export type ClientLaunchResultV3 = RequestClientLaunchV3 & {
 
 export type AiToolAvailability = 'installed' | 'not_found' | 'unsupported_platform' | 'detection_failed'
 export type AiToolContextMode = 'initial_prompt' | 'manual_context' | 'unavailable'
+export type AiToolInstallSource = 'npm' | 'homebrew' | 'native' | 'app_bundle' | 'unknown' | 'not_applicable'
+export type AiToolVersionState = 'not_applicable' | 'unknown' | 'up_to_date' | 'update_available' | 'ahead_or_prerelease' | 'conflicting_installs'
 
 export type AiToolHostStatusDto = {
   toolId: import('./client-adapters').BuiltInClientId
@@ -381,11 +329,37 @@ export type AiToolHostStatusDto = {
   canRevealConfig: boolean
   canOpenOfficialInstallPage: boolean
   reasonCode: string
+  currentVersion: string | null
+  latestVersion: string | null
+  installSource: AiToolInstallSource
+  versionState: AiToolVersionState
+  canUpgrade: boolean
+  versionReasonCode: string
+  installationCount: number
 }
 
 export type AiToolHostRequest = {
   toolId: import('./client-adapters').BuiltInClientId
   requestId: Id
+}
+
+export type AiToolUpgradePreviewDto = AiToolHostRequest & {
+  previewRef: string
+  currentVersion: string
+  latestVersion: string
+  installSource: AiToolInstallSource
+  confirmationText: string
+}
+
+export type AiToolUpgradeCommitRequest = AiToolHostRequest & {
+  previewRef: string
+  confirmation: true
+}
+
+export type AiToolUpgradeResultDto = AiToolHostRequest & {
+  outcome: 'updated' | 'already_current' | 'process_failed' | 'timed_out' | 'postcheck_failed' | 'version_unchanged' | 'target_changed' | 'unsupported_installation'
+  previousVersion: string | null
+  currentVersion: string | null
 }
 
 export type OpenAiToolInstallPageResultDto = AiToolHostRequest & {
@@ -396,55 +370,59 @@ export type RevealAiToolConfigLocationResultDto = AiToolHostRequest & {
   outcome: 'revealed'
 }
 
-export type FormalMemoryScopeType = 'agent_long_term'
-export type FormalMemoryScopeTypeV3 = FormalMemoryScopeType
-
-export type MemoryScopeKeyDto = { kind: 'agent_long_term'; agentId: Id }
-export type MemoryScopeKeyV3Dto = MemoryScopeKeyDto
-
-export type MemoryOwnerDto = { kind: 'agent'; agentId: Id }
-export type MemoryOwnerV3Dto = MemoryOwnerDto
-
 export type MemorySpaceDto = {
   id: Id
-  scopeType: FormalMemoryScopeType
-  scopeKey: MemoryScopeKeyDto
-  owner: MemoryOwnerDto
-  visibilityPolicy: 'agent_private'
-  storageProfileVersion: 'memory-v4'
+  agentId: Id
   state: 'active' | 'read_only_history'
+  storageProfileVersion: 'memory-v4'
   storageLocator: AssetLocatorDto
   currentRevisionId?: Id
   contentHash: ContentHash
   updatedAt: Timestamp
 }
 
+export type LoadedMemoryDto = {
+  requestId: Id
+  space: MemorySpaceDto
+  content: string
+  baselineRef: BaselineRefDto
+}
+
 export type MemoryRevisionDto = {
   id: Id
   spaceId: Id
   parentRevisionId?: Id
+  sourceContentHash: ContentHash
   contentHash: ContentHash
-  storageLocator: AssetLocatorDto
   writeReceiptId: Id
   writtenAt: Timestamp
 }
 
-export type SaveMemoryRequest = {
-  requestId: Id
-  spaceId: Id
+export type DiscoverMemorySpacesRequest = { requestId: Id; agentId: Id }
+export type DiscoverMemorySpacesResult = { requestId: Id; spaces: MemorySpaceDto[] }
+export type LoadMemoryRequest = { requestId: Id; spaceId: Id; agentId: Id }
+
+export type SaveMemoryRequest = LoadMemoryRequest & {
   content: string
+  contentHash: ContentHash
+  expectedBaseline: BaselineRefDto
 }
 
 export type SaveMemoryResult =
-  | { kind: 'saved'; requestId: Id; space: MemorySpaceDto; revision: MemoryRevisionDto; writeReceipt: WriteReceiptDto }
-  | { kind: 'unchanged'; requestId: Id; space: MemorySpaceDto }
+  | { kind: 'saved'; requestId: Id; memory: LoadedMemoryDto; revision: MemoryRevisionDto; writeReceipt: WriteReceiptDto }
+  | { kind: 'baseline_changed'; requestId: Id; current: LoadedMemoryDto; proposedContentHash: ContentHash; diagnostics: Diagnostic[] }
+  | { kind: 'revision_pending'; requestId: Id; journalId: Id; writeReceipt: WriteReceiptDto; diagnostics: Diagnostic[] }
   | ValidationFailed
-  | { kind: 'save_failed'; requestId: Id; diagnostics: Diagnostic[]; retryable: boolean }
+  | { kind: 'save_failed'; requestId: Id; diagnostics: Diagnostic[]; retryable: boolean; fileState: string }
 
-export type ListMemoryRevisionsRequest = {
-  requestId: Id
-  spaceId: Id
+export type ListMemoryRevisionsRequest = LoadMemoryRequest
+export type ReadMemoryRevisionContentRequest = LoadMemoryRequest & { revisionId: Id }
+export type RestoreMemoryRevisionRequest = ReadMemoryRevisionContentRequest & {
+  expectedBaseline: BaselineRefDto
+  baseContent: string
+  confirmed: boolean
 }
+export type RecoverMemoryRevisionRequest = LoadMemoryRequest & { journalId: Id }
 
 export type CreateBackupSnapshotRequest = {
   requestId: Id
@@ -526,7 +504,6 @@ export type BackupRestoreResultDto = {
 
 export type DiscoveryRequest = {
   requestId: Id
-  includeClaudeUserRoot: boolean
 }
 
 export type SharedAssetKind = 'rule' | 'skill' | 'mcp' | 'sop' | 'hook' | 'command' | 'output_profile'

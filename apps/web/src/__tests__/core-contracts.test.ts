@@ -80,10 +80,7 @@ describe('首切片核心共享合同', () => {
   it('长期 Memory 直接保存并生成独立 revision', () => {
     const space: MemorySpaceDto = {
       id: 'memory-agent-zhouce',
-      scopeType: 'agent_long_term',
-      scopeKey: { kind: 'agent_long_term', agentId: 'zhouce' },
-      owner: { kind: 'agent', agentId: 'zhouce' },
-      visibilityPolicy: 'agent_private',
+      agentId: 'zhouce',
       storageProfileVersion: 'memory-v4',
       state: 'active',
       storageLocator: { rootKind: 'managed', displayPath: 'memory/long-term.md', relativePath: 'memory/long-term.md' },
@@ -91,18 +88,19 @@ describe('首切片核心共享合同', () => {
       contentHash: hash,
       updatedAt: '2026-09-01T00:02:00Z',
     }
-    const request: SaveMemoryRequest = { requestId: 'save-memory-1', spaceId: space.id, content: '新的长期事实' }
+    const baseline = { id: 'memory-baseline', assetId: space.id, containerId: space.id, assetContentHash: hash, containerContentHash: hash, targetExists: true }
+    const request: SaveMemoryRequest = { requestId: 'save-memory-1', spaceId: space.id, agentId: space.agentId, content: '新的长期事实', contentHash: hash, expectedBaseline: baseline }
     const revision: MemoryRevisionDto = {
       id: 'memory-revision-2',
       spaceId: space.id,
       parentRevisionId: 'memory-revision-1',
+      sourceContentHash: hash,
       contentHash: hash,
-      storageLocator: space.storageLocator,
       writeReceiptId: 'memory-write-2',
       writtenAt: space.updatedAt,
     }
     const result: SaveMemoryResult = {
-      kind: 'saved', requestId: request.requestId, space, revision,
+      kind: 'saved', requestId: request.requestId, memory: { requestId: request.requestId, space, content: request.content, baselineRef: baseline }, revision,
       writeReceipt: { id: 'memory-write-2', containerId: space.id, previousContainerHash: hash, writtenContainerHash: hash, verifiedAt: space.updatedAt, atomicReplace: true },
     }
 

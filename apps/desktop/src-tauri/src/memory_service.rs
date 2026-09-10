@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config_fs::restricted_atomic_write,
-    domain_store, local_service,
+    domain_store, local_service, memory_history,
     memory_target::{self, ResolvedMemoryTarget},
 };
 
@@ -35,8 +35,8 @@ pub(crate) struct LoadedMemoryDto {
     pub(crate) baseline_ref: local_service::BaselineRefDto,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MemoryRevisionDto {
     pub(crate) id: String,
     pub(crate) space_id: String,
@@ -87,6 +87,27 @@ pub(crate) struct ListMemoryRevisionsRequest {
     pub(crate) request_id: String,
     pub(crate) space_id: String,
     pub(crate) agent_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ReadMemoryRevisionContentRequest {
+    pub(crate) request_id: String,
+    pub(crate) space_id: String,
+    pub(crate) agent_id: String,
+    pub(crate) revision_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RestoreMemoryRevisionRequest {
+    pub(crate) request_id: String,
+    pub(crate) space_id: String,
+    pub(crate) agent_id: String,
+    pub(crate) revision_id: String,
+    pub(crate) expected_baseline: local_service::BaselineRefDto,
+    pub(crate) base_content: String,
+    pub(crate) confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -334,6 +355,7 @@ fn record_revision(
 pub(crate) fn save_memory_at(
     database: &Path,
     agents_root: &Path,
+    revisions_root: &Path,
     request: SaveMemoryRequest,
 ) -> Result<SaveMemoryResult, String> {
     validate_request_id(&request.request_id)?;
@@ -457,6 +479,7 @@ pub(crate) fn save_memory_at(
             [&journal_id],
         )
         .is_err()
+        || memory_history::ensure(revisions_root, &revision, &verified).is_err()
     {
         return Ok(SaveMemoryResult::RevisionPending {
             request_id: request.request_id,
@@ -523,9 +546,80 @@ pub(crate) fn list_revisions_at(
     Ok(revisions)
 }
 
+pub(crate) fn read_revision_content_at(
+    database: &Path,
+    agents_root: &Path,
+    revisions_root: &Path,
+    request: ReadMemoryRevisionContentRequest,
+) -> Result<String, String> {
+    validate_request_id(&request.request_id)?;
+    memory_target::validate_id(&request.revision_id, "MemoryRevision 标识")?;
+    memory_target::resolve_requested(agents_root, &request.space_id, &request.agent_id)?;
+    if !memory_history::belongs_to_space(database, &request.space_id, &request.revision_id)? {
+        return Err("MemoryRevision 不属于当前 MemorySpace".into());
+    }
+    memory_history::read(revisions_root, &request.space_id, &request.revision_id)
+}
+
+pub(crate) fn restore_revision_at(
+    database: &Path,
+    agents_root: &Path,
+    revisions_root: &Path,
+    request: RestoreMemoryRevisionRequest,
+) -> Result<SaveMemoryResult, String> {
+    let request_id = request.request_id.clone();
+    if !request.confirmed
+        || request.base_content.len() > MAX_MEMORY_BYTES
+        || request.base_content.contains('\0')
+        || local_service::hash_bytes(request.base_content.as_bytes())
+            != request.expected_baseline.asset_content_hash
+    {
+        return Ok(validation(
+            request_id,
+            "memory_restore_request_invalid",
+            "Memory 历史恢复请求无效或尚未确认",
+        ));
+    }
+    let content = match read_revision_content_at(
+        database,
+        agents_root,
+        revisions_root,
+        ReadMemoryRevisionContentRequest {
+            request_id: request.request_id.clone(),
+            space_id: request.space_id.clone(),
+            agent_id: request.agent_id.clone(),
+            revision_id: request.revision_id,
+        },
+    ) {
+        Ok(content) => content,
+        Err(message) => {
+            return Ok(validation(
+                request_id,
+                "memory_revision_content_invalid",
+                &message,
+            ))
+        }
+    };
+    let content_hash = local_service::hash_bytes(content.as_bytes());
+    save_memory_at(
+        database,
+        agents_root,
+        revisions_root,
+        SaveMemoryRequest {
+            request_id: request.request_id,
+            space_id: request.space_id,
+            agent_id: request.agent_id,
+            content,
+            content_hash,
+            expected_baseline: request.expected_baseline,
+        },
+    )
+}
+
 pub(crate) fn recover_revision_at(
     database: &Path,
     agents_root: &Path,
+    revisions_root: &Path,
     request: RecoverMemoryRevisionRequest,
 ) -> Result<SaveMemoryResult, String> {
     validate_request_id(&request.request_id)?;
@@ -570,6 +664,7 @@ pub(crate) fn recover_revision_at(
         written_at: row.4,
     };
     let write_receipt = receipt(&revision);
+    memory_history::ensure(revisions_root, &revision, &loaded.content)?;
     record_revision(&mut connection, &revision, &request.journal_id)?;
     let memory = load_target(database, target, request.request_id.clone())?;
     Ok(SaveMemoryResult::Saved {
@@ -582,7 +677,103 @@ pub(crate) fn recover_revision_at(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+
+    fn fixture() -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let database = root.path().join("domain.sqlite3");
+        let agents = root.path().join("agents");
+        let revisions = root.path().join("revisions");
+        let package = agents.join("agt_agent-1");
+        fs::create_dir_all(&package).unwrap();
+        fs::write(package.join(".bandi-agent.json"), br#"{"id":"agent-1"}"#).unwrap();
+        (root, database, agents, revisions)
+    }
+
+    #[test]
+    fn saves_reads_and_restores_history_as_new_revision() {
+        let (_root, database, agents, revisions) = fixture();
+        let loaded = load_memory_at(
+            &database,
+            &agents,
+            LoadMemoryRequest {
+                request_id: "load-1".into(),
+                space_id: "memory-agent-agent-1".into(),
+                agent_id: "agent-1".into(),
+            },
+        )
+        .unwrap();
+        let save = |request_id: &str, content: &str, baseline: local_service::BaselineRefDto| {
+            save_memory_at(
+                &database,
+                &agents,
+                &revisions,
+                SaveMemoryRequest {
+                    request_id: request_id.into(),
+                    space_id: "memory-agent-agent-1".into(),
+                    agent_id: "agent-1".into(),
+                    content: content.into(),
+                    content_hash: local_service::hash_bytes(content.as_bytes()),
+                    expected_baseline: baseline,
+                },
+            )
+            .unwrap()
+        };
+        let (first, first_memory) = match save("save-1", "first", loaded.baseline_ref) {
+            SaveMemoryResult::Saved {
+                revision, memory, ..
+            } => (revision, memory),
+            _ => panic!("first save failed"),
+        };
+        let second_memory = match save("save-2", "second", first_memory.baseline_ref) {
+            SaveMemoryResult::Saved { memory, .. } => memory,
+            _ => panic!("second save failed"),
+        };
+        let historical = read_revision_content_at(
+            &database,
+            &agents,
+            &revisions,
+            ReadMemoryRevisionContentRequest {
+                request_id: "read-1".into(),
+                space_id: first.space_id.clone(),
+                agent_id: "agent-1".into(),
+                revision_id: first.id.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(historical, "first");
+        let restored = restore_revision_at(
+            &database,
+            &agents,
+            &revisions,
+            RestoreMemoryRevisionRequest {
+                request_id: "restore-1".into(),
+                space_id: first.space_id,
+                agent_id: "agent-1".into(),
+                revision_id: first.id.clone(),
+                expected_baseline: second_memory.baseline_ref,
+                base_content: "second".into(),
+                confirmed: true,
+            },
+        )
+        .unwrap();
+        match restored {
+            SaveMemoryResult::Saved {
+                revision, memory, ..
+            } => {
+                assert_ne!(revision.id, first.id);
+                assert_eq!(memory.content, "first");
+            }
+            _ => panic!("restore failed"),
+        }
+    }
 
     #[test]
     fn requests_reject_legacy_review_fields() {

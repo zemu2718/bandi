@@ -22,7 +22,6 @@ fn fixture(name: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf, String)
         &managed,
         local_service::DiscoveryRequest {
             request_id: "discover".into(),
-            include_claude_user_root: false,
         },
     );
     (
@@ -180,7 +179,6 @@ fn multi_asset_snapshot_keeps_content_references_aligned() {
         &managed,
         local_service::DiscoveryRequest {
             request_id: "discover-two".into(),
-            include_claude_user_root: false,
         },
     );
     let second_asset_id = discovery

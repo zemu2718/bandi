@@ -10,6 +10,24 @@ describe('app commands', () => {
     expect(isAppCommandId('shell.exec')).toBe(false)
   })
 
+  it('按可用状态执行历史导航', () => {
+    const navigate = vi.fn()
+    const context = { navigate, dispatch: vi.fn(), canGoBack: true, canGoForward: true }
+
+    expect(executeAppCommand('navigation.back', context)).toBe(true)
+    expect(executeAppCommand('navigation.forward', context)).toBe(true)
+    expect(navigate).toHaveBeenNthCalledWith(1, -1)
+    expect(navigate).toHaveBeenNthCalledWith(2, 1)
+  })
+
+  it('历史不可用时不消费导航命令', () => {
+    const navigate = vi.fn()
+
+    expect(executeAppCommand('navigation.back', { navigate, dispatch: vi.fn() })).toBe(false)
+    expect(executeAppCommand('navigation.forward', { navigate, dispatch: vi.fn() })).toBe(false)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
   it('保留一级菜单外的配置状态导航命令', () => {
     const navigate = vi.fn()
 

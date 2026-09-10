@@ -16,12 +16,8 @@ const bridge = vi.hoisted(() => ({
   listAiToolHostStatuses: vi.fn(),
   openAiToolInstallPage: vi.fn(),
   revealAiToolConfigLocation: vi.fn(),
-  listHostIntegrations: vi.fn(),
-  previewHostIntegrationInstall: vi.fn(),
-  commitHostIntegrationInstall: vi.fn(),
-  previewHostIntegrationUninstall: vi.fn(),
-  commitHostIntegrationUninstall: vi.fn(),
-  revealHostDirectory: vi.fn(),
+  previewAiToolUpgrade: vi.fn(),
+  commitAiToolUpgrade: vi.fn(),
   previewFactoryReset: vi.fn(),
 }))
 
@@ -35,6 +31,13 @@ const hostStatuses = initialState.aiClients.map((client) => ({
   canRevealConfig: client.id === 'claude-code',
   canOpenOfficialInstallPage: true,
   reasonCode: client.id === 'claude-code' ? 'TOOL_INSTALLED' : 'TOOL_NOT_FOUND',
+  currentVersion: client.id === 'claude-code' ? '1.0.0' : null,
+  latestVersion: client.id === 'claude-code' ? '2.0.0' : null,
+  installSource: client.id === 'claude-code' ? 'npm' : 'not_applicable',
+  versionState: client.id === 'claude-code' ? 'update_available' : 'unknown',
+  canUpgrade: client.id === 'claude-code',
+  versionReasonCode: client.id === 'claude-code' ? 'update_available' : 'version_unknown',
+  installationCount: client.id === 'claude-code' ? 1 : 0,
 }))
 
 function renderTools() {
@@ -49,7 +52,6 @@ const storage = new Map<string, string>()
 beforeEach(() => {
   vi.clearAllMocks()
   bridge.listAiToolHostStatuses.mockResolvedValue(hostStatuses)
-  bridge.listHostIntegrations.mockResolvedValue([])
   storage.clear()
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -72,7 +74,7 @@ describe('Desktop AI 工具', () => {
     renderTools()
 
     expect((await screen.findAllByText('Claude Code')).length).toBeGreaterThan(0)
-    fireEvent.click(screen.getByRole('button', { name: '已安装' }))
+    fireEvent.click(screen.getByRole('button', { name: '已检测到' }))
     expect(screen.getAllByText('Claude Code')).toHaveLength(2)
     expect(screen.queryByText('ChatGPT')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '在文件管理器中显示' }))
@@ -80,7 +82,7 @@ describe('Desktop AI 工具', () => {
       toolId: 'claude-code', requestId: '00000000-0000-4000-8000-000000000001',
     }))
 
-    fireEvent.click(screen.getByRole('button', { name: '未安装' }))
+    fireEvent.click(screen.getByRole('button', { name: '未检测到' }))
     fireEvent.click(screen.getByRole('button', { name: /ChatGPT/ }))
     fireEvent.click(screen.getByRole('button', { name: '查看官方安装方式' }))
     await waitFor(() => expect(bridge.openAiToolInstallPage).toHaveBeenCalledWith({
@@ -88,35 +90,30 @@ describe('Desktop AI 工具', () => {
     }))
   })
 
-  it('宿主入口安装先预览并使用稳定标识提交', async () => {
-    const integration = {
-      toolId: 'claude-code', targetId: 'claude-code-user-skill-v1', status: 'not_checked',
-      installationState: 'not_installed', canInstall: true, canUninstall: false, canReveal: false,
-      reason: '只检查 Bandi 集成文件；工具是否已识别该集成尚未验证',
-    }
-    bridge.listHostIntegrations.mockResolvedValue([integration])
-    bridge.previewHostIntegrationInstall.mockResolvedValue({
-      ...integration, requestId: '00000000-0000-4000-8000-000000000001', previewRef: 'preview-1', action: 'install',
-      canCommit: true, requiresConfirmation: true, reason: '目标状态已复核，确认后可提交',
+  it('单项升级先预览确认，只提交稳定标识并在完成后刷新', async () => {
+    bridge.previewAiToolUpgrade.mockResolvedValue({
+      toolId: 'claude-code', requestId: '00000000-0000-4000-8000-000000000001',
+      previewRef: 'upgrade-1', currentVersion: '1.0.0', latestVersion: '2.0.0', installSource: 'npm',
+      confirmationText: '确认将工具从 1.0.0 升级到 2.0.0',
     })
-    bridge.commitHostIntegrationInstall.mockResolvedValue({
-      ...integration, requestId: '00000000-0000-4000-8000-000000000001', installationState: 'installed', changed: true,
-      reason: 'Bandi 集成文件已写入并确认内容一致',
+    bridge.commitAiToolUpgrade.mockResolvedValue({
+      toolId: 'claude-code', requestId: '00000000-0000-4000-8000-000000000001',
+      outcome: 'updated', previousVersion: '1.0.0', currentVersion: '2.0.0',
     })
     vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001')
     renderTools()
 
-    fireEvent.click(await screen.findByRole('button', { name: '安装集成' }))
-    expect(bridge.previewHostIntegrationInstall).toHaveBeenCalledWith({
-      toolId: 'claude-code', targetId: 'claude-code-user-skill-v1', requestId: '00000000-0000-4000-8000-000000000001',
-    })
-    fireEvent.change(await screen.findByRole('textbox', { name: '输入“安装 Bandi 集成”确认' }), { target: { value: '安装 Bandi 集成' } })
-    fireEvent.click(screen.getByRole('button', { name: '安装 Bandi 集成' }))
+    fireEvent.click(await screen.findByRole('button', { name: '升级到 2.0.0' }))
+    expect(await screen.findByRole('dialog', { name: '升级 Claude Code' })).toBeInTheDocument()
+    expect(screen.getByText('确认将工具从 1.0.0 升级到 2.0.0')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '确认升级' }))
 
-    await waitFor(() => expect(bridge.commitHostIntegrationInstall).toHaveBeenCalledWith({
-      toolId: 'claude-code', targetId: 'claude-code-user-skill-v1', requestId: '00000000-0000-4000-8000-000000000001',
-      previewRef: 'preview-1', confirmation: true,
+    await waitFor(() => expect(bridge.commitAiToolUpgrade).toHaveBeenCalledWith({
+      toolId: 'claude-code', requestId: '00000000-0000-4000-8000-000000000001',
+      previewRef: 'upgrade-1', confirmation: true,
     }))
+    expect(JSON.stringify(bridge.commitAiToolUpgrade.mock.lastCall)).not.toMatch(/path|executable|argv|source|packageName/i)
+    await waitFor(() => expect(bridge.listAiToolHostStatuses).toHaveBeenCalledTimes(2))
   })
 
 })

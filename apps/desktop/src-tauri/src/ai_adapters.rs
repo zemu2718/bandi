@@ -161,21 +161,7 @@ struct LaunchSpec {
     outcome: ClientLaunchOutcomeV3,
 }
 
-fn tool_command(client: BuiltInClientId) -> Option<&'static str> {
-    match client {
-        BuiltInClientId::ClaudeCode => Some("claude"),
-        BuiltInClientId::Codex => Some("codex"),
-        BuiltInClientId::GeminiCli => Some("gemini"),
-        BuiltInClientId::Hermes => Some("hermes"),
-        BuiltInClientId::Pi => Some("pi"),
-        BuiltInClientId::GrokBuild => Some("grok"),
-        BuiltInClientId::Opencode => Some("opencode"),
-        BuiltInClientId::Openclaw => Some("openclaw"),
-        BuiltInClientId::ClaudeDesktop => None,
-    }
-}
-
-fn launch_spec(request: &ClientLaunchRequestV3, prompt: &str) -> LaunchSpec {
+fn launch_spec(request: &ClientLaunchRequestV3) -> LaunchSpec {
     if request.client_id == BuiltInClientId::ClaudeDesktop {
         return LaunchSpec {
             program: "/usr/bin/open",
@@ -184,33 +170,11 @@ fn launch_spec(request: &ClientLaunchRequestV3, prompt: &str) -> LaunchSpec {
             outcome: ClientLaunchOutcomeV3::ApplicationLaunchRequested,
         };
     }
-    let command = tool_command(request.client_id).expect("非 GUI 工具必须有固定命令");
-    let manual = matches!(
-        request.client_id,
-        BuiltInClientId::GrokBuild | BuiltInClientId::Opencode | BuiltInClientId::Openclaw
-    );
-    let mut args = vec![
-        "-a".into(),
-        request.terminal_id.mac_app().into(),
-        "--args".into(),
-        command.into(),
-    ];
-    if !manual {
-        args.push(prompt.into());
-    }
     LaunchSpec {
         program: "/usr/bin/open",
-        args,
-        context_delivery: if manual {
-            ContextDelivery::ManualCopy
-        } else {
-            ContextDelivery::InitialPrompt
-        },
-        outcome: if manual {
-            ClientLaunchOutcomeV3::ManualContextRequired
-        } else {
-            ClientLaunchOutcomeV3::TerminalLaunchRequested
-        },
+        args: vec!["-a".into(), request.terminal_id.mac_app().into()],
+        context_delivery: ContextDelivery::ManualCopy,
+        outcome: ClientLaunchOutcomeV3::ManualContextRequired,
     }
 }
 
@@ -245,10 +209,9 @@ pub(crate) fn request_launch(
         agent_id: &request.agent_id,
         task_id: request.task_id.as_deref(),
     })?;
-    let spec = launch_spec(&request, &context.prompt);
+    let spec = launch_spec(&request);
     execute(&spec)?;
-    let manual_prompt =
-        (spec.context_delivery == ContextDelivery::ManualCopy).then_some(context.prompt);
+    let manual_prompt = Some(context.prompt);
     Ok(ClientLaunchResultV3 {
         client_id: request.client_id,
         adapter_id: request.adapter_id,
@@ -259,13 +222,9 @@ pub(crate) fn request_launch(
         task_id: request.task_id,
         capability: CapabilityFact {
             status: CapabilityStatus::Supported,
-            reason: "已提交受控客户端启动请求".into(),
+            reason: "已提交固定客户端打开请求；上下文需要手动粘贴".into(),
             evidence: vec!["Team、Agent 与可选 TaskBrief 已由后端重取并复核".into()],
-            remediation: if manual_prompt.is_some() {
-                vec!["复制上下文到已打开的客户端".into()]
-            } else {
-                Vec::new()
-            },
+            remediation: vec!["将已复制的上下文粘贴到打开的客户端".into()],
         },
         context_delivery: spec.context_delivery,
         manual_prompt,
@@ -299,48 +258,35 @@ mod tests {
     }
 
     #[test]
-    fn prompt_tools_receive_one_prompt_argv_without_shell() {
-        let input = request(BuiltInClientId::ClaudeCode);
-        let spec = launch_spec(&input, "natural language; $(unsafe)");
+    fn terminal_tools_only_open_fixed_terminal() {
+        let spec = launch_spec(&request(BuiltInClientId::ClaudeCode));
         assert_eq!(spec.program, "/usr/bin/open");
-        assert_eq!(
-            spec.args,
-            [
-                "-a",
-                "Terminal",
-                "--args",
-                "claude",
-                "natural language; $(unsafe)"
-            ]
-        );
-        assert_eq!(spec.context_delivery, ContextDelivery::InitialPrompt);
+        assert_eq!(spec.args, ["-a", "Terminal"]);
+        assert_eq!(spec.context_delivery, ContextDelivery::ManualCopy);
+        assert_eq!(spec.outcome, ClientLaunchOutcomeV3::ManualContextRequired);
     }
 
     #[test]
-    fn desktop_and_interactive_tools_require_manual_context() {
-        let desktop = launch_spec(&request(BuiltInClientId::ClaudeDesktop), "context");
+    fn desktop_application_only_opens_fixed_application() {
+        let desktop = launch_spec(&request(BuiltInClientId::ClaudeDesktop));
         assert_eq!(desktop.args, ["-a", "Claude"]);
+        assert_eq!(desktop.context_delivery, ContextDelivery::ManualCopy);
         assert_eq!(
             desktop.outcome,
             ClientLaunchOutcomeV3::ApplicationLaunchRequested
         );
-        let grok = launch_spec(&request(BuiltInClientId::GrokBuild), "context");
-        assert_eq!(grok.args, ["-a", "Terminal", "--args", "grok"]);
-        assert_eq!(grok.outcome, ClientLaunchOutcomeV3::ManualContextRequired);
     }
 
     #[test]
-    fn request_result_only_claims_launch_request() {
+    fn request_result_requires_manual_context() {
         let result = request_launch(request(BuiltInClientId::Codex), |_| {
             Ok(ValidatedLaunchContext {
                 prompt: "verified".into(),
             })
         })
         .unwrap();
-        assert_eq!(
-            result.outcome,
-            ClientLaunchOutcomeV3::TerminalLaunchRequested
-        );
-        assert!(result.manual_prompt.is_none());
+        assert_eq!(result.outcome, ClientLaunchOutcomeV3::ManualContextRequired);
+        assert_eq!(result.context_delivery, ContextDelivery::ManualCopy);
+        assert_eq!(result.manual_prompt.as_deref(), Some("verified"));
     }
 }

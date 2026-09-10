@@ -135,7 +135,7 @@ export function agentFilePreview(agent: FullAgent, context: AgentProjectionConte
         { label: '名称', value: agent.name },
         { label: '生命周期', value: agent.status },
         { label: '所属 Team', value: agent.teamId },
-        { label: '使命', value: agent.mission },
+        { label: '一句话描述', value: agent.mission },
       ],
       notice: externalNotice,
     }

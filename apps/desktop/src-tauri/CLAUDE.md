@@ -14,8 +14,8 @@
 - 新增 command、plugin、capability、Shell、进程或文件系统访问前，先确认其直接服务于配置管理，并采用最小权限、最小参数和最小暴露面。
 - capability 只授权明确需要的窗口、命令、路径和操作；不得使用宽泛通配符作为方便性兜底。
 - Client Launch v3 只接受固定工具、Adapter、终端枚举及稳定 `teamId / agentId / taskId?`；后端必须从 Bandi 受管数据重取并复核实体关系，构造受控上下文，再按固定命令和参数映射提交启动请求。不得接受调用方提供的 cwd、prompt、TaskBrief 正文、bundle ID、executable、argv、Shell、AppleScript、环境变量、stdin 或脚本；不得读取输出、保存 PID 或管理 Session。
-- `/tools` 的宿主能力与 Client Launch v3 相互独立，只暴露 `list_ai_tool_host_statuses`、`open_ai_tool_install_page` 和 `reveal_ai_tool_config_location` 三类窄命令。请求只允许固定 `toolId` 与 `requestId`；后端 catalog 固定解析安装候选、官方 URL 和配置相对位置，不接受路径、URL 或通用进程参数。
-- 本机检测不得运行工具、扫描 PATH 或读取配置正文；reveal 只允许既定且存在的配置位置。除 catalog 内官方 URL、固定配置位置和固定启动命令这些窄例外外，不得暴露通用 opener、文件管理器、文件 API 或进程 API；其他文件操作必须限定到 Bandi 自有数据并防止路径穿越与符号链接越界。
+- `/tools` 的宿主能力与 Client Launch v3 相互独立，只暴露工具状态、升级预览与确认、打开官方安装页和 reveal 配置位置等窄命令。请求只允许固定 `toolId`、`requestId`、后端签发的 `previewRef` 和确认值；后端 catalog 固定解析安装候选、版本源、升级动作、官方 URL 和配置相对位置，不接受路径、URL 或通用进程参数。
+- macOS 本机检测可从受限 PATH 与 catalog 明确列出的包管理器、版本管理器目录发现固定工具，对命中项执行固定版本参数，并访问固定官方源查询最新版本；不得读取配置正文、任意递归扫描或接受调用方提供的 executable、argv、Shell、环境变量和脚本。单项升级必须先预览并独立确认，只能执行与已复核安装来源匹配的固定动作；不得下载并执行远程安装脚本。reveal 继续只允许既定且存在的配置位置。除这些窄例外外，不得暴露通用 opener、文件管理器、文件 API 或进程 API。
 - 删除、覆盖、恢复或扩大权限属于高风险操作，必须在界面中展示真实影响并获得独立确认；删除与恢复仅处理 Bandi 自有数据。
 - 普通配置和 Agent 长期 Memory 保存应执行受限目标校验、基线检查、外部变化检测、原子写入、重读验证、Revision 和 recovery；Memory 直接保存，不增加额外流程或状态机。失败时保留原文件并返回可理解的错误，不以备份替代安全写入。
 

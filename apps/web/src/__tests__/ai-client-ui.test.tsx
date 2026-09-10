@@ -96,7 +96,7 @@ describe('AI 编程工具界面', () => {
     const team = initialState.teams.find((item) => item.id === agent.teamId)!
     desktopBridge.requestClientLaunchV3.mockResolvedValue({
       clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', terminalId: 'terminal', intent: 'start_with_context', teamId: team.id, agentId: agent.id,
-      capability: { status: 'supported', reason: '启动请求已提交', evidence: [], remediation: [] }, outcome: 'terminal_launch_requested', contextDelivery: 'initial_prompt',
+      capability: { status: 'supported', reason: '打开请求已提交', evidence: [], remediation: [] }, outcome: 'manual_context_required', contextDelivery: 'manual_copy', manualPrompt: '已验证的上下文',
     })
     renderLaunch({ teams: [team] }, agent.id)
     fireEvent.click(screen.getByRole('button', { name: '选择 AI 编程工具' }))
@@ -106,7 +106,44 @@ describe('AI 编程工具界面', () => {
     await waitFor(() => expect(desktopBridge.requestClientLaunchV3).toHaveBeenCalledWith({
       clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', terminalId: 'terminal', intent: 'start_with_context', teamId: team.id, agentId: agent.id, taskId: undefined,
     }))
-    expect(await screen.findByText(/启动请求已发送/)).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent('上下文已复制，请手动粘贴')
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('已验证的上下文')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('剪贴板失败时保留 Dialog 并显示手动复制入口', async () => {
+    desktopBridge.desktop = true
+    const agent = initialState.agents.find((item) => item.status === 'active')!
+    const team = initialState.teams.find((item) => item.id === agent.teamId)!
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'))
+    desktopBridge.requestClientLaunchV3.mockResolvedValue({
+      clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', terminalId: 'terminal', intent: 'start_with_context', teamId: team.id, agentId: agent.id,
+      capability: { status: 'supported', reason: '打开请求已提交', evidence: [], remediation: [] }, outcome: 'manual_context_required', contextDelivery: 'manual_copy', manualPrompt: '已验证的上下文',
+    })
+    renderLaunch({ teams: [team] }, agent.id)
+    fireEvent.click(screen.getByRole('button', { name: '选择 AI 编程工具' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Claude Code/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('请手动选择并复制上下文')
+    expect(screen.getByRole('dialog', { name: '在 Claude Code 中继续' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '复制' })).toBeInTheDocument()
+  })
+
+  it('不一致结果保持中性并不关闭 Dialog', async () => {
+    desktopBridge.desktop = true
+    const agent = initialState.agents.find((item) => item.status === 'active')!
+    const team = initialState.teams.find((item) => item.id === agent.teamId)!
+    desktopBridge.requestClientLaunchV3.mockResolvedValue({
+      clientId: 'claude-code', adapterId: 'claude-code-terminal-v1', terminalId: 'terminal', intent: 'start_with_context', teamId: team.id, agentId: agent.id,
+      capability: { status: 'supported', reason: '未知结果', evidence: [], remediation: [] }, outcome: 'terminal_launch_requested', contextDelivery: 'initial_prompt',
+    })
+    renderLaunch({ teams: [team] }, agent.id)
+    fireEvent.click(screen.getByRole('button', { name: '选择 AI 编程工具' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Claude Code/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法确认的启动结果')
+    expect(screen.getByRole('dialog', { name: '在 Claude Code 中继续' })).toBeInTheDocument()
   })
 })

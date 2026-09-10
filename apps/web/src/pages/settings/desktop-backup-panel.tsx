@@ -79,7 +79,7 @@ export function DesktopBackupPanel() {
     try {
       const [history, discovery] = await Promise.all([
         listBackupSnapshots(),
-        discoverConfig({ requestId: requestId('discover-backup'), includeClaudeUserRoot: false }),
+        discoverConfig({ requestId: requestId('discover-backup') }),
       ])
       setSnapshots(history)
       setAssets(discovery.assets)

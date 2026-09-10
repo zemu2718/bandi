@@ -22,7 +22,6 @@ import { appendConfigRevision } from './config-revisions'
 import { projectSharedAssets } from './discovered-assets'
 import type { AgentRecoveryOperationSummaryDto, AssetReferenceDto, Diagnostic, LongTermDomainSnapshotDtoV4, SharedAssetNodeDto, TaskBriefDto, TeamDto } from './contracts'
 import type { TerminalId } from './terminal-model'
-import type { MainMenuLayoutPreference } from './navigation-layout'
 import type { UsageGuideTopic } from './components/usage-guide'
 import { discoverConfig, isDesktopRuntime, listAgentRecoveryOperations, listAgents, loadLongTermDomainSnapshotV4 } from './desktop-bridge'
 import { longTermDomainV4ToView } from './long-term-domain'
@@ -116,17 +115,14 @@ export type State = {
   backupSettings: BackupSettings
   settings: SettingsState
   aiClients: AiClient[]
-  recentAgentIds: string[]
   uiPreferences: UiPreferences
   theme: EffectiveTheme
-  mainMenuLayoutPreference: MainMenuLayoutPreference
   dialog: DialogState
   notice?: Notice
 }
 
 export type Action =
   | { type: 'THEME'; effectiveTheme?: EffectiveTheme }
-  | { type: 'SET_MAIN_MENU_LAYOUT'; preference: MainMenuLayoutPreference }
   | { type: 'UPDATE_UI_PREFERENCES'; preferences: UiPreferences }
   | { type: 'SET_EFFECTIVE_THEME'; theme: EffectiveTheme }
   | { type: 'SELECT_TEAM'; teamId: string }
@@ -170,9 +166,6 @@ export type Action =
   | { type: 'CREATE_DEMO_BACKUP_SNAPSHOT'; snapshot: BackupSnapshot }
   | { type: 'SIMULATE_RESTORE'; snapshotId: string; beforeSnapshot: BackupSnapshot }
   | { type: 'UPDATE_SETTINGS'; changes: Partial<SettingsState> }
-  | { type: 'RECORD_RECENT_AGENT'; agentId: string }
-  | { type: 'REMOVE_RECENT_AGENT'; agentId: string }
-  | { type: 'CLEAR_RECENT_AGENTS' }
   | { type: 'SHOW_NOTICE'; notice: Omit<Notice, 'id'> }
   | { type: 'CLEAR_NOTICE'; id?: string }
   | { type: 'TOAST'; text?: string }
@@ -232,10 +225,8 @@ export const initialState: State = {
     networkProxy: { mode: 'system', httpProxy: '', httpsProxy: '', socksProxy: '', noProxy: '' },
   },
   aiClients: initialAiClients,
-  recentAgentIds: [],
   uiPreferences: initialUiPreferences,
   theme: resolveTheme(initialUiPreferences.theme, false),
-  mainMenuLayoutPreference: initialUiPreferences.mainMenuLayout,
   dialog: null,
 }
 
@@ -259,7 +250,6 @@ function createDesktopInitialState(): State {
     configRevisions: [],
     backupSnapshots: [],
     aiClients: initialAiClients,
-    recentAgentIds: [],
   }
 }
 
@@ -355,18 +345,13 @@ export function reducer(state: State, action: Action): State {
       const theme = (action.effectiveTheme ?? state.theme) === 'light' ? 'dark' : 'light'
       return { ...state, theme, uiPreferences: { ...state.uiPreferences, theme } }
     }
-    case 'SET_MAIN_MENU_LAYOUT':
-      return state.mainMenuLayoutPreference === action.preference
-        ? state
-        : { ...state, mainMenuLayoutPreference: action.preference, uiPreferences: { ...state.uiPreferences, mainMenuLayout: action.preference } }
     case 'UPDATE_UI_PREFERENCES':
       return JSON.stringify(state.uiPreferences) === JSON.stringify(action.preferences)
         ? state
         : {
             ...state,
             uiPreferences: action.preferences,
-            mainMenuLayoutPreference: action.preferences.mainMenuLayout,
-        notice: notice('success', '个性化设置已应用', '仅保存在当前设备，不进入 Agent 配置、版本历史或备份'),
+            notice: notice('success', '个性化设置已应用', '仅保存在当前设备，不进入 Agent 配置、版本历史或备份'),
           }
     case 'SET_EFFECTIVE_THEME':
       return state.theme === action.theme ? state : { ...state, theme: action.theme }
@@ -434,7 +419,6 @@ export function reducer(state: State, action: Action): State {
         ...state,
         agents,
         teams: reconcileAgentTeamMembership(state.teams, agents),
-        recentAgentIds: state.recentAgentIds.filter((id) => id !== action.agentId),
         notice: notice('success', 'Agent 已永久删除', 'Agent 配置和相关索引已从 Bandi Desktop 移除'),
       }
     }
@@ -650,22 +634,6 @@ export function reducer(state: State, action: Action): State {
       return { ...state, backupSnapshots: [action.beforeSnapshot, ...state.backupSnapshots], dialog: null, notice: notice('info', `已记录模拟恢复 ${action.snapshotId}`, '未恢复任何真实文件') }
     case 'UPDATE_SETTINGS':
       return { ...state, settings: { ...state.settings, ...action.changes }, notice: notice('success', '设置已在当前页面更新', '未写入配置文件') }
-    case 'RECORD_RECENT_AGENT': {
-      if (!state.agents.some((item) => item.id === action.agentId) || state.recentAgentIds.includes(action.agentId)) return state
-      return { ...state, recentAgentIds: [action.agentId, ...state.recentAgentIds].slice(0, 6) }
-    }
-    case 'REMOVE_RECENT_AGENT': {
-      if (!state.recentAgentIds.includes(action.agentId)) return state
-      return {
-        ...state,
-        recentAgentIds: state.recentAgentIds.filter((id) => id !== action.agentId),
-        notice: notice('info', '已从最近访问中移除', '仅影响当前页面'),
-      }
-    }
-    case 'CLEAR_RECENT_AGENTS':
-      return state.recentAgentIds.length
-        ? { ...state, recentAgentIds: [], notice: notice('info', '最近访问记录已清空', '仅影响当前页面') }
-        : state
     case 'SHOW_NOTICE':
       return { ...state, notice: notice(action.notice.tone, action.notice.title, action.notice.description, action.notice.duration) }
     case 'CLEAR_NOTICE':
@@ -715,7 +683,7 @@ export function AppProvider({ children, initialState: providedState }: { childre
     void loadLongTermDomainSnapshotV4()
       .then((snapshot) => dispatch({ type: 'HYDRATE_ORGANIZATION', snapshot }))
       .catch((error) => hydrationFailure(error, { type: 'FAIL_ORGANIZATION_HYDRATION', message: errorMessage(error) }))
-    void discoverConfig({ requestId: 'hydrate-shared-assets', includeClaudeUserRoot: false })
+    void discoverConfig({ requestId: 'hydrate-shared-assets' })
       .then(({ sharedAssets, references }) => dispatch({ type: 'HYDRATE_SHARED_ASSETS', sharedAssets, references }))
       .catch((error) => hydrationFailure(error, { type: 'FAIL_SHARED_ASSETS_HYDRATION', message: errorMessage(error) }))
     void listAgentRecoveryOperations()

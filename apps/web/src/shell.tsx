@@ -3,6 +3,8 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
   Bot,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   CircleHelp,
@@ -18,7 +20,7 @@ import {
   Workflow,
   Wrench,
 } from 'lucide-react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { PageHeaderTargetProvider } from './components/app/page'
 import { Button } from './components/ui/button'
 import { Tooltip } from './components/ui/tooltip'
@@ -29,8 +31,7 @@ import { executeAppCommand, isAppCommandId, type AppCommandId } from './app-comm
 import { isDesktopRuntime, listenForDesktopCommands, readUiAsset, setDesktopTitle } from './desktop-bridge'
 import { useEditorSession } from './editor-session'
 import { formatWindowTitle, resolveRouteMetadata } from './route-metadata'
-import { getAvailableAgents, getConfigurationStatusSummary } from './domain-selectors'
-import { resolveMainMenuLayout } from './navigation-layout'
+import { getConfigurationStatusSummary } from './domain-selectors'
 import { resolveTeamIdentity } from './team-identity'
 
 const nav = [
@@ -39,6 +40,13 @@ const nav = [
   ['/assets', '配置资产', Workflow],
   ['/tools', 'AI 工具', Wrench],
 ] as const
+
+type HistoryBounds = { index: number; maxIndex: number }
+
+function readRouterHistoryIndex() {
+  const index = window.history.state?.idx
+  return Number.isSafeInteger(index) && index >= 0 ? index as number : undefined
+}
 
 function useMediaQuery(query: string) {
   const getMatches = () => typeof window !== 'undefined'
@@ -117,14 +125,21 @@ export function Shell() {
   const resetTerminal = ['committed', 'restarting', 'manual-restart-required'].includes(state.factoryReset.status)
   const isWideViewport = useMediaQuery('(min-width: 1280px)')
   const canFitExpandedMenu = useMediaQuery('(min-width: 960px)')
-  const [savedAssets, setSavedAssets] = useState<{ logo?: string; background?: string }>({})
+  const [savedAssets, setSavedAssets] = useState<{ background?: string }>({})
   const [primaryMenuExpanded, setPrimaryMenuExpanded] = useState(isWideViewport)
-  const [dismissedAgentIds, setDismissedAgentIds] = useState<string[]>([])
   const [pageHeaderTarget, setPageHeaderTarget] = useState<HTMLDivElement | null>(null)
+  const [historyBounds, setHistoryBounds] = useState<HistoryBounds>(() => {
+    const index = readRouterHistoryIndex()
+    return { index: index ?? 0, maxIndex: index ?? 0 }
+  })
   const location = useLocation()
+  const navigationType = useNavigationType()
   const navigate = useNavigate()
+  const canGoBack = historyBounds.index > 0
+  const canGoForward = historyBounds.index >= 0 && historyBounds.index < historyBounds.maxIndex
   const startupRedirectEligible = useRef(location.pathname === '/')
   const startupRouteDecided = useRef(location.pathname !== '/')
+  const pendingHistoryDelta = useRef<-1 | 1 | undefined>(undefined)
   const editor = useEditorSession()
   const metadata = resolveRouteMetadata(`${location.pathname}${location.search}`, {
     agents: state.agents,
@@ -133,50 +148,29 @@ export function Shell() {
   })
   const title = metadata.title
   const configurationStatus = getConfigurationStatusSummary(state)
-  const teamAgents = getAvailableAgents(state, state.currentTeamId)
-  const recentOrder = new Map(
-    state.recentAgentIds.map((id, index) => [id, index]),
-  )
-  const recentAgents = [...teamAgents]
-    .filter((agent) => !dismissedAgentIds.includes(agent.id))
-    .sort((left, right) =>
-      (recentOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER)
-      - (recentOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER))
-    .map((agent) => ({ ...agent, teamName: state.teams.find((team) => team.id === agent.teamId)?.name ?? agent.teamId }))
-  const mainMenuLayout = resolveMainMenuLayout(
-    effectiveUiPreferences.mainMenuLayout,
-    isWideViewport,
-    canFitExpandedMenu,
-    recentAgents.length > 0,
-  )
-  const logoUrl = uiPreviewAssets?.logo === null ? undefined : uiPreviewAssets?.logo ?? savedAssets.logo
   const backgroundUrl = uiPreviewAssets?.background === null ? undefined : uiPreviewAssets?.background ?? savedAssets.background
-  const agentMenuExpanded = mainMenuLayout === 'expanded'
   const runCommand = useCallback((command: AppCommandId) => {
     if (resetTerminal) return
-    executeAppCommand(command, { navigate, dispatch, editor, effectiveTheme })
-  }, [dispatch, editor, effectiveTheme, navigate, resetTerminal])
+    if (command === 'navigation.back' && canGoBack) pendingHistoryDelta.current = -1
+    if (command === 'navigation.forward' && canGoForward) pendingHistoryDelta.current = 1
+    executeAppCommand(command, { navigate, dispatch, editor, effectiveTheme, canGoBack, canGoForward })
+  }, [canGoBack, canGoForward, dispatch, editor, effectiveTheme, navigate, resetTerminal])
 
   useEffect(() => {
     if (!isDesktopRuntime()) return
     let disposed = false
-    let loaded: { logo?: string; background?: string } = {}
-    Promise.all([
-      state.uiPreferences.logoAsset ? readUiAsset('logo') : undefined,
-      state.uiPreferences.backgroundAsset ? readUiAsset('background') : undefined,
-    ]).then(([logo, background]) => {
-      loaded = { logo, background }
+    let loaded: { background?: string } = {}
+    readUiAsset('background').then((background) => {
+      loaded = { background }
       if (disposed) {
-        if (logo) URL.revokeObjectURL(logo)
         if (background) URL.revokeObjectURL(background)
       } else setSavedAssets(loaded)
     }).catch(() => undefined)
     return () => {
       disposed = true
-      if (loaded.logo) URL.revokeObjectURL(loaded.logo)
       if (loaded.background) URL.revokeObjectURL(loaded.background)
     }
-  }, [state.uiPreferences.backgroundAsset, state.uiPreferences.logoAsset])
+  }, [state.uiPreferences.backgroundAsset])
 
   useEffect(() => {
     if (!canFitExpandedMenu) setPrimaryMenuExpanded(false)
@@ -195,12 +189,29 @@ export function Shell() {
     void setDesktopTitle(windowTitle).catch(() => undefined)
   }, [title])
 
+  const previousLocationKey = useRef(location.key)
   useEffect(() => {
-    if (!resetTerminal && metadata.agentId) {
-      setDismissedAgentIds((ids) => ids.filter((id) => id !== metadata.agentId))
-      dispatch({ type: 'RECORD_RECENT_AGENT', agentId: metadata.agentId })
-    }
-  }, [dispatch, location.key, metadata.agentId, resetTerminal])
+    if (previousLocationKey.current === location.key) return
+    previousLocationKey.current = location.key
+    setHistoryBounds((current) => {
+      const routerIndex = readRouterHistoryIndex()
+      if (routerIndex !== undefined) {
+        if (navigationType === 'PUSH') return { index: routerIndex, maxIndex: routerIndex }
+        return { index: routerIndex, maxIndex: Math.max(current.maxIndex, routerIndex) }
+      }
+      if (navigationType === 'PUSH') {
+        const index = current.index + 1
+        return { index, maxIndex: index }
+      }
+      if (navigationType === 'POP') {
+        const delta = pendingHistoryDelta.current
+        pendingHistoryDelta.current = undefined
+        if (!delta) return current
+        return { ...current, index: Math.max(0, Math.min(current.maxIndex, current.index + delta)) }
+      }
+      return current
+    })
+  }, [location.key, navigationType])
 
   useEffect(() => {
     if (state.factoryReset.status !== 'legacy-database-required') return
@@ -243,6 +254,16 @@ export function Shell() {
     if (resetTerminal) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return
+      if (!isDesktopRuntime() && event.code === 'BracketLeft' && canGoBack) {
+        event.preventDefault()
+        runCommand('navigation.back')
+        return
+      }
+      if (!isDesktopRuntime() && event.code === 'BracketRight' && canGoForward) {
+        event.preventDefault()
+        runCommand('navigation.forward')
+        return
+      }
       if (event.key === ',') {
         event.preventDefault()
         runCommand('navigation.settings')
@@ -255,7 +276,7 @@ export function Shell() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [editor?.canSave, resetTerminal, runCommand])
+  }, [canGoBack, canGoForward, editor?.canSave, resetTerminal, runCommand])
 
   if (resetTerminal) {
     const resetState = state.factoryReset
@@ -286,6 +307,19 @@ export function Shell() {
             {primaryMenuExpanded ? <PanelLeftClose size={17} className="-translate-y-0.5" aria-hidden="true" /> : <PanelLeftOpen size={17} className="-translate-y-0.5" aria-hidden="true" />}
           </Button>
         </Tooltip>
+        <div className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+        <nav className="flex shrink-0 items-center" aria-label="浏览历史">
+          <Tooltip content="后退（⌘[）" side="bottom">
+            <Button variant="ghost" size="icon" className="size-11 shrink-0 text-muted-foreground hover:text-foreground" aria-label="后退" disabled={!canGoBack} onClick={() => runCommand('navigation.back')}>
+              <ChevronLeft size={18} aria-hidden="true" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="前进（⌘]）" side="bottom">
+            <Button variant="ghost" size="icon" className="size-11 shrink-0 text-muted-foreground hover:text-foreground" aria-label="前进" disabled={!canGoForward} onClick={() => runCommand('navigation.forward')}>
+              <ChevronRight size={18} aria-hidden="true" />
+            </Button>
+          </Tooltip>
+        </nav>
         <div className="min-w-0 flex-1 self-stretch" data-tauri-drag-region />
         <nav className="flex shrink-0 items-center gap-1" aria-label="全局工具">
           <Tooltip content="使用指南" side="bottom" triggerClassName="mr-2"><Button variant="ghost" size="icon" aria-label="使用指南" onClick={() => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'usage-guide', topic: metadata.guideTopic ?? 'quick-start' } })}><CircleHelp size={17} aria-hidden="true" /></Button></Tooltip>
@@ -296,7 +330,6 @@ export function Shell() {
       {backgroundUrl && <><img src={backgroundUrl} alt="" aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" style={{ objectFit: effectiveUiPreferences.backgroundFit }} /><div className="pointer-events-none fixed inset-0 bg-background" style={{ opacity: effectiveUiPreferences.backgroundDim / 100 }} /></>}
       <div
         data-primary-menu-layout={primaryMenuExpanded ? 'expanded' : 'compact'}
-        data-main-menu-layout={mainMenuLayout}
         className="relative flex min-h-screen bg-background pt-10"
       >
         <aside className={cn('sticky top-10 z-30 flex h-[calc(100vh-2.5rem)] shrink-0 flex-col border-r border-border bg-card p-2 transition-[width]', primaryMenuExpanded ? 'w-52' : 'w-14')} aria-label="Bandi 配置管理">
@@ -305,37 +338,6 @@ export function Shell() {
           </div>
           <RailNavigation expanded={primaryMenuExpanded} />
         </aside>
-
-        {mainMenuLayout !== 'hidden' && recentAgents.length > 0 && <aside className={cn('sticky top-10 flex h-[calc(100vh-2.5rem)] min-w-0 shrink-0 flex-col border-r border-border bg-card', agentMenuExpanded ? 'w-[220px]' : 'w-16')} aria-label="当前 Team Agent">
-          <div className={cn('flex h-14 shrink-0 items-center border-b border-border', agentMenuExpanded ? 'gap-2 px-3' : 'justify-center')}>
-            {agentMenuExpanded && logoUrl && <img src={logoUrl} alt="" aria-hidden="true" className="size-8 shrink-0 rounded-lg object-contain" />}
-            {agentMenuExpanded && <div className="min-w-0 flex-1"><b className="text-sm font-semibold">当前 Team Agent</b>{effectiveUiPreferences.shellLabel && <p className="truncate text-xs text-muted-foreground">{effectiveUiPreferences.shellLabel}</p>}</div>}
-            <Tooltip content={agentMenuExpanded ? '收起 Agent 栏' : '展开 Agent 栏'} side="right">
-              <Button variant="ghost" size="icon" aria-label={agentMenuExpanded ? '收起 Agent 栏' : '展开 Agent 栏'} onClick={() => dispatch({ type: 'SET_MAIN_MENU_LAYOUT', preference: agentMenuExpanded ? 'compact' : 'expanded' })}>
-                {agentMenuExpanded ? <PanelLeftClose size={18} aria-hidden="true" /> : <PanelLeftOpen size={18} aria-hidden="true" />}
-              </Button>
-            </Tooltip>
-          </div>
-          <nav className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto py-2', agentMenuExpanded ? 'gap-2 px-2' : 'items-center gap-1 px-2')} aria-label="当前 Team Agent">
-            {recentAgents.map((agent) => {
-              const label = `${agent.name} · ${agent.teamName}`
-              const link = <NavLink
-                to={`/agents/${agent.id}`}
-                aria-label={label}
-                className={({ isActive }) => cn(
-                  'relative flex shrink-0 items-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  agentMenuExpanded ? 'min-h-14 min-w-0 flex-1 gap-3 px-2' : 'size-11 justify-center',
-                  agentMenuExpanded && 'pr-10',
-                  isActive && 'bg-muted/50 text-foreground',
-                )}
-              >
-                <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-foreground">{agent.name.slice(0, 1)}</span>
-                {agentMenuExpanded && <span className="min-w-0"><b className="block truncate text-sm font-medium">{agent.name}</b><span className="block truncate text-xs text-muted-foreground">{agent.teamName}</span></span>}
-              </NavLink>
-              return agentMenuExpanded ? <div key={agent.id} className="group relative">{link}<Tooltip content="移除最近访问记录" side="right" triggerClassName="absolute right-1.5 top-1/2 -translate-y-1/2"><Button variant="ghost" size="icon" className="size-8 min-h-8 rounded-md p-0 text-muted-foreground hover:bg-background/80 hover:text-foreground" aria-label={`移除 ${agent.name} 的最近访问记录`} onClick={() => { setDismissedAgentIds((ids) => [...ids, agent.id]); dispatch({ type: 'REMOVE_RECENT_AGENT', agentId: agent.id }) }}><X size={14} strokeWidth={1.8} aria-hidden="true" /></Button></Tooltip></div> : <Tooltip key={agent.id} content={label} side="right">{link}</Tooltip>
-            })}
-          </nav>
-        </aside>}
 
         <div className="min-w-0 flex-1 bg-background/90">
           <header className="sticky top-0 z-20 flex min-h-20 flex-wrap items-center gap-4 border-b border-border bg-background/94 px-6 py-3 backdrop-blur max-[1280px]:px-4 max-sm:gap-2 max-sm:px-3">

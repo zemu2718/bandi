@@ -352,12 +352,10 @@ describe('Agent 双模式配置工作台', () => {
     }
     const space = state.memorySpaces.find((item) => item.scopeKey.agentId === source.id)!
     const hash = `sha256:${'a'.repeat(64)}` as const
+    const baseline = { id: 'memory-baseline', assetId: space.id, containerId: space.id, assetContentHash: hash, containerContentHash: hash, targetExists: true }
     const savedSpace = {
       id: space.id,
-      scopeType: 'agent_long_term' as const,
-      scopeKey: { kind: 'agent_long_term' as const, agentId: source.id },
-      owner: { kind: 'agent' as const, agentId: source.id },
-      visibilityPolicy: 'agent_private' as const,
+      agentId: source.id,
       storageProfileVersion: 'memory-v4' as const,
       state: 'active' as const,
       storageLocator: { rootKind: 'managed' as const, displayPath: space.path, relativePath: 'memory/long-term.md' },
@@ -365,16 +363,18 @@ describe('Agent 双模式配置工作台', () => {
       contentHash: hash,
       updatedAt: '2026-09-09T00:00:00Z',
     }
+    vi.spyOn(desktopBridge, 'discoverMemorySpaces').mockResolvedValue({ requestId: 'discover', spaces: [savedSpace] })
+    vi.spyOn(desktopBridge, 'loadMemory').mockResolvedValue({ requestId: 'load', space: savedSpace, content: space.content, baselineRef: baseline })
     const save = vi.spyOn(desktopBridge, 'saveMemory').mockResolvedValue({
       kind: 'saved',
       requestId: 'save-memory',
-      space: savedSpace,
+      memory: { requestId: 'save-memory', space: savedSpace, content: '更新后的长期事实', baselineRef: baseline },
       revision: {
         id: 'memory-revision-19',
         spaceId: space.id,
         parentRevisionId: space.revision,
+        sourceContentHash: hash,
         contentHash: hash,
-        storageLocator: savedSpace.storageLocator,
         writeReceiptId: 'memory-write-19',
         writtenAt: savedSpace.updatedAt,
       },
@@ -389,14 +389,15 @@ describe('Agent 双模式配置工作台', () => {
     })
 
     renderAgent('/agents/zhouce?tab=memory', state)
-    fireEvent.change(screen.getByRole('textbox', { name: '长期记忆正文' }), { target: { value: '更新后的长期事实' } })
+    const editor = await screen.findByRole('textbox', { name: '长期记忆正文' })
+    fireEvent.change(editor, { target: { value: '更新后的长期事实' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
       spaceId: space.id,
       content: '更新后的长期事实',
     })))
-    expect(await screen.findByRole('status')).toHaveTextContent('Agent 长期记忆已保存')
+    expect(await screen.findByText('已生成版本')).toBeInTheDocument()
   })
 
   it('Desktop 受管 Instructions 通过发现、加载与真实保存闭环', async () => {

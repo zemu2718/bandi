@@ -1,8 +1,3 @@
-import {
-  MAIN_MENU_LAYOUT_STORAGE_KEY,
-  parseMainMenuLayoutPreference,
-  type MainMenuLayoutPreference,
-} from './navigation-layout'
 import type { TerminalId } from './terminal-model'
 
 export const UI_PREFERENCES_STORAGE_KEY = 'bandi-ui-preferences-v1'
@@ -16,7 +11,7 @@ export type FontScale = 'small' | 'default' | 'large'
 export type UiDensity = 'compact' | 'default' | 'comfortable'
 export type BackgroundStyle = 'plain' | 'soft'
 export type BackgroundFit = 'cover' | 'contain'
-export type UiAssetSlot = 'logo' | 'background'
+export type UiAssetSlot = 'background'
 
 export type LocalUiAssetRef = {
   kind: 'local_asset'
@@ -26,7 +21,6 @@ export type LocalUiAssetRef = {
 export type UiPreferences = {
   version: 1
   theme: ThemePreference
-  mainMenuLayout: MainMenuLayoutPreference
   accentColor: string
   interfaceFont: InterfaceFont
   monoFont: MonoFont
@@ -36,8 +30,6 @@ export type UiPreferences = {
   backgroundFit: BackgroundFit
   backgroundDim: number
   terminal: TerminalId
-  shellLabel?: string
-  logoAsset?: LocalUiAssetRef
   backgroundAsset?: LocalUiAssetRef
   firstUseTeamSetupDismissed: boolean
 }
@@ -45,7 +37,6 @@ export type UiPreferences = {
 export const DEFAULT_UI_PREFERENCES: UiPreferences = {
   version: 1,
   theme: 'system',
-  mainMenuLayout: 'follow-window',
   accentColor: '#20201f',
   interfaceFont: 'bandi',
   monoFont: 'system',
@@ -69,12 +60,6 @@ export function normalizeHexColor(value: string): string | undefined {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : undefined
 }
 
-export function normalizeShellLabel(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim()
-  return normalized && normalized.length <= 40 ? normalized : undefined
-}
-
 function parseAssetRef(value: unknown, slot: UiAssetSlot): LocalUiAssetRef | undefined {
   return isRecord(value) && value.kind === 'local_asset' && value.assetId === slot
     ? { kind: 'local_asset', assetId: slot }
@@ -89,7 +74,6 @@ export function parseUiPreferences(value: unknown): UiPreferences {
   return {
     version: 1,
     theme: oneOf(value.theme, ['system', 'light', 'dark'], DEFAULT_UI_PREFERENCES.theme),
-    mainMenuLayout: parseMainMenuLayoutPreference(value.mainMenuLayout),
     accentColor: typeof value.accentColor === 'string'
       ? normalizeHexColor(value.accentColor) ?? DEFAULT_UI_PREFERENCES.accentColor
       : DEFAULT_UI_PREFERENCES.accentColor,
@@ -101,8 +85,6 @@ export function parseUiPreferences(value: unknown): UiPreferences {
     backgroundFit: oneOf(value.backgroundFit, ['cover', 'contain'], DEFAULT_UI_PREFERENCES.backgroundFit),
     backgroundDim: dim,
     terminal: oneOf(value.terminal, ['system', 'terminal', 'iterm2', 'warp', 'ghostty', 'wezterm', 'kitty', 'alacritty'], DEFAULT_UI_PREFERENCES.terminal),
-    shellLabel: normalizeShellLabel(value.shellLabel),
-    logoAsset: parseAssetRef(value.logoAsset, 'logo'),
     backgroundAsset: parseAssetRef(value.backgroundAsset, 'background'),
     firstUseTeamSetupDismissed: typeof value.firstUseTeamSetupDismissed === 'boolean'
       ? value.firstUseTeamSetupDismissed
@@ -144,11 +126,9 @@ export function loadUiPreferences(storage: Pick<Storage, 'getItem' | 'setItem' |
   const migrated: UiPreferences = {
     ...DEFAULT_UI_PREFERENCES,
     theme: oneOf(storage.getItem(LEGACY_THEME_STORAGE_KEY), ['light', 'dark'], DEFAULT_UI_PREFERENCES.theme),
-    mainMenuLayout: parseMainMenuLayoutPreference(storage.getItem(MAIN_MENU_LAYOUT_STORAGE_KEY)),
   }
   storage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify(migrated))
   storage.removeItem(LEGACY_THEME_STORAGE_KEY)
-  storage.removeItem(MAIN_MENU_LAYOUT_STORAGE_KEY)
   return migrated
 }
 

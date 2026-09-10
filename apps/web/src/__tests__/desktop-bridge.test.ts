@@ -4,10 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BaselineRefDto } from '../contracts'
 import type { FullAgent } from '../domain'
 import {
+  commitAiToolUpgrade,
   commitManagedAgentCreation,
   commitManagedAgentIdentity,
   commitSharedAssetImport,
+  discoverMemorySpaces,
   importClaudeAgent,
+  loadMemory,
+  previewAiToolUpgrade,
+  readMemoryRevisionContent,
+  recoverMemoryRevision,
+  restoreMemoryRevision,
   selectSharedAssetImport,
 } from '../desktop-bridge'
 
@@ -34,6 +41,41 @@ afterEach(() => {
 })
 
 describe('Desktop bridge Agent Team 请求', () => {
+  it('Memory 历史命令只传受管身份、baseline 与确认值', async () => {
+    const target = { requestId: 'memory-request', spaceId: 'memory-agent-agent-reviewer', agentId: agent.id }
+    await discoverMemorySpaces({ requestId: target.requestId, agentId: target.agentId })
+    await loadMemory(target)
+    await readMemoryRevisionContent({ ...target, revisionId: 'revision-1' })
+    await restoreMemoryRevision({ ...target, revisionId: 'revision-1', expectedBaseline: baseline, baseContent: 'current', confirmed: true })
+    await recoverMemoryRevision({ ...target, journalId: 'journal-1' })
+
+    expect(tauri.invoke.mock.calls.map(([command]) => command)).toEqual([
+      'discover_memory_spaces',
+      'load_memory',
+      'read_memory_revision_content',
+      'restore_memory_revision',
+      'recover_memory_revision',
+    ])
+    expect(JSON.stringify(tauri.invoke.mock.calls)).not.toMatch(/path|force/i)
+  })
+
+  it('工具升级只发送稳定标识、预览引用和确认值', async () => {
+    await previewAiToolUpgrade({ toolId: 'codex', requestId: 'request-upgrade' })
+    expect(tauri.invoke).toHaveBeenCalledWith('preview_ai_tool_upgrade', {
+      request: { toolId: 'codex', requestId: 'request-upgrade' },
+    })
+
+    await commitAiToolUpgrade({
+      toolId: 'codex', requestId: 'request-upgrade', previewRef: 'preview-upgrade', confirmation: true,
+    })
+    expect(tauri.invoke).toHaveBeenLastCalledWith('commit_ai_tool_upgrade', {
+      request: {
+        toolId: 'codex', requestId: 'request-upgrade', previewRef: 'preview-upgrade', confirmation: true,
+      },
+    })
+    expect(JSON.stringify(tauri.invoke.mock.calls.slice(-2))).not.toMatch(/path|executable|argv|source|packageName/i)
+  })
+
   it('创建时发送嵌套 Team，并保留显式 Team 覆盖', async () => {
     await commitManagedAgentCreation('request-1', agent, [], undefined, 'team-override')
 

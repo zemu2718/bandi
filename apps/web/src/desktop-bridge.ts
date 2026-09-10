@@ -1,6 +1,6 @@
 import type { AppCommandId } from './app-commands'
 import type { FullAgent } from './domain'
-import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, AiToolHostRequest, AiToolHostStatusDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, CommitSharedAssetImportRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, CreateSharedAssetRequest, DiscoveryRequest, DiscoveryResult, HostIntegrationCommitRequest, HostIntegrationDto, HostIntegrationPreviewDto, HostIntegrationRequest, HostIntegrationResultDto, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, OpenAiToolInstallPageResultDto, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RecoverSharedAssetRevisionRequest, RepairSharedAssetRegistrationRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, RevealAiToolConfigLocationResultDto, RevealHostDirectoryResultDto, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, SaveSharedAssetRequest, SaveSharedAssetResult, SharedAssetEditorDto, SharedAssetImportPreviewDto, SharedAssetMutationResult, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, AiToolHostRequest, AiToolHostStatusDto, AiToolUpgradeCommitRequest, AiToolUpgradePreviewDto, AiToolUpgradeResultDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, CommitSharedAssetImportRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, CreateSharedAssetRequest, DiscoverMemorySpacesRequest, DiscoverMemorySpacesResult, DiscoveryRequest, DiscoveryResult, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, LoadedMemoryDto, LoadMemoryRequest, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, OpenAiToolInstallPageResultDto, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, ReadMemoryRevisionContentRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RecoverMemoryRevisionRequest, RecoverSharedAssetRevisionRequest, RepairSharedAssetRegistrationRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, RestoreMemoryRevisionRequest, RevealAiToolConfigLocationResultDto, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, SaveSharedAssetRequest, SaveSharedAssetResult, SharedAssetEditorDto, SharedAssetImportPreviewDto, SharedAssetMutationResult, TaskBriefDto, TeamDto } from './contracts'
 
 const commandEvent = 'bandi://app-command'
 
@@ -91,28 +91,12 @@ export async function revealAiToolConfigLocation(input: AiToolHostRequest): Prom
   return invokeDesktop('reveal_ai_tool_config_location', { request: input })
 }
 
-export async function listHostIntegrations(): Promise<HostIntegrationDto[]> {
-  return invokeDesktop('list_host_integrations', {})
+export async function previewAiToolUpgrade(input: AiToolHostRequest): Promise<AiToolUpgradePreviewDto> {
+  return invokeDesktop('preview_ai_tool_upgrade', { request: input })
 }
 
-export async function previewHostIntegrationInstall(input: HostIntegrationRequest): Promise<HostIntegrationPreviewDto> {
-  return invokeDesktop('preview_host_integration_install', { request: input })
-}
-
-export async function commitHostIntegrationInstall(input: HostIntegrationCommitRequest): Promise<HostIntegrationResultDto> {
-  return invokeDesktop('commit_host_integration_install', { request: input })
-}
-
-export async function previewHostIntegrationUninstall(input: HostIntegrationRequest): Promise<HostIntegrationPreviewDto> {
-  return invokeDesktop('preview_host_integration_uninstall', { request: input })
-}
-
-export async function commitHostIntegrationUninstall(input: HostIntegrationCommitRequest): Promise<HostIntegrationResultDto> {
-  return invokeDesktop('commit_host_integration_uninstall', { request: input })
-}
-
-export async function revealHostDirectory(input: HostIntegrationRequest): Promise<RevealHostDirectoryResultDto> {
-  return invokeDesktop('reveal_host_directory', { request: input })
+export async function commitAiToolUpgrade(input: AiToolUpgradeCommitRequest): Promise<AiToolUpgradeResultDto> {
+  return invokeDesktop('commit_ai_tool_upgrade', { request: input })
 }
 
 export async function previewFactoryReset(requestId: string): Promise<FactoryResetPreviewDto> {
@@ -161,12 +145,32 @@ export async function allocateAgentId(requestId: string): Promise<string> {
   return invokeDesktop('allocate_agent_id', { requestId })
 }
 
+export async function discoverMemorySpaces(input: DiscoverMemorySpacesRequest): Promise<DiscoverMemorySpacesResult> {
+  return invokeDesktop('discover_memory_spaces', { request: input })
+}
+
+export async function loadMemory(input: LoadMemoryRequest): Promise<LoadedMemoryDto> {
+  return invokeDesktop('load_memory', { request: input })
+}
+
 export async function saveMemory(input: SaveMemoryRequest): Promise<SaveMemoryResult> {
   return invokeDesktop('save_memory', { request: input })
 }
 
 export async function listMemoryRevisions(input: ListMemoryRevisionsRequest): Promise<MemoryRevisionDto[]> {
   return invokeDesktop('list_memory_revisions', { request: input })
+}
+
+export async function readMemoryRevisionContent(input: ReadMemoryRevisionContentRequest): Promise<string> {
+  return invokeDesktop('read_memory_revision_content', { request: input })
+}
+
+export async function restoreMemoryRevision(input: RestoreMemoryRevisionRequest): Promise<SaveMemoryResult> {
+  return invokeDesktop('restore_memory_revision', { request: input })
+}
+
+export async function recoverMemoryRevision(input: RecoverMemoryRevisionRequest): Promise<SaveMemoryResult> {
+  return invokeDesktop('recover_memory_revision', { request: input })
 }
 
 export async function discoverConfig(input: DiscoveryRequest): Promise<DiscoveryResult> {
