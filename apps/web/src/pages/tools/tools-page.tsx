@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ExternalLink, FolderOpen, Play, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AppWindow, CircleAlert, CircleArrowUp, CircleCheck, CircleMinus, CircleOff, ExternalLink, FolderOpen, RefreshCw, type LucideIcon } from 'lucide-react'
 import { AiClientIcon } from '../../components/ai-clients'
-import { EmptyState, PageHeader, StatusBadge } from '../../components/app/page'
+import { EmptyState, EntityTabs, PageHeader, StatusBadge } from '../../components/app/page'
 import { Button } from '../../components/ui/button'
 import { AppDialog } from '../../components/ui/dialog'
+import { Tooltip } from '../../components/ui/tooltip'
 import type { AiToolAvailability, AiToolHostStatusDto, AiToolUpgradePreviewDto } from '../../contracts'
 import { commitAiToolUpgrade, isDesktopRuntime, listAiToolHostStatuses, openAiToolInstallPage, previewAiToolUpgrade, revealAiToolConfigLocation } from '../../desktop-bridge'
 import { cn } from '../../lib'
@@ -25,6 +26,13 @@ const availabilityTones: Record<AiToolAvailability, 'success' | 'neutral' | 'war
   not_found: 'neutral',
   unsupported_platform: 'warning',
   detection_failed: 'danger',
+}
+
+const availabilityIcons: Record<AiToolAvailability, LucideIcon> = {
+  installed: CircleCheck,
+  not_found: CircleMinus,
+  unsupported_platform: CircleOff,
+  detection_failed: CircleAlert,
 }
 
 const contextLabels: Record<AiToolHostStatusDto['contextMode'], string> = {
@@ -71,37 +79,48 @@ const upgradeOutcomeMessages: Record<string, string> = {
 }
 
 export function ToolsPage() {
-  const { dispatch } = useApp()
+  const { state, dispatch } = useApp()
   const desktop = isDesktopRuntime()
-  const [statuses, setStatuses] = useState<AiToolHostStatusDto[]>(() => aiClients.map((client) => browserStatus(client.id as AiToolHostStatusDto['toolId'])))
+  const fallbackStatuses = useMemo(() => aiClients.map((client) => browserStatus(client.id as AiToolHostStatusDto['toolId'])), [])
+  const statuses = desktop ? state.toolHostStatuses : fallbackStatuses
   const [selectedToolId, setSelectedToolId] = useState(aiClients[0].id)
   const [filter, setFilter] = useState<ToolFilter>('all')
-  const [loading, setLoading] = useState(desktop)
+  const [loading, setLoading] = useState(desktop && !state.toolHostStatuses.length)
   const [busyAction, setBusyAction] = useState<'install' | 'reveal' | 'upgrade'>()
   const [upgradePreview, setUpgradePreview] = useState<AiToolUpgradePreviewDto>()
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
-
-  const load = async () => {
-    if (!desktop) return
-    setLoading(true)
-    setError('')
-    try {
-      setStatuses(await listAiToolHostStatuses())
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setLoading(false)
-    }
-  }
+  const mounted = useRef(true)
 
   useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+
+  const load = useCallback(async (forceRefresh: boolean) => {
     if (!desktop) return
-    void listAiToolHostStatuses()
-      .then(setStatuses)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
-      .finally(() => setLoading(false))
-  }, [desktop])
+    if (mounted.current) {
+      setLoading(true)
+      setError('')
+    }
+    try {
+      const snapshot = await listAiToolHostStatuses(forceRefresh)
+      dispatch({ type: 'UPDATE_TOOL_HOST_SNAPSHOT', ...snapshot })
+      if (snapshot.stale && !forceRefresh) {
+        const refreshed = await listAiToolHostStatuses(true)
+        dispatch({ type: 'UPDATE_TOOL_HOST_SNAPSHOT', ...refreshed })
+      }
+    } catch (reason) {
+      if (mounted.current) setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      if (mounted.current) setLoading(false)
+    }
+  }, [desktop, dispatch])
+
+  useEffect(() => {
+    if (!desktop || state.toolHostStatuses.length) return
+    void load(false)
+  }, [desktop, load, state.toolHostStatuses.length])
 
   const statusById = useMemo(() => new Map(statuses.map((status) => [status.toolId, status])), [statuses])
   const visibleClients = aiClients.filter((client) => {
@@ -109,7 +128,9 @@ export function ToolsPage() {
     return statusById.get(client.id)?.availability === filter
   })
   const selectedClient = visibleClients.find((client) => client.id === selectedToolId) ?? visibleClients[0]
-  const selectedStatus = selectedClient ? statusById.get(selectedClient.id) ?? browserStatus(selectedClient.id as AiToolHostStatusDto['toolId']) : undefined
+  const selectedStatus = selectedClient
+    ? statusById.get(selectedClient.id) ?? (desktop ? undefined : browserStatus(selectedClient.id as AiToolHostStatusDto['toolId']))
+    : undefined
 
   useEffect(() => {
     if (selectedClient && selectedClient.id !== selectedToolId) setSelectedToolId(selectedClient.id)
@@ -157,7 +178,7 @@ export function ToolsPage() {
         confirmation: true,
       })
       setUpgradePreview(undefined)
-      await load()
+      await load(true)
       const message = upgradeOutcomeMessages[result.outcome] ?? '升级请求已结束，请重新检查版本。'
       if (result.outcome === 'updated' || result.outcome === 'already_current') setFeedback(message)
       else setError(message)
@@ -170,11 +191,11 @@ export function ToolsPage() {
 
   return <>
     <PageHeader title="AI 工具" description="检查本机工具、查看固定配置位置，并选择 Team、Agent 与可选需求后继续。" />
-    {!desktop && <p className="mb-5 rounded-lg border border-warning/25 bg-warning/8 px-4 py-3 text-sm text-warning">本机检查、配置位置、升级和启动仅在 Bandi Desktop 中可用；浏览器不会读取或启动电脑上的工具。</p>}
+    {!desktop && <p className="mb-5 text-xs leading-5 text-muted-foreground">本机检查、配置位置、升级和启动仅在 Bandi Desktop 中可用。</p>}
     <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(240px,0.72fr)_minmax(0,1.7fr)]">
-      <ToolList clients={visibleClients} statuses={statusById} selectedToolId={selectedClient?.id} filter={filter} loading={loading} onFilter={setFilter} onSelect={setSelectedToolId} />
+      <ToolList clients={visibleClients} statuses={statusById} selectedToolId={selectedClient?.id} filter={filter} loading={loading} checkedAt={state.toolHostCheckedAt} desktop={desktop} onFilter={setFilter} onSelect={setSelectedToolId} onReload={() => load(true)} />
       {selectedClient && selectedStatus
-        ? <ToolDetails client={selectedClient} status={selectedStatus} desktop={desktop} loading={loading} busyAction={busyAction} error={error} feedback={feedback} onReload={load} onInstall={openInstall} onReveal={revealConfig} onUpgrade={() => void previewUpgrade()} onLaunch={openLaunch} />
+        ? <ToolDetails client={selectedClient} status={selectedStatus} desktop={desktop} busyAction={busyAction} error={error} feedback={feedback} onInstall={openInstall} onReveal={revealConfig} onUpgrade={() => void previewUpgrade()} onLaunch={openLaunch} />
         : <section className="panel p-5"><EmptyState title="此筛选下没有工具" description="请选择其他筛选查看固定内置工具。" action={<Button size="sm" variant="outline" onClick={() => setFilter('all')}>查看全部</Button>} /></section>}
     </div>
     <AppDialog
@@ -198,42 +219,52 @@ export function ToolsPage() {
   </>
 }
 
-function ToolList({ clients, statuses, selectedToolId, filter, loading, onFilter, onSelect }: {
+function ToolList({ clients, statuses, selectedToolId, filter, loading, checkedAt, desktop, onFilter, onSelect, onReload }: {
   clients: AiClient[]
   statuses: Map<string, AiToolHostStatusDto>
   selectedToolId?: string
   filter: ToolFilter
   loading: boolean
+  checkedAt?: string
+  desktop: boolean
   onFilter: (filter: ToolFilter) => void
   onSelect: (id: AiClient['id']) => void
+  onReload: () => Promise<void>
 }) {
-  const filters: Array<[ToolFilter, string]> = [['installed', '已检测到'], ['not_found', '未检测到'], ['all', '全部']]
+  const filters: Array<[ToolFilter, string]> = [['installed', '已安装'], ['not_found', '未安装'], ['all', '全部']]
+  const checkedLabel = checkedAt
+    ? `${loading ? '正在更新，上次检查' : '上次检查'} ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : '尚未检查'
+  const refresh = <Button size="icon" variant="outline" aria-label="重新检查 AI 工具" disabled={!desktop || loading} onClick={() => void onReload()}><RefreshCw size={17} className={loading ? 'animate-spin' : undefined} aria-hidden="true" /></Button>
   return <section className="panel min-w-0 overflow-hidden lg:min-h-[38rem]">
     <div className="border-b border-border p-3">
-      <div className="grid grid-cols-3 gap-1" aria-label="AI 工具筛选">{filters.map(([id, label]) => <Button key={id} size="sm" variant={filter === id ? 'default' : 'ghost'} aria-pressed={filter === id} onClick={() => onFilter(id)}>{label}</Button>)}</div>
+      <div className="flex items-center gap-2"><EntityTabs tabs={filters.map(([id, label]) => ({ id, label }))} active={filter} onChange={(id) => onFilter(id as ToolFilter)} scope="tool-filter" ariaLabel="AI 工具筛选" variant="segmented" className="min-w-0 flex-1" tabListClassName="w-full min-w-0 [&>button]:min-w-0 [&>button]:flex-1" /><Tooltip content="重新检查本机工具">{refresh}</Tooltip></div>
+      <p className="mt-2 px-1 text-xs text-muted-foreground">{checkedLabel}</p>
     </div>
     {loading && <p className="p-4 text-sm text-muted-foreground" role="status">正在检查本机工具…</p>}
-    <div className="divide-y divide-border" role="list" aria-label="AI 编程工具">{clients.map((client) => {
+    <div id={`tool-filter-panel-${filter}`} className="divide-y divide-border" role="tabpanel" aria-labelledby={`tool-filter-tab-${filter}`}>{clients.map((client) => {
       const status = statuses.get(client.id)
       const selected = client.id === selectedToolId
+      const AvailabilityIcon = status ? availabilityIcons[status.availability] : undefined
       return <button key={client.id} type="button" aria-current={selected ? 'true' : undefined} onClick={() => onSelect(client.id)} className={cn('flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', selected && 'bg-muted/70')}>
         <AiClientIcon client={client} size={38} tile />
-        <span className="min-w-0 flex-1"><b className="block truncate text-sm">{client.name}</b><small className="text-muted-foreground">{status ? availabilityLabels[status.availability] : '尚未检查'}</small></span>
-        {status && <span className={cn('size-2 shrink-0 rounded-full', status.availability === 'installed' ? 'bg-success' : status.availability === 'detection_failed' ? 'bg-danger' : 'bg-muted-foreground/45')} aria-hidden="true" />}
+        <span className="min-w-0 flex-1"><b className="block truncate text-sm">{client.name}</b>{status?.currentVersion && <small className="text-muted-foreground">v{status.currentVersion}</small>}</span>
+        <span className={cn('flex shrink-0 items-center gap-1.5 text-xs', status?.availability === 'installed' ? 'text-success' : status?.availability === 'unsupported_platform' ? 'text-warning' : status?.availability === 'detection_failed' ? 'text-danger' : 'text-muted-foreground')}>
+          {AvailabilityIcon && <AvailabilityIcon size={15} aria-hidden="true" />}
+          {status ? availabilityLabels[status.availability] : '尚未检查'}
+        </span>
       </button>
     })}</div>
   </section>
 }
 
-function ToolDetails({ client, status, desktop, loading, busyAction, error, feedback, onReload, onInstall, onReveal, onUpgrade, onLaunch }: {
+function ToolDetails({ client, status, desktop, busyAction, error, feedback, onInstall, onReveal, onUpgrade, onLaunch }: {
   client: AiClient
   status: AiToolHostStatusDto
   desktop: boolean
-  loading: boolean
   busyAction?: 'install' | 'reveal' | 'upgrade'
   error: string
   feedback: string
-  onReload: () => Promise<void>
   onInstall: () => void
   onReveal: () => void
   onUpgrade: () => void
@@ -243,7 +274,7 @@ function ToolDetails({ client, status, desktop, loading, busyAction, error, feed
   return <section className="min-w-0 space-y-5">
     <div className="panel overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border p-5">
-        <div className="flex min-w-0 items-center gap-4"><AiClientIcon client={client} size={52} tile /><div className="min-w-0"><h2 className="truncate text-xl font-semibold">{client.name}</h2><p className="mt-1 text-sm text-muted-foreground">{client.description}</p></div></div>
+        <div className="flex min-w-0 items-center gap-4"><AiClientIcon client={client} size={52} tile /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-xl font-semibold">{client.name}</h2>{desktop && <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">macOS</span>}</div><p className="mt-1 text-sm text-muted-foreground">{client.description}</p></div></div>
         <StatusBadge tone={availabilityTones[status.availability]}>{availabilityLabels[status.availability]}</StatusBadge>
       </div>
       <div className="space-y-5 p-5">
@@ -255,8 +286,8 @@ function ToolDetails({ client, status, desktop, loading, busyAction, error, feed
         </div>
         <div className="rounded-lg border border-border bg-muted/25 p-4"><div className="text-xs text-muted-foreground">固定配置位置</div><code className="mt-2 block break-all text-sm">{status.configLocationLabel}</code><Button className="mt-3" size="sm" variant="outline" disabled={!desktop || !status.canRevealConfig || Boolean(busyAction)} onClick={onReveal}><FolderOpen size={15} aria-hidden="true" />{busyAction === 'reveal' ? '正在显示…' : '在文件管理器中显示'}</Button></div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
-          <Button size="sm" variant="ghost" disabled={!desktop || loading} onClick={() => void onReload()}><RefreshCw size={15} aria-hidden="true" />{loading ? '正在检查…' : '重新检查'}</Button>
-          <div className="flex flex-wrap gap-2">{status.availability !== 'installed' && <Button variant="outline" disabled={!desktop || !status.canOpenOfficialInstallPage || Boolean(busyAction)} onClick={onInstall}><ExternalLink size={15} aria-hidden="true" />{busyAction === 'install' ? '正在打开…' : '查看官方安装方式'}</Button>}{status.versionState === 'update_available' && <Button variant="outline" disabled={!desktop || !status.canUpgrade || Boolean(busyAction)} onClick={onUpgrade}><RefreshCw size={15} aria-hidden="true" />{busyAction === 'upgrade' ? '正在准备…' : `升级到 ${status.latestVersion ?? '最新版本'}`}</Button>}<Button disabled={!canLaunch || Boolean(busyAction)} onClick={onLaunch}><Play size={15} aria-hidden="true" />在此工具中启动</Button></div>
+          <span />
+          <div className="flex flex-wrap gap-2">{status.availability !== 'installed' && <Button variant="outline" disabled={!desktop || !status.canOpenOfficialInstallPage || Boolean(busyAction)} onClick={onInstall}><ExternalLink size={15} aria-hidden="true" />{busyAction === 'install' ? '正在打开…' : '查看官方安装方式'}</Button>}{status.versionState === 'update_available' && <Button variant="outline" disabled={!desktop || !status.canUpgrade || Boolean(busyAction)} onClick={onUpgrade}><CircleArrowUp size={16} aria-hidden="true" />{busyAction === 'upgrade' ? '正在准备…' : `升级到 ${status.latestVersion ?? '最新版本'}`}</Button>}<Button disabled={!canLaunch || Boolean(busyAction)} onClick={onLaunch}><AppWindow size={15} aria-hidden="true" />在此工具中启动</Button></div>
         </div>
         {feedback && <p role="status" className="text-sm text-success">{feedback}</p>}
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}

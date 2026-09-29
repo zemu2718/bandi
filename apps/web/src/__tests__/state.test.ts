@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { initialState, reducer } from '../state'
-import { buildBackupPreview, createDemoSnapshot } from '../backup-policy'
 
 describe('演示状态', () => {
   it('只保留未完成的 Agent 恢复摘要并在完成后移除', () => {
@@ -22,7 +21,21 @@ describe('演示状态', () => {
     }).agentRecoveryOperations).toEqual([])
   })
 
-  it('包含九个唯一内置客户端和空的会话最近 Agent', () => {
+  it('原子更新工具状态快照', () => {
+    const statuses = [{ toolId: 'codex' }] as never[]
+    const next = reducer(initialState, {
+      type: 'UPDATE_TOOL_HOST_SNAPSHOT',
+      statuses,
+      checkedAt: '2026-09-10T08:30:00.000Z',
+      stale: true,
+    })
+
+    expect(next.toolHostStatuses).toBe(statuses)
+    expect(next.toolHostCheckedAt).toBe('2026-09-10T08:30:00.000Z')
+    expect(next.toolHostStale).toBe(true)
+  })
+
+  it('包含九个唯一内置客户端', () => {
     expect(initialState.aiClients.map((client) => client.id)).toEqual([
       'claude-code',
       'claude-desktop',
@@ -36,28 +49,10 @@ describe('演示状态', () => {
     ])
     expect(new Set(initialState.aiClients.map((client) => client.kind)).size).toBe(9)
     expect(initialState.aiClients.every((client) => client.detection === 'not-checked')).toBe(true)
-    expect(initialState.recentAgentIds).toEqual([])
-    expect(initialState.mainMenuLayoutPreference).toBe('follow-window')
   })
 
   it('使用官方 Claude Code 配置位置作为演示事实', () => {
     expect(initialState.assets.find((asset) => asset.id === 'mcp-bandi')?.path).toBe('.claude.json')
-  })
-
-  it('主菜单布局只更新顶层界面偏好', () => {
-    const result = reducer(initialState, {
-      type: 'SET_MAIN_MENU_LAYOUT',
-      preference: 'compact',
-    })
-
-    expect(result.mainMenuLayoutPreference).toBe('compact')
-    expect(result.settings).toBe(initialState.settings)
-    expect(result.agents).toBe(initialState.agents)
-    expect(result.assets).toBe(initialState.assets)
-    expect(reducer(result, {
-      type: 'SET_MAIN_MENU_LAYOUT',
-      preference: 'compact',
-    })).toBe(result)
   })
 
   it('只切换到已存在的 Team，并跳过重复选择', () => {
@@ -82,10 +77,12 @@ describe('演示状态', () => {
       type: 'HYDRATE_ORGANIZATION',
       snapshot,
     }).currentTeamId).toBe(selected.currentTeamId)
-    expect(reducer(selected, {
+    const hydrated = reducer(selected, {
       type: 'HYDRATE_ORGANIZATION',
-      snapshot: { ...snapshot, teams: [personal] },
-    }).currentTeamId).toBe('team-personal')
+      snapshot: { ...snapshot, teams: [{ ...personal, name: '个人 Team' }] },
+    })
+    expect(hydrated.currentTeamId).toBe('team-personal')
+    expect(hydrated.teams[0].name).toBe('个人')
   })
 
   it('只识别带稳定前缀的旧数据库错误生命周期', () => {
@@ -216,33 +213,6 @@ describe('演示状态', () => {
     expect(result.configRevisions[0].restoredFromRevisionId).toBeUndefined()
   })
 
-  it('按首次访问顺序记录 Agent、重复访问保持排序并限制为六项', () => {
-    const extraAgents = Array.from({ length: 3 }, (_, index) => ({
-      ...initialState.agents[0], id: `extra-${index}`, name: `额外 ${index}`,
-    }))
-    let state = { ...initialState, agents: [...initialState.agents, ...extraAgents] }
-    for (const agent of state.agents) state = reducer(state, { type: 'RECORD_RECENT_AGENT', agentId: agent.id })
-    expect(state.recentAgentIds).toHaveLength(6)
-    expect(state.recentAgentIds[0]).toBe('extra-2')
-    const unchanged = reducer(state, { type: 'RECORD_RECENT_AGENT', agentId: state.recentAgentIds.at(-1)! })
-    expect(unchanged).toBe(state)
-    expect(reducer(unchanged, { type: 'RECORD_RECENT_AGENT', agentId: 'missing' })).toBe(unchanged)
-  })
-
-  it('移除和清空最近 Agent 只影响会话导航历史', () => {
-    const state = { ...initialState, recentAgentIds: ['zhouce', 'songyan', 'lumo'] }
-    const removed = reducer(state, { type: 'REMOVE_RECENT_AGENT', agentId: 'songyan' })
-    expect(removed.recentAgentIds).toEqual(['zhouce', 'lumo'])
-    expect(removed.uiPreferences).toBe(state.uiPreferences)
-    expect(removed.agents).toBe(state.agents)
-    expect(reducer(removed, { type: 'REMOVE_RECENT_AGENT', agentId: 'missing' })).toBe(removed)
-
-    const cleared = reducer(removed, { type: 'CLEAR_RECENT_AGENTS' })
-    expect(cleared.recentAgentIds).toEqual([])
-    expect(cleared.uiPreferences).toBe(state.uiPreferences)
-    expect(reducer(cleared, { type: 'CLEAR_RECENT_AGENTS' })).toBe(cleared)
-  })
-
   it('Desktop 拒绝技能与插件模拟操作', () => {
     const desktopState = { ...initialState, runtime: 'desktop' as const }
     const skill = reducer(desktopState, { type: 'APPLY_SKILL_ACTION', skillId: 'skill-docs', action: 'install' })
@@ -263,23 +233,6 @@ describe('演示状态', () => {
 
     const rolledBack = reducer(initialState, { type: 'APPLY_SKILL_ACTION', skillId: 'skill-release', action: 'rollback', version: '2.0.0' })
     expect(rolledBack.assets.find((asset) => asset.id === 'skill-release')?.skill?.installation.installedVersion).toBe('2.0.0')
-  })
-
-  it('备份设置只更新演示策略且 Private 固定', () => {
-    const result = reducer(initialState, { type: 'UPDATE_BACKUP_SETTINGS', changes: { gitConnection: { status: 'connected-demo', visibility: 'private', repository: 'github.com/demo/private' }, formalMemoryRemote: 'confirmed' } })
-    expect(result.backupSettings.gitConnection.visibility).toBe('private')
-    expect(result.backupSettings.formalMemoryRemote).toBe('confirmed')
-    expect(result.notice?.description).toContain('未连接 Git')
-  })
-
-  it('模拟恢复只新增恢复前快照，不修改业务集合', () => {
-    const preview = buildBackupPreview(initialState, { kind: 'agent' as const, agentId: 'zhouce' })!
-    const beforeSnapshot = createDemoSnapshot(preview, { id: 'before-test', createdAt: '刚刚', kind: '恢复前演示' })
-    const result = reducer(initialState, { type: 'SIMULATE_RESTORE', snapshotId: 'snap-demo-001', beforeSnapshot })
-    expect(result.backupSnapshots[0]).toEqual(beforeSnapshot)
-    expect(result.agents).toBe(initialState.agents)
-    expect(result.assets).toBe(initialState.assets)
-    expect(result.teams).toBe(initialState.teams)
   })
 
   it('Web 直接保存 Agent 长期记忆并生成新版本', () => {

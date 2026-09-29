@@ -35,18 +35,20 @@ type ListProps = {
   filtered: boolean
   hasTeamAssets: boolean
   categoryLabel: string
+  teamName: string
   agentNames: ReadonlyMap<string, string>
   clear: () => void
   refresh: () => void
   create: () => void
+  importAsset: () => void
 }
 
-export function DiscoveredAssetsList({ rows, loading, filtered, hasTeamAssets, categoryLabel, agentNames, clear, refresh, create }: ListProps) {
+export function DiscoveredAssetsList({ rows, loading, filtered, hasTeamAssets, categoryLabel, teamName, agentNames, clear, refresh, create, importAsset }: ListProps) {
   if (loading) return <p role="status" aria-busy="true" className="p-5 text-sm text-muted-foreground">正在扫描共享资产…</p>
   if (!rows.length) {
     if (filtered) return <div className="p-5"><EmptyState title="没有匹配的共享资产" description="调整搜索内容或筛选条件后重试。" action={<Button variant="outline" onClick={clear}>清除筛选</Button>} /></div>
     if (hasTeamAssets) return <div className="p-5"><EmptyState title={`当前 Team 还没有 ${categoryLabel}`} description="切换其他分类，或新增一项共享资产。" action={<Button onClick={create}>新增资产</Button>} /></div>
-    return <div className="p-5"><EmptyState title="共享资产池还是空的" description="新增资产，或从本机文件导入受管副本。" action={<Button onClick={create}>新增资产</Button>} /></div>
+    return <EmptyState className="grid min-h-72 place-content-center rounded-none border-0" title={`${teamName}还没有资产`} description="新增资产，或从本机文件导入受管副本。" action={<div className="flex flex-col items-center gap-2"><Button onClick={create}>新增资产</Button><Button variant="ghost" onClick={importAsset}>导入资产</Button></div>} />
   }
   return <ul className="divide-y divide-border" aria-label="共享资产列表">{rows.map((asset) => <AssetItem key={asset.id} asset={asset} agentNames={agentNames} refresh={refresh} />)}</ul>
 }
@@ -66,7 +68,7 @@ function AssetItem({ asset, agentNames, refresh }: { asset: DiscoveredAssetRow; 
       <Detail label="当前版本">{asset.currentRevisionId ?? '尚无版本记录'}</Detail><Detail label="访问状态">{asset.writable ? '可在 Bandi 受管范围内更新' : asset.readOnlyReason}</Detail>
       <Detail label="诊断">{asset.diagnostics.length ? <ul className="space-y-3">{asset.diagnostics.map((item, index) => <li key={`${item.code}-${index}`}><DiagnosticList items={[item]} /></li>)}</ul> : '无'}</Detail>
       <Detail label="使用它的 Agent">{asset.referenceSummaries.length ? <ul className="space-y-2">{asset.referenceSummaries.map((summary) => <li key={summary.key}><Link className="font-medium hover:underline" to={`/agents/${summary.agentId}?tab=${agentTabs[asset.kind] ?? 'overview'}&asset=${asset.id}`}>{agentNames.get(summary.agentId) ?? summary.agentId}</Link><span className="ml-2 text-xs text-muted-foreground">{summary.states.map((state) => referenceStateLabels[state] ?? state).join('、')}</span></li>)}</ul> : '暂无 Agent 引用'}</Detail>
-    </div><div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4"><Button asChild variant="outline"><Link to={`/assets/${asset.id}`}>查看并编辑</Link></Button><Button variant="ghost" onClick={refresh}>重新扫描</Button></div></div>
+    </div><div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4"><Button asChild variant="outline"><Link to={`/assets/${asset.id}`}>{asset.writable ? '查看并编辑' : '查看资产'}</Link></Button><Button variant="ghost" onClick={refresh}>重新扫描</Button></div></div>
   </details></li>
 }
 

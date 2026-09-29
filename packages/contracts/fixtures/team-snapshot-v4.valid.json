@@ -17,7 +17,10 @@
       "id": "brief-contracts",
       "teamId": "team-acme",
       "title": "演进共享合同",
-      "brief": "建立 v4 合同，不保留旧组织字段。"
+      "goal": "建立 v4 合同。",
+      "context": "当前实现已使用结构化需求字段。",
+      "constraints": "不保留旧组织字段。",
+      "expectedOutput": "跨端一致的合同与测试。"
     }
   ]
 }

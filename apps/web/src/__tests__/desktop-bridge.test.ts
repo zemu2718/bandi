@@ -6,6 +6,12 @@ import type { FullAgent } from '../domain'
 import {
   commitAiToolUpgrade,
   commitManagedAgentCreation,
+  listAiToolHostStatuses,
+  listHostAssetCatalog,
+  scanHostAssets,
+  loadHostAssetDetail,
+  previewHostAssetImport,
+  commitHostAssetImport,
   commitManagedAgentIdentity,
   commitSharedAssetImport,
   discoverMemorySpaces,
@@ -15,6 +21,8 @@ import {
   readMemoryRevisionContent,
   recoverMemoryRevision,
   restoreMemoryRevision,
+  previewPortableRestore,
+  restorePortableSnapshot,
   selectSharedAssetImport,
 } from '../desktop-bridge'
 
@@ -41,6 +49,36 @@ afterEach(() => {
 })
 
 describe('Desktop bridge Agent Team 请求', () => {
+  it('便携恢复只提交稳定快照、范围和一次性预览引用', async () => {
+    await previewPortableRestore({ requestId: 'portable-preview', snapshotId: 'snapshot-1', scope: { kind: 'all' } })
+    expect(tauri.invoke).toHaveBeenCalledWith('preview_portable_restore', { request: { requestId: 'portable-preview', snapshotId: 'snapshot-1', scope: { kind: 'all' } } })
+    await restorePortableSnapshot({ requestId: 'portable-restore', snapshotId: 'snapshot-1', scope: { kind: 'all' }, previewRef: 'preview-1', confirmed: true })
+    expect(tauri.invoke).toHaveBeenCalledWith('restore_portable_snapshot', { request: { requestId: 'portable-restore', snapshotId: 'snapshot-1', scope: { kind: 'all' }, previewRef: 'preview-1', confirmed: true } })
+  })
+  it('工具检查只发送是否强制刷新', async () => {
+    await listAiToolHostStatuses(false)
+    await listAiToolHostStatuses(true)
+
+    expect(tauri.invoke.mock.calls.slice(-2)).toEqual([
+      ['list_ai_tool_host_statuses', { request: { forceRefresh: false } }],
+      ['list_ai_tool_host_statuses', { request: { forceRefresh: true } }],
+    ])
+    expect(JSON.stringify(tauri.invoke.mock.calls.slice(-2))).not.toMatch(/path|ttl|toolIds|source|executable|argv|url/i)
+  })
+
+  it('外部资产命令只发送稳定身份，不发送路径', async () => {
+    await listHostAssetCatalog()
+    await scanHostAssets({ requestId: 'scan-1', toolIds: ['claude-code', 'codex'] })
+    await loadHostAssetDetail({ requestId: 'detail-1', hostInstanceId: 'host-1', scanGeneration: 'scan-generation' })
+    await previewHostAssetImport({ requestId: 'preview-1', hostInstanceId: 'host-1', scanGeneration: 'scan-generation', action: 'import', teamId: 'team-product', assetId: 'skill-review' })
+    await commitHostAssetImport({ requestId: 'commit-1', action: 'import', previewRef: 'preview-ref', sourceFingerprint: 'sha256:source', confirmed: true })
+
+    expect(tauri.invoke.mock.calls.map(([command]) => command)).toEqual([
+      'get_host_asset_catalog', 'scan_host_assets', 'load_host_asset_detail', 'preview_host_asset_action', 'commit_host_asset_action',
+    ])
+    expect(JSON.stringify(tauri.invoke.mock.calls)).not.toMatch(/absolutePath|sourcePath|rootPath|argv|executable/)
+  })
+
   it('Memory 历史命令只传受管身份、baseline 与确认值', async () => {
     const target = { requestId: 'memory-request', spaceId: 'memory-agent-agent-reviewer', agentId: agent.id }
     await discoverMemorySpaces({ requestId: target.requestId, agentId: target.agentId })

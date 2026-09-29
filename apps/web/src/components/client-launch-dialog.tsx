@@ -1,4 +1,4 @@
-import { Check, Copy, Info, Plus } from 'lucide-react'
+import { Check, Copy, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { launchDescriptor } from '../client-adapters'
 import { getAvailableAgents } from '../domain-selectors'
@@ -122,7 +122,7 @@ export function ClientLaunchDialog({ client, initialAgentId, close }: { client: 
         <div><label htmlFor="client-launch-task" className="block text-sm font-medium">需求（可选）</label><select id="client-launch-task" className="mt-2 h-10 w-full px-3" value={taskId} onChange={(event) => setTaskId(event.target.value)}><option value="">不附加需求</option>{tasks.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><span className="mt-1 block text-xs text-muted-foreground">需求只作为上下文，不会在 Bandi 中创建或跟踪执行进度。</span></div>
         <section className="rounded-lg border border-border bg-muted/30 p-4" aria-labelledby="launch-context-summary"><div className="flex items-center justify-between gap-3"><h3 id="launch-context-summary" className="text-sm font-semibold">本次上下文</h3><Button variant="ghost" size="sm" disabled={!team || !agent} onClick={copySummary}>{copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}{copied ? '已复制' : '复制'}</Button></div><pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">{summary}</pre></section>
       </>}
-      <div className="flex gap-2 rounded-md bg-muted p-3 text-sm leading-6 text-muted-foreground"><Info size={18} className="mt-0.5 shrink-0" aria-hidden="true" /><span>Bandi 只把所选长期上下文交给固定工具入口；不会授予更多权限，也不会跟踪工具中的会话、任务或输出。</span></div>
+      <p className="text-xs leading-5 text-muted-foreground">Bandi 只交付所选长期上下文，不会增加 Agent 权限。</p>
       {capability && <details className="rounded-md border border-border p-3 text-sm"><summary className="cursor-pointer font-medium">技术详情</summary><p className="mt-2 text-xs text-muted-foreground">{capability.reason}</p>{capability.remediation.map((item) => <p key={item} className="mt-1 text-xs text-muted-foreground">{item}</p>)}</details>}
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     </div>

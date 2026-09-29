@@ -1,0 +1,8 @@
+{
+  "createRequest": {"requestId":"portable-create-1","includeMemory":true},
+  "snapshot": {"schemaVersion":2,"profileVersion":"portable-backup-v1","snapshotId":"portable-snapshot-1","createdAt":"2026-09-01T08:00:00Z","includeMemory":true,"entryCount":1,"totalBytes":0,"manifestHash":"invalid","entries":[]},
+  "previewRequest": {"requestId":"portable-preview-1","snapshotId":"portable-snapshot-1","scope":{"kind":"all"}},
+  "restorePreview": {"requestId":"portable-preview-1","previewRef":"portable-preview-ref-1","packageHash":"invalid","scope":{"kind":"all"},"expiresAt":"2026-09-01T08:10:00Z","closure":{"teamIds":[],"agentIds":[],"taskBriefIds":[],"sharedAssetIds":[],"memoryIds":[]},"entries":[],"canRestore":true,"requiresConfirmation":true},
+  "restoreRequest": {"requestId":"portable-restore-1","snapshotId":"portable-snapshot-1","scope":{"kind":"all"},"confirmed":true},
+  "restoreResult": {"requestId":"portable-restore-1","packageHash":"invalid","status":"restored","entries":[]}
+}

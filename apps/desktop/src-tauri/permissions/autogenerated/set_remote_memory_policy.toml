@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-remote-memory-policy"
+description = "Enables the set_remote_memory_policy command without any pre-configured scope."
+commands.allow = ["set_remote_memory_policy"]
+
+[[permission]]
+identifier = "deny-set-remote-memory-policy"
+description = "Denies the set_remote_memory_policy command without any pre-configured scope."
+commands.deny = ["set_remote_memory_policy"]

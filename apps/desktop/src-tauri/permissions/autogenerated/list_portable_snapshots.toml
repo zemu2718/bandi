@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-portable-snapshots"
+description = "Enables the list_portable_snapshots command without any pre-configured scope."
+commands.allow = ["list_portable_snapshots"]
+
+[[permission]]
+identifier = "deny-list-portable-snapshots"
+description = "Denies the list_portable_snapshots command without any pre-configured scope."
+commands.deny = ["list_portable_snapshots"]

@@ -17,8 +17,8 @@ import {
   Settings,
   Sun,
   ClipboardList,
-  Workflow,
-  Wrench,
+  LibraryBig,
+  AppWindow,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { PageHeaderTargetProvider } from './components/app/page'
@@ -37,8 +37,8 @@ import { resolveTeamIdentity } from './team-identity'
 const nav = [
   ['/tasks', '需求池', ClipboardList],
   ['/agents', 'Agent', Bot],
-  ['/assets', '配置资产', Workflow],
-  ['/tools', 'AI 工具', Wrench],
+  ['/assets', '配置资产', LibraryBig],
+  ['/tools', 'AI 工具', AppWindow],
 ] as const
 
 type HistoryBounds = { index: number; maxIndex: number }
@@ -148,6 +148,7 @@ export function Shell() {
   })
   const title = metadata.title
   const configurationStatus = getConfigurationStatusSummary(state)
+  const hidePageHeader = location.pathname === '/' && configurationStatus.phase === 'first-use'
   const backgroundUrl = uiPreviewAssets?.background === null ? undefined : uiPreviewAssets?.background ?? savedAssets.background
   const runCommand = useCallback((command: AppCommandId) => {
     if (resetTerminal) return
@@ -340,10 +341,10 @@ export function Shell() {
         </aside>
 
         <div className="min-w-0 flex-1 bg-background/90">
-          <header className="sticky top-0 z-20 flex min-h-20 flex-wrap items-center gap-4 border-b border-border bg-background/94 px-6 py-3 backdrop-blur max-[1280px]:px-4 max-sm:gap-2 max-sm:px-3">
+          {!hidePageHeader && <header className="sticky top-0 z-20 flex min-h-20 flex-wrap items-center gap-4 border-b border-border bg-background/94 px-6 py-3 backdrop-blur max-[1280px]:px-4 max-sm:gap-2 max-sm:px-3">
             <div ref={setPageHeaderTarget} className="flex min-w-0 flex-1 flex-wrap items-center gap-4 max-sm:basis-full" />
             {location.pathname !== '/' && (configurationStatus.phase === 'pending' || configurationStatus.phase === 'failed') && <Button asChild variant="outline" size="sm" className="max-sm:w-full"><Link to="/"><CircleAlert size={16} aria-hidden="true" />{configurationStatus.phase === 'failed' ? '配置读取失败' : `配置状态 · ${configurationStatus.items.length} 项`}</Link></Button>}
-          </header>
+          </header>}
           <main className="shell-main mx-auto max-w-[1420px]"><PageHeaderTargetProvider target={pageHeaderTarget}><Outlet /></PageHeaderTargetProvider></main>
         </div>
       </div>
@@ -353,7 +354,7 @@ export function Shell() {
         return <div role={state.notice.tone === 'error' ? 'alert' : 'status'} aria-live={state.notice.tone === 'error' ? 'assertive' : 'polite'} className={cn('fixed bottom-5 right-5 z-[70] flex max-w-md gap-3 rounded-lg border bg-card px-4 py-3 text-sm shadow-xl', state.notice.tone === 'success' && 'border-success/30', state.notice.tone === 'warning' && 'border-warning/30', state.notice.tone === 'error' && 'border-danger/30', state.notice.tone === 'info' && 'border-border')}>
           <Icon aria-hidden="true" className={cn('mt-0.5 shrink-0', state.notice.tone === 'success' && 'text-success', state.notice.tone === 'warning' && 'text-warning', state.notice.tone === 'error' && 'text-danger', state.notice.tone === 'info' && 'text-muted-foreground')} size={18} />
           <div className="min-w-0 flex-1"><b>{state.notice.title}</b>{state.notice.description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{state.notice.description}</p>}</div>
-          <Button variant="ghost" size="icon" className="-mr-2 -mt-2" aria-label="关闭通知" onClick={() => dispatch({ type: 'CLEAR_NOTICE', id: state.notice?.id })}><X size={16} aria-hidden="true" /></Button>
+          <Tooltip content="关闭通知" side="left"><Button variant="ghost" size="icon" className="-mr-2 -mt-2" aria-label="关闭通知" onClick={() => dispatch({ type: 'CLEAR_NOTICE', id: state.notice?.id })}><X size={16} aria-hidden="true" /></Button></Tooltip>
         </div>
       })()}
       <GlobalSheets />

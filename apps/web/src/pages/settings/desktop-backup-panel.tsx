@@ -191,7 +191,7 @@ export function DesktopBackupPanel() {
 
   return <div className="space-y-5">
     <section className="panel flex flex-wrap items-start justify-between gap-4 p-5">
-      <div><b>快照与恢复</b><p className="mt-1 text-sm leading-6 text-muted-foreground">保存你选择的 Bandi 配置文件，需要时可从快照恢复。</p><details className="mt-1"><summary className="cursor-pointer text-xs text-muted-foreground">查看安全范围</summary><p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">只包含 Bandi 当前可查看且由你选中的可写配置文件。不包含 Team、需求、项目目录记录、其他 Bandi 数据或 Agent 长期记忆文件；凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入。</p></details></div>
+      <div><b>快照与恢复</b><p className="mt-1 text-sm leading-6 text-muted-foreground">保存你选择的 Bandi 配置文件，需要时可从快照恢复。</p><details className="mt-1"><summary className="cursor-pointer rounded text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看安全范围</summary><p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">只包含 Bandi 当前可查看且由你选中的可写配置文件。不包含 Team、需求、项目目录记录、其他 Bandi 数据或 Agent 长期记忆文件；凭据、Token、Cookie、私钥、钥匙串和执行过程也不会加入。</p></details></div>
       <Button ref={createTriggerRef} disabled={loading || !writableAssets.length} onClick={() => setCreateOpen(true)}><Plus size={15} aria-hidden="true" />创建本地快照</Button>
     </section>
     {error && <ErrorNotice error={error} />}

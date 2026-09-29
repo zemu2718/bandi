@@ -5,17 +5,26 @@ import assetReferenceFixture from '../../../../packages/contracts/fixtures/asset
 import invalidAiToolHostFixture from '../../../../packages/contracts/fixtures/ai-tool-host.invalid.json'
 import aiToolHostFixture from '../../../../packages/contracts/fixtures/ai-tool-host.valid.json'
 import backupFixture from '../../../../packages/contracts/fixtures/backup-local.valid.json'
+import portableBackupFixture from '../../../../packages/contracts/fixtures/backup-portable-v1.valid.json'
+import invalidPortableBackupFixture from '../../../../packages/contracts/fixtures/backup-portable-v1.invalid.json'
+import remoteBackupFixture from '../../../../packages/contracts/fixtures/backup-remote-v1.valid.json'
+import invalidRemoteBackupFixture from '../../../../packages/contracts/fixtures/backup-remote-v1.invalid.json'
 import invalidClientLaunchV3 from '../../../../packages/contracts/fixtures/client-launch-v3.invalid.json'
 import validClientLaunchV3 from '../../../../packages/contracts/fixtures/client-launch-v3.valid.json'
 import invalidMemoryV4Fixture from '../../../../packages/contracts/fixtures/formal-memory-v4.invalid.json'
 import memoryV4Fixture from '../../../../packages/contracts/fixtures/formal-memory-v4.valid.json'
+import invalidHostAssetsFixture from '../../../../packages/contracts/fixtures/host-assets.invalid.json'
+import hostAssetsFixture from '../../../../packages/contracts/fixtures/host-assets.valid.json'
 import invalidTeamV4Fixture from '../../../../packages/contracts/fixtures/team-snapshot-v4.invalid.json'
 import teamV4Fixture from '../../../../packages/contracts/fixtures/team-snapshot-v4.valid.json'
 import assetReferenceSchema from '../../../../packages/contracts/schemas/asset-reference-graph.schema.json'
 import aiToolHostSchema from '../../../../packages/contracts/schemas/ai-tool-host.schema.json'
 import backupSchema from '../../../../packages/contracts/schemas/backup-local.schema.json'
+import portableBackupSchema from '../../../../packages/contracts/schemas/backup-portable-v1.schema.json'
+import remoteBackupSchema from '../../../../packages/contracts/schemas/backup-remote-v1.schema.json'
 import clientLaunchV3Schema from '../../../../packages/contracts/schemas/client-launch-v3.schema.json'
 import memoryV4Schema from '../../../../packages/contracts/schemas/formal-memory-v4.schema.json'
+import hostAssetsSchema from '../../../../packages/contracts/schemas/host-assets.schema.json'
 import teamV4Schema from '../../../../packages/contracts/schemas/team-snapshot-v4.schema.json'
 
 function validator(schema: object) {
@@ -28,7 +37,10 @@ describe('共享 JSON Schema', () => {
   it.each([
     ['共享资产引用图', assetReferenceSchema, assetReferenceFixture],
     ['AI 工具主机请求', aiToolHostSchema, aiToolHostFixture],
+    ['外部工具资产', hostAssetsSchema, hostAssetsFixture],
     ['本地备份', backupSchema, backupFixture],
+    ['便携备份 v1', portableBackupSchema, portableBackupFixture],
+    ['远程备份 v1', remoteBackupSchema, remoteBackupFixture],
   ])('%s 的有效 fixture 通过 Draft 2020-12 校验', (_name, schema, fixture) => {
     const validate = validator(schema)
     expect(validate(fixture), JSON.stringify(validate.errors)).toBe(true)
@@ -46,8 +58,11 @@ describe('共享 JSON Schema', () => {
   it.each([
     ['Team 快照 v4', teamV4Schema, invalidTeamV4Fixture],
     ['AI 工具主机请求', aiToolHostSchema, invalidAiToolHostFixture],
+    ['外部工具资产', hostAssetsSchema, invalidHostAssetsFixture],
     ['正式记忆 v4', memoryV4Schema, invalidMemoryV4Fixture],
     ['客户端启动 v3', clientLaunchV3Schema, invalidClientLaunchV3],
+    ['便携备份 v1', portableBackupSchema, invalidPortableBackupFixture],
+    ['远程备份 v1', remoteBackupSchema, invalidRemoteBackupFixture],
   ])('%s 拒绝无效 fixture', (_name, schema, fixture) => {
     const validate = validator(schema)
     expect(validate(fixture)).toBe(false)

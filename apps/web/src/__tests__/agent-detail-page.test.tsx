@@ -100,6 +100,13 @@ describe('Agent 双模式配置工作台', () => {
     expect(router.state.location.search).toBe('?tab=identity')
   })
 
+  it('编辑深链直接进入身份与职责编辑并清理一次性参数', async () => {
+    const { router } = renderAgent('/agents/zhouce?tab=identity&edit=1')
+
+    expect(await screen.findByDisplayValue('周策')).toBeInTheDocument()
+    await waitFor(() => expect(router.state.location.search).toBe('?tab=identity'))
+  })
+
   it('身份页短显示并复制完整 Agent ID', async () => {
     const source = initialState.agents.find((item) => item.id === 'zhouce')!
     const longId = 'agent-550e8400-e29b-41d4-a716-446655440000'
@@ -135,6 +142,39 @@ describe('Agent 双模式配置工作台', () => {
     fireEvent.change(input, { target: { value: initialState.agents.find((item) => item.id !== 'zhouce')!.name } })
     expect(screen.getByText('已有同名 Agent，请使用其他名称。')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
+  })
+
+  it('查看并保存自定义职能的规范化值', async () => {
+    const source = initialState.agents.find((item) => item.id === 'zhouce')!
+    const state: State = {
+      ...initialState,
+      agents: initialState.agents.map((item) => item.id === source.id
+        ? { ...item, functionId: '安全审计' }
+        : item),
+    }
+    renderAgent('/agents/zhouce?tab=identity', state)
+
+    expect(screen.getByText('安全审计')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    const functionInput = screen.getByRole('textbox', { name: '自定义职能' })
+    expect(screen.getByRole('button', { name: '运营' })).toBeInTheDocument()
+    expect(functionInput).toHaveValue('安全审计')
+    fireEvent.change(functionInput, { target: { value: '  开发者体验  ' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存到当前页面' }))
+
+    expect(screen.getByText('开发者体验')).toBeInTheDocument()
+  })
+
+  it('非法自定义职能显示字段错误并阻止保存', () => {
+    renderAgent('/agents/zhouce?tab=identity')
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    const functionInput = screen.getByRole('textbox', { name: '自定义职能' })
+
+    fireEvent.change(functionInput, { target: { value: 'A'.repeat(41) } })
+
+    expect(screen.getByText('职能最多 40 个字符。')).toBeInTheDocument()
+    expect(functionInput).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: '保存到当前页面' })).toBeDisabled()
   })
 
   it('Desktop 受管身份从磁盘加载基线并保存 revision', async () => {

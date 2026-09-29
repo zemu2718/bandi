@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, FileDiff, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, Check, FileDiff, ShieldAlert } from 'lucide-react'
 import { ClientLaunchDialog } from './components/client-launch-dialog'
 import { UsageGuideTopicContent, usageGuideTopics } from './components/usage-guide'
 import { Button } from './components/ui/button'
@@ -8,8 +8,6 @@ import { AppDialog } from './components/ui/dialog'
 import { ErrorNotice, errorFromCause, type UserFacingError } from './components/app/error-notice'
 import { MonoPath, StatusBadge } from './components/app/page'
 import { useApp } from './state'
-import { buildBackupPreview, createDemoSnapshot, describeBackupScope } from './backup-policy'
-import type { BackupScope } from './domain'
 import { generateEntityId, isDesktopRuntime, saveTeamV4 } from './desktop-bridge'
 import { formatDisplayTimestamp } from './presentation'
 import { normalizeTeamMark, resolveTeamIdentity, TEAM_COLOR_PRESETS } from './team-identity'
@@ -25,9 +23,6 @@ export function GlobalSheets() {
   const [confirmName, setConfirmName] = useState('')
   const [understood, setUnderstood] = useState(false)
   const [conflicts, setConflicts] = useState<Record<string, string>>({})
-  const [restoreStep, setRestoreStep] = useState<1 | 2 | 3>(1)
-  const [restoreScope, setRestoreScope] = useState<BackupScope>({ kind: 'all' })
-  const [restoreFiles, setRestoreFiles] = useState<string[]>([])
   const [selectedRevisionId, setSelectedRevisionId] = useState<string>()
   const [restoreConfirmed, setRestoreConfirmed] = useState(false)
   const close = () => dispatch({ type: 'CLOSE_DIALOG' })
@@ -37,9 +32,6 @@ export function GlobalSheets() {
     setConfirmName('')
     setUnderstood(false)
     setConflicts({})
-    setRestoreStep(1)
-    setRestoreScope({ kind: 'all' })
-    setRestoreFiles([])
     setSelectedRevisionId(undefined)
     setRestoreConfirmed(false)
   }, [dialog?.kind])
@@ -57,12 +49,15 @@ export function GlobalSheets() {
   if (dialog.kind === 'usage-guide') {
     const selectTopic = (topic: typeof dialog.topic) => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'usage-guide', topic } })
     const openPage = (to: string) => { close(); navigate(to) }
-    return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title="使用指南" description="选择一个主题，查看说明和相关页面。" size="xl">
-      <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
+    return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title="使用指南" description="了解如何组织 Agent、维护长期配置并在 AI 工具中使用。" size="xl">
+      <div className="grid h-[560px] max-h-[calc(100dvh-180px)] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-6 overflow-hidden md:grid-cols-[220px_minmax(0,1fr)] md:grid-rows-1">
         <nav className="grid content-start gap-1 sm:grid-cols-2 md:grid-cols-1" aria-label="使用指南主题">
-          {usageGuideTopics.map((topic) => <button key={topic.id} type="button" aria-current={dialog.topic === topic.id ? 'page' : undefined} onClick={() => selectTopic(topic.id)} className={`min-h-11 rounded-lg px-4 py-3 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dialog.topic === topic.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{topic.navLabel}</button>)}
+          {usageGuideTopics.map((topic) => {
+            const selected = dialog.topic === topic.id
+            return <button key={topic.id} type="button" aria-current={selected ? 'page' : undefined} onClick={() => selectTopic(topic.id)} className={`min-h-11 rounded-lg px-4 py-3 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{topic.navLabel}</button>
+          })}
         </nav>
-        <div className="min-w-0 border-border md:border-l md:pl-6">
+        <div className="min-h-0 min-w-0 overflow-y-auto border-border md:border-l md:pl-6">
           <UsageGuideTopicContent topic={dialog.topic} onNavigate={openPage} />
         </div>
       </div>
@@ -77,7 +72,7 @@ export function GlobalSheets() {
     const current = revisions[0]
     const canRestore = Boolean(selected && selected.id !== current?.id && restoreConfirmed)
     return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={`配置历史 · ${dialog.path.split('/').at(-1)}`} description="历史版本不可变；恢复会生成一个新版本。" size="xl" footer={<><Button variant="outline" onClick={close}>关闭</Button><Button disabled={!canRestore} onClick={() => selected && dispatch({ type: 'RESTORE_CONFIG_REVISION', revisionId: selected.id })}>恢复为新版本</Button></>}>
-      {revisions.length ? <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]"><div className="space-y-2" role="list" aria-label="配置版本">{revisions.map((revision, index) => <button key={revision.id} type="button" onClick={() => { setSelectedRevisionId(revision.id); setRestoreConfirmed(false) }} className={`w-full rounded-lg border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected?.id === revision.id ? 'border-foreground bg-muted' : 'border-border hover:bg-muted/60'}`}><span className="flex items-center justify-between gap-2"><b className="text-sm">{revision.id}</b>{index === 0 && <StatusBadge tone="success">当前</StatusBadge>}</span><small className="mt-1 block text-muted-foreground">{formatDisplayTimestamp(revision.savedAt)} · {revision.summary}</small><small className="mt-1 block text-muted-foreground">{revision.evidence === 'memory-only' ? '仅在当前页面有效' : '初始演示版本'}{revision.parentRevisionId ? ` · 基于版本 ${revision.parentRevisionId}` : ''}</small>{revision.restoredFromRevisionId && <small className="mt-1 block text-muted-foreground">恢复自 {revision.restoredFromRevisionId}</small>}</button>)}</div><div className="min-w-0"><div className="grid gap-3 sm:grid-cols-2"><div className="min-w-0 rounded-lg border border-border"><div className="border-b border-border bg-muted px-3 py-2 text-xs font-semibold">当前版本</div><pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 text-xs leading-6">{current?.content}</pre></div><div className="min-w-0 rounded-lg border border-border"><div className="border-b border-border bg-muted px-3 py-2 text-xs font-semibold">{selected?.id === current?.id ? '选择一个历史版本比较' : selected?.id}</div><pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 text-xs leading-6">{selected?.content}</pre></div></div><div className="mt-4 rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm">恢复只会基于上方当前内容与目标内容生成新的配置版本；不会覆盖历史，也不会读取或写入文件。</div>{selected && selected.id !== current?.id && <label className="mt-4 flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={restoreConfirmed} onChange={(event) => setRestoreConfirmed(event.target.checked)} /><span>我已核对当前版本与目标版本的内容差异，确认恢复为新版本。</span></label>}</div></div> : <p className="text-sm text-muted-foreground">当前文件暂无演示版本。长期记忆的版本历史会单独记录。</p>}
+      {revisions.length ? <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]"><div className="space-y-2" role="list" aria-label="配置版本">{revisions.map((revision, index) => <button key={revision.id} type="button" onClick={() => { setSelectedRevisionId(revision.id); setRestoreConfirmed(false) }} className={`w-full rounded-lg border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected?.id === revision.id ? 'border-foreground bg-muted' : 'border-border hover:bg-muted/60'}`}><span className="flex items-center justify-between gap-2"><b className="text-sm">{revision.id}</b>{index === 0 && <StatusBadge tone="success">当前</StatusBadge>}</span><small className="mt-1 block text-muted-foreground">{formatDisplayTimestamp(revision.savedAt)} · {revision.summary}</small><small className="mt-1 block text-muted-foreground">{revision.evidence === 'memory-only' ? '仅在当前页面有效' : '初始演示版本'}{revision.parentRevisionId ? ` · 基于版本 ${revision.parentRevisionId}` : ''}</small>{revision.restoredFromRevisionId && <small className="mt-1 block text-muted-foreground">恢复自 {revision.restoredFromRevisionId}</small>}</button>)}</div><div className="min-w-0"><div className="grid gap-3 sm:grid-cols-2"><div className="min-w-0 rounded-lg border border-border"><div className="border-b border-border bg-muted px-3 py-2 text-xs font-semibold">当前版本</div><pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 text-xs leading-6">{current?.content}</pre></div><div className="min-w-0 rounded-lg border border-border"><div className="border-b border-border bg-muted px-3 py-2 text-xs font-semibold">{selected?.id === current?.id ? '选择一个历史版本比较' : selected?.id}</div><pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 text-xs leading-6">{selected?.content}</pre></div></div><p className="mt-4 text-xs leading-5 text-muted-foreground">恢复会基于上方内容生成新版本，不会覆盖历史或读写文件。</p>{selected && selected.id !== current?.id && <label className="mt-4 flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={restoreConfirmed} onChange={(event) => setRestoreConfirmed(event.target.checked)} /><span>我已核对当前版本与目标版本的内容差异，确认恢复为新版本。</span></label>}</div></div> : <p className="text-sm text-muted-foreground">当前文件暂无演示版本。长期记忆的版本历史会单独记录。</p>}
     </AppDialog>
   }
 
@@ -126,21 +121,6 @@ export function GlobalSheets() {
     </AppDialog>
   }
 
-  if (dialog.kind === 'backup-restore') {
-    const snapshot = state.backupSnapshots.find((item) => item.id === dialog.snapshotId)
-    if (!snapshot) return <MissingDialog title="快照不存在" close={close} />
-    const effectiveScope: BackupScope = restoreScope.kind === 'files' ? { kind: 'files', paths: restoreFiles } : restoreScope
-    const preview = buildBackupPreview(state, effectiveScope)
-    const availableFiles = [...new Set(state.agents.flatMap((item) => item.files.map((file) => `${item.id}/${file.path}`)))]
-    const restore = () => { if (!preview) return; dispatch({ type: 'SIMULATE_RESTORE', snapshotId: snapshot.id, beforeSnapshot: createDemoSnapshot(preview, { id: `before-${state.backupSnapshots.length + 1}`, createdAt: '刚刚', kind: '恢复前演示' }) }) }
-    const chooseKind = (kind: BackupScope['kind']) => { if (kind === 'team') setRestoreScope({ kind, teamId: state.teams[0]?.id ?? '' }); else if (kind === 'agent') setRestoreScope({ kind, agentId: state.agents[0]?.id ?? '' }); else if (kind === 'files') setRestoreScope({ kind, paths: [] }); else setRestoreScope({ kind: 'all' }); setRestoreFiles([]) }
-    return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title="模拟范围恢复" description={`第 ${restoreStep} 步，共 3 步 · ${snapshot.id}`} size="lg" footer={<>{restoreStep > 1 && <Button variant="outline" onClick={() => setRestoreStep((step) => Math.max(1, step - 1) as 1 | 2 | 3)}>上一步</Button>}<Button variant="outline" onClick={close}>取消</Button>{restoreStep < 3 ? <Button disabled={restoreStep === 2 && !preview} onClick={() => setRestoreStep((step) => Math.min(3, step + 1) as 1 | 2 | 3)}>下一步</Button> : <Button variant="danger" disabled={!understood || !preview} onClick={restore}>确认模拟恢复</Button>}</>}>
-      {restoreStep === 1 && <><InfoRow label="快照时间">{formatDisplayTimestamp(snapshot.createdAt)}</InfoRow><InfoRow label="快照范围">{describeBackupScope(snapshot.scope, state)}</InfoRow><label className="mt-5 block text-sm font-medium">恢复层级<select className="mt-2 h-10 w-full px-3" value={restoreScope.kind} onChange={(event) => chooseKind(event.target.value as BackupScope['kind'])}><option value="all">全部配置</option><option value="team">Team</option><option value="agent">Agent</option><option value="files">指定文件</option></select></label></>}
-      {restoreStep === 2 && <>{restoreScope.kind === 'team' && <label className="block text-sm font-medium">Team<select className="mt-2 h-10 w-full px-3" value={restoreScope.teamId} onChange={(event) => setRestoreScope({ kind: 'team', teamId: event.target.value })}>{state.teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{restoreScope.kind === 'agent' && <label className="block text-sm font-medium">Agent<select className="mt-2 h-10 w-full px-3" value={restoreScope.agentId} onChange={(event) => setRestoreScope({ kind: 'agent', agentId: event.target.value })}>{state.agents.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}{restoreScope.kind === 'files' && <fieldset><legend className="text-sm font-medium">指定恢复文件</legend><div className="mt-2 max-h-64 space-y-2 overflow-auto rounded-lg border border-border p-3">{availableFiles.map((path) => <label key={path} className="flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={restoreFiles.includes(path)} onChange={(event) => setRestoreFiles((items) => event.target.checked ? [...items, path] : items.filter((item) => item !== path))} />{path}</label>)}</div>{!restoreFiles.length && <p className="mt-2 text-xs text-danger">请选择至少一个文件。</p>}</fieldset>}{restoreScope.kind === 'all' && <p className="text-sm text-muted-foreground">该层级无需选择具体对象，将恢复全部演示配置范围。</p>}</>}
-      {restoreStep === 3 && preview && <><InfoRow label="将恢复">{preview.label}</InfoRow><InfoRow label="包含">{preview.includes.join('、')}</InfoRow><InfoRow label="不受影响">范围外配置、Agent 引用关系和当前业务集合</InfoRow><InfoRow label="长期记忆">本地快照可以包含；远程备份仍需单独确认</InfoRow><InfoRow label="永不包含">{preview.excludes.join('、')}</InfoRow><InfoRow label="恢复前保护">先新增“恢复前演示”快照记录</InfoRow><label className="mt-4 flex items-start gap-3"><input className="mt-1" type="checkbox" checked={understood} onChange={(event) => setUnderstood(event.target.checked)} /><span>我理解这是演示流程，不会读取或恢复真实文件，也不会修改 Agent、资产、Team 或工作区。</span></label></>}
-    </AppDialog>
-  }
-
   if (dialog.kind === 'organization') return <OrganizationDialog dialog={dialog} close={close} />
   return null
 }
@@ -175,7 +155,7 @@ function OrganizationDialog({ dialog, close }: { dialog: Extract<NonNullable<Ret
   }
   return <AppDialog open onOpenChange={(open) => { if (!open) close() }} title={`${dialog.mode === 'create' ? '创建' : '编辑'} Team`} size="md" footer={<><Button variant="outline" onClick={close}>取消</Button><Button disabled={saving || !name.trim() || duplicate || invalidTeamMark} onClick={save}>{saving ? '正在保存…' : desktop ? '保存配置' : '保存演示配置'}</Button></>}>
     <label className="block text-sm font-medium">名称<input className="mt-2 h-10 w-full px-3" value={name} onChange={(event) => setName(event.target.value)} aria-invalid={duplicate} />{duplicate && <span className="mt-1 block text-xs text-danger">已有名为“{name.trim()}”的 Team。</span>}</label>
-    <div className="mt-4"><div className="flex items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl text-xs font-semibold" style={{ backgroundColor: teamIdentity.color, color: teamIdentity.foreground }} aria-hidden="true">{teamIdentity.mark}</span><div><div className="text-sm font-medium">Team 标识</div><p className="mt-1 text-xs text-muted-foreground">默认根据名称生成，也可设置 1–2 个字母或数字。</p></div></div><label className="mt-3 block text-sm font-medium">文字标识<input className="mt-2 h-10 w-full px-3" value={teamMark} placeholder={teamIdentity.mark} maxLength={2} aria-invalid={invalidTeamMark} onChange={(event) => setTeamMark(event.target.value)} /></label>{invalidTeamMark && <p className="mt-1 text-xs text-danger">请输入 1–2 个字母或数字。</p>}<fieldset className="mt-4"><legend className="text-sm font-medium">标识颜色</legend><div className="mt-2 flex flex-wrap gap-2">{TEAM_COLOR_PRESETS.map(([colorName, color]) => <button key={color} type="button" aria-label={colorName} aria-pressed={teamColor === color} className="grid size-10 place-items-center rounded-lg border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" style={{ borderColor: teamColor === color ? color : undefined }} onClick={() => setTeamColor(color)}><span className="size-5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" /></button>)}</div></fieldset></div>
+    <div className="mt-4"><div className="flex items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl text-xs font-semibold" style={{ backgroundColor: teamIdentity.color, color: teamIdentity.foreground }} aria-hidden="true">{teamIdentity.mark}</span><div><div className="text-sm font-medium">Team 标识</div><p className="mt-1 text-xs text-muted-foreground">默认根据名称生成，也可设置 1–2 个字母或数字。</p></div></div><label className="mt-3 block text-sm font-medium">文字标识<input className="mt-2 h-10 w-full px-3" value={teamMark} placeholder={teamIdentity.mark} maxLength={2} aria-invalid={invalidTeamMark} onChange={(event) => setTeamMark(event.target.value)} /></label>{invalidTeamMark && <p className="mt-1 text-xs text-danger">请输入 1–2 个字母或数字。</p>}<fieldset className="mt-4"><legend className="text-sm font-medium">标识颜色</legend><div className="mt-2 flex flex-wrap gap-2">{TEAM_COLOR_PRESETS.map(([colorName, color]) => <button key={color} type="button" aria-label={colorName} aria-pressed={teamColor === color} className="grid size-10 place-items-center rounded-lg border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" style={{ borderColor: teamColor === color ? color : undefined }} onClick={() => setTeamColor(color)}><span className="grid size-5 place-items-center rounded-full text-white" style={{ backgroundColor: color }} aria-hidden="true">{teamColor === color && <Check size={13} strokeWidth={3} />}</span></button>)}</div></fieldset></div>
     <label className="mt-4 block text-sm font-medium">使命<textarea className="mt-2 min-h-24 w-full p-3" value={mission} onChange={(event) => setMission(event.target.value)} /></label>{error && <ErrorNotice error={error} className="mt-4" />}<p className="mt-4 text-xs text-muted-foreground">{desktop ? 'Team 配置保存到 Bandi 本机数据；不会移动 Agent 配置或授予权限。' : 'Team 变更仅在当前页面更新，不移动 Agent 配置、不授予权限。'}</p>
   </AppDialog>
 }

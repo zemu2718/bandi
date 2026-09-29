@@ -367,20 +367,8 @@ fn read_agent(paths: &LocalServicePaths, agent_id: &str) -> Result<AgentFact, St
     if manifest.id != agent_id || !valid_id(&manifest.team_id) {
         return Err("Agent 身份稳定标识无效或不一致".into());
     }
-    if manifest.function_id.as_deref().is_some_and(|function_id| {
-        ![
-            "product",
-            "design",
-            "engineering",
-            "testing",
-            "research",
-            "operations",
-            "general",
-            "other",
-        ]
-        .contains(&function_id)
-    }) {
-        return Err("Agent 职能标识不受支持".into());
+    if let Some(function_id) = manifest.function_id.as_deref() {
+        crate::agent_service::validate_agent_function_id(function_id)?;
     }
     Ok(manifest)
 }
@@ -642,7 +630,7 @@ mod tests {
         fs::create_dir_all(&package).unwrap();
         fs::write(
             package.join("agent.yaml"),
-            "schemaVersion: 1\nid: alpha\nname: Alpha\nteamId: team-personal\nstatus: active\nmission: 审核配置\nresponsibilities: []\ndeliverables: []\ndecisionBoundaries: []\nescalationConditions: []\nprohibitions: []\ncompletionDefinition: []\nsecret: do-not-return\n",
+            "schemaVersion: 1\nid: alpha\nname: Alpha\nteamId: team-personal\nstatus: active\nmission: 审核配置\nfunctionId: 安全审计\nresponsibilities: []\ndeliverables: []\ndecisionBoundaries: []\nescalationConditions: []\nprohibitions: []\ncompletionDefinition: []\nsecret: do-not-return\n",
         )
         .unwrap();
         domain_store::save_team_v4_at(
@@ -685,7 +673,9 @@ mod tests {
 
         assert_eq!(list_teams(&paths).unwrap()[0].id, "team-personal");
         assert_eq!(list_agents(&paths, "team-personal").unwrap()[0].id, "alpha");
-        assert_eq!(show_agent(&paths, "alpha").unwrap().name, "Alpha");
+        let agent = show_agent(&paths, "alpha").unwrap();
+        assert_eq!(agent.name, "Alpha");
+        assert_eq!(agent.function_id.as_deref(), Some("安全审计"));
         assert_eq!(list_task_briefs(&paths, "team-personal").unwrap().len(), 1);
         assert_eq!(show_task_brief(&paths, "brief-1").unwrap().goal, "确认事实");
         let context = show_context(&paths, "team-personal", "alpha", Some("brief-1")).unwrap();

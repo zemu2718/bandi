@@ -26,8 +26,8 @@ describe('需求页', () => {
   it('新建需求固定属于当前 Team 且不关联项目', () => {
     renderPage({ ...state, taskBriefs: [] })
     expect(screen.getAllByRole('button', { name: '新建需求' })).toHaveLength(1)
-    expect(screen.getByText('还没有需求')).toBeInTheDocument()
-    expect(screen.queryByText('新建一份简报，供所选 AI 工具在当前任务中使用。')).not.toBeInTheDocument()
+    expect(screen.getByText(`${state.teams.find((team) => team.id === state.currentTeamId)?.name}还没有需求`)).toBeInTheDocument()
+    expect(screen.getByText('新建一份需求，记录目标、背景和任务要求。')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '新建需求' }))
     const dialog = screen.getByRole('dialog', { name: '新建需求' })
 

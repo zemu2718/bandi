@@ -18,10 +18,26 @@ export const agentFunctionLabels = {
 
 export type AgentFunction = keyof typeof agentFunctionLabels
 
+export function normalizeAgentFunction(value?: string): string | undefined {
+  const normalized = value?.trim()
+  if (!normalized) return undefined
+  const preset = Object.entries(agentFunctionLabels).find(([, label]) => label === normalized)
+  return preset?.[0] ?? normalized
+}
+
+export function validateAgentFunction(value?: string): string | undefined {
+  const normalized = value?.trim()
+  if (!normalized) return undefined
+  if (Array.from(normalized).length > 40) return '职能最多 40 个字符。'
+  if (/\p{Cc}/u.test(normalized)) return '职能不能包含控制字符。'
+  return undefined
+}
+
 export function agentFunctionLabel(functionId?: string): string {
-  return functionId && functionId in agentFunctionLabels
-    ? agentFunctionLabels[functionId as AgentFunction]
-    : '未分类'
+  const normalized = normalizeAgentFunction(functionId)
+  return normalized && normalized in agentFunctionLabels
+    ? agentFunctionLabels[normalized as AgentFunction]
+    : normalized ?? '未分类'
 }
 
 export type { TaskBriefDto as TaskBrief, TeamDto as Team } from './contracts'
@@ -74,7 +90,7 @@ export type FullAgent = Omit<Agent, 'status'> & {
   status: AgentLifecycle
   packageSchema: AgentPackageSchema
   teamId: string
-  functionId?: AgentFunction
+  functionId?: string
   mission: string
   responsibilities: string[]
   deliverables: string[]
@@ -188,27 +204,6 @@ export type MemorySpace = {
   content: string
 }
 
-export type BackupScope =
-  | { kind: 'all' }
-  | { kind: 'team'; teamId: string }
-  | { kind: 'agent'; agentId: string }
-  | { kind: 'files'; paths: string[] }
-
-export type BackupSnapshot = {
-  id: string
-  createdAt: string
-  kind: '手动演示' | '恢复前演示'
-  scope: BackupScope
-  includes: string[]
-  excludes: string[]
-  localPath: string
-  deviceName: string
-  hash: string
-  integrity: 'demo-verified' | 'demo-unverified'
-  remoteStatus: 'local-only' | 'private-git-not-connected' | 'private-git-demo-synced' | 'private-git-demo-failed'
-  includesFormalMemory: boolean
-}
-
 const rootScope: AgentFileScope = { kind: 'agent-root' }
 const defaultFiles = (id: string): AgentFile[] => [
   { path: 'agent.yaml', type: '稳定身份与状态', status: '预置演示资料', evidence: 'demo-fixture', scope: rootScope, revision: 'r1' },
@@ -254,7 +249,7 @@ const baseAgent = (agent: Agent, details: Partial<FullAgent>): FullAgent => ({
 export const initialTeams: import('./contracts').TeamDto[] = [
   { id: 'xinghe', name: '星河科技', mission: '以清晰的产品判断和可靠的软件交付创造长期价值。', boundary: 'Team 身份与组织关系不自动授予文件、命令、网络或委派权限。', memberAgentIds: ['zhiheng', 'zhouce', 'linxu', 'songyan'], sharedAssetIds: ['rule-common', 'skill-review', 'sop-delivery'] },
   { id: 'studio', name: '独立工作室', mission: '支持独立研究与实验性配置。', boundary: '与星河科技资产完全隔离，跨 Team 共享需单独注册授权。', memberAgentIds: [], sharedAssetIds: [] },
-  { id: 'team-personal', name: '个人 Team', mission: '管理个人长期 Agent 与配置资产。', boundary: '个人 Team 不自动授予文件、命令或网络权限。', memberAgentIds: [], sharedAssetIds: [] },
+  { id: 'team-personal', name: '个人', mission: '管理个人长期 Agent 与配置资产。', boundary: 'Team 归属不自动授予文件、命令或网络权限。', memberAgentIds: [], sharedAssetIds: [] },
 ]
 
 export const initialAgents: FullAgent[] = [
@@ -292,9 +287,4 @@ export const initialPluginInstallations: PluginInstallation[] = [
 
 export const initialMemorySpaces: MemorySpace[] = [
   { id: 'mem-agent-zhouce', scopeType: 'Agent 长期', scopeKey: { kind: 'agent_long_term', agentId: 'zhouce' }, owner: '周策', revision: 'r18', path: '~/.bandi/agents/agt_zhouce/memory/long-term.md', content: '长期记忆内容' },
-]
-
-
-export const initialBackupSnapshots: BackupSnapshot[] = [
-  { id: 'snap-demo-001', createdAt: '今天 09:30', kind: '手动演示', scope: { kind: 'team', teamId: 'xinghe' }, includes: ['Agent 配置', '组织关系', '共享资产', '正式记忆'], excludes: ['凭据', 'Token', '钥匙串', '聊天与执行过程'], localPath: '~/.bandi/backups/snap-demo-001', deviceName: '当前设备（演示）', hash: 'demo-a84f2c1', integrity: 'demo-verified', remoteStatus: 'private-git-not-connected', includesFormalMemory: true },
 ]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restore-portable-snapshot"
+description = "Enables the restore_portable_snapshot command without any pre-configured scope."
+commands.allow = ["restore_portable_snapshot"]
+
+[[permission]]
+identifier = "deny-restore-portable-snapshot"
+description = "Denies the restore_portable_snapshot command without any pre-configured scope."
+commands.deny = ["restore_portable_snapshot"]

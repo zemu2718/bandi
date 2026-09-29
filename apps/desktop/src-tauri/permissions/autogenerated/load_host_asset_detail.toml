@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-load-host-asset-detail"
+description = "Enables the load_host_asset_detail command without any pre-configured scope."
+commands.allow = ["load_host_asset_detail"]
+
+[[permission]]
+identifier = "deny-load-host-asset-detail"
+description = "Denies the load_host_asset_detail command without any pre-configured scope."
+commands.deny = ["load_host_asset_detail"]

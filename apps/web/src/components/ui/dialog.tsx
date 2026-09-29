@@ -10,7 +10,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   title: string
   description?: string
-  children: ReactNode
+  children?: ReactNode
   footer?: ReactNode
   size?: DialogSize
   dismissible?: boolean
@@ -57,7 +57,7 @@ export function AppDialog({
             sizes[size],
           )}
         >
-          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-6 py-5 max-sm:px-4 max-sm:py-4">
+          <header className={cn('flex shrink-0 items-start justify-between gap-4 px-6 py-5 max-sm:px-4 max-sm:py-4', children && 'border-b border-border')}>
             <div className="min-w-0">
               <DialogPrimitive.Title className="text-lg font-semibold">{title}</DialogPrimitive.Title>
               {description && (
@@ -67,15 +67,15 @@ export function AppDialog({
               )}
             </div>
             {dismissible && <DialogPrimitive.Close
-              className="grid size-10 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:size-11"
+              className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="关闭"
             >
               <X size={18} aria-hidden="true" />
             </DialogPrimitive.Close>}
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 max-sm:p-4">{children}</div>
+          {children && <div className="min-h-0 flex-1 overflow-y-auto p-6 max-sm:p-4">{children}</div>}
           {footer && (
-            <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-muted/30 px-6 py-4 max-sm:px-4 [&>*]:max-sm:flex-1">
+            <footer className={cn('flex shrink-0 flex-wrap justify-end gap-2 px-6 py-4 max-sm:px-4 [&>*]:max-sm:flex-1', children && 'border-t border-border bg-muted/30', !children && 'pt-1')}>
               {footer}
             </footer>
           )}

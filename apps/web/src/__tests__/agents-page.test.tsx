@@ -34,10 +34,10 @@ describe('Agents 列表入口', () => {
 
   it('首次空状态隐藏筛选并就近提供创建与导入入口', () => {
     renderAgents({ ...initialState, agents: [], agentDiagnostics: [] })
-    expect(screen.getByText('当前 Team 还没有 Agent')).toBeInTheDocument()
-    expect(screen.getByText('添加一个长期 Agent，或导入已有配置。')).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: '添加 Agent' })).toHaveLength(1)
-    expect(screen.getAllByRole('link', { name: '导入已有 Agent' })).toHaveLength(1)
+    expect(screen.getByText(`${initialState.teams.find((team) => team.id === initialState.currentTeamId)?.name}还没有 Agent`)).toBeInTheDocument()
+    expect(screen.getByText('新建一个长期 Agent，或导入已有配置。')).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: '新建 Agent' })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: '导入 Agent' })).toHaveLength(1)
     expect(screen.queryByRole('textbox', { name: '搜索 Agent' })).not.toBeInTheDocument()
   })
 
@@ -48,9 +48,18 @@ describe('Agents 列表入口', () => {
     expect(screen.queryByText(/显示 .* 个/)).not.toBeInTheDocument()
   })
 
+  it('无职能时卡片不显示未分类占位', () => {
+    const agents = initialState.agents.map((agent) => agent.teamId === initialState.currentTeamId
+      ? { ...agent, functionId: undefined }
+      : agent)
+    renderAgents({ ...initialState, agents })
+
+    expect(screen.queryByText('未分类')).not.toBeInTheDocument()
+  })
+
   it('中等数量只显示搜索，大量 Agent 再显示筛选入口', () => {
     const medium = renderAgents({ ...initialState, agents: repeatAgents(6) })
-    expect(screen.getByRole('textbox', { name: '搜索 Agent' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '搜索 Agent' })).toHaveAttribute('placeholder', '搜索名称、职能或职责说明')
     expect(screen.queryByRole('button', { name: '筛选' })).not.toBeInTheDocument()
     medium.unmount()
 
@@ -63,6 +72,30 @@ describe('Agents 列表入口', () => {
     expect(screen.getByRole('combobox', { name: '使用状态' })).toBeInTheDocument()
   })
 
+  it('可按当前 Team 的自定义职能搜索和筛选', () => {
+    const agents = repeatAgents(16).map((agent, index) => index < 2 ? { ...agent, functionId: '开发者体验' } : agent)
+    const other = { ...agents[0], id: 'other-agent', name: '其他 Team Agent', teamId: 'team-other', functionId: '安全审计' }
+    const state = {
+      ...initialState,
+      teams: [...initialState.teams, { ...initialState.teams[0], id: 'team-other', name: '其他 Team' }],
+      agents: [...agents, other],
+    }
+    const filtered = renderAgents(state, '/agents?function=开发者体验')
+
+    const functionFilter = screen.getByRole('combobox', { name: '职能' })
+    expect(within(functionFilter).getAllByRole('option', { name: '开发者体验' })).toHaveLength(1)
+    expect(within(functionFilter).queryByRole('option', { name: '安全审计' })).not.toBeInTheDocument()
+    expect(screen.getByText('Agent 0')).toBeInTheDocument()
+    expect(screen.getByText('Agent 1')).toBeInTheDocument()
+    expect(screen.queryByText('Agent 2')).not.toBeInTheDocument()
+    filtered.unmount()
+
+    renderAgents(state, '/agents?q=开发者体验')
+    expect(screen.getByText('Agent 0')).toBeInTheDocument()
+    expect(screen.getByText('Agent 1')).toBeInTheDocument()
+    expect(screen.queryByText('Agent 2')).not.toBeInTheDocument()
+  })
+
   it('筛选无结果时只提供一处清除操作和一处结果数', () => {
     renderAgents(initialState, '/agents?q=不存在的Agent')
     expect(screen.getByText('没有匹配的 Agent')).toBeInTheDocument()
@@ -70,9 +103,11 @@ describe('Agents 列表入口', () => {
     expect(screen.getByText('找到 0 个 Agent')).toBeInTheDocument()
   })
 
-  it('Agent 名称固定进入概览，异常状态单独进入处理位置', () => {
+  it('整张 Agent 卡片进入概览，异常状态单独进入处理位置', () => {
     renderAgents()
-    expect(screen.getByRole('link', { name: '查看 周策 Agent 详情' })).toHaveAttribute('href', '/agents/zhouce')
+    const detailLink = screen.getByRole('link', { name: '查看 周策 Agent 详情' })
+    expect(detailLink).toHaveAttribute('href', '/agents/zhouce')
+    expect(detailLink).toHaveClass('absolute', 'inset-0')
     expect(screen.getByRole('link', { name: '处理 周策 的外部有修改' })).toHaveAttribute('href', '/agents/zhouce?tab=package&path=instructions.md&view=preview')
     expect(screen.getAllByText('配置正常').every((status) => status.closest('a') === null)).toBe(true)
   })
@@ -106,6 +141,7 @@ describe('Agents 列表入口', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: '更多操作：知衡' }), {
       key: 'Enter',
     })
+    expect(screen.getByRole('menuitem', { name: '编辑 Agent' })).toHaveAttribute('href', '/agents/zhiheng?tab=identity&edit=1')
     expect(screen.getByRole('menuitem', { name: '停用 Agent' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: '归档 Agent' })).toBeInTheDocument()
   })

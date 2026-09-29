@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-upload-portable-snapshot"
+description = "Enables the upload_portable_snapshot command without any pre-configured scope."
+commands.allow = ["upload_portable_snapshot"]
+
+[[permission]]
+identifier = "deny-upload-portable-snapshot"
+description = "Denies the upload_portable_snapshot command without any pre-configured scope."
+commands.deny = ["upload_portable_snapshot"]

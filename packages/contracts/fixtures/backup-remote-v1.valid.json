@@ -1,0 +1,5 @@
+{
+  "overview": {"github":{"status":"connected","login":"bandi-user"},"repository":{"owner":"bandi-user","name":"bandi-backup","repositoryId":42},"automaticBackupEnabled":true,"includeMemory":false,"lastSuccessfulBackupAt":"2026-09-01T08:00:00Z","capabilities":{"portableRestore":true}},
+  "history": [{"snapshotId":"portable-snapshot-1","createdAt":"2026-09-01T08:00:00Z","includeMemory":false,"entryCount":1,"totalBytes":12,"manifestHash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"uploaded","commitOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","uploadedAt":"2026-09-01T08:01:00Z"}],
+  "uploadResult": {"snapshotId":"portable-snapshot-1","commitOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","uploadedAt":"2026-09-01T08:01:00Z"}
+}

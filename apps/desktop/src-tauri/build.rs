@@ -18,6 +18,19 @@ const COMMANDS: &[&str] = &[
     "restart_after_factory_reset",
     "create_backup_snapshot",
     "list_backup_snapshots",
+    "create_portable_snapshot",
+    "list_portable_snapshots",
+    "get_backup_overview",
+    "start_github_device_flow",
+    "poll_github_device_flow",
+    "disconnect_github",
+    "create_private_backup_repository",
+    "connect_private_backup_repository",
+    "disconnect_remote_backup_repository",
+    "upload_portable_snapshot",
+    "set_remote_memory_policy",
+    "set_automatic_remote_backup",
+    "list_remote_backup_history",
     "preview_backup_restore",
     "restore_backup_snapshot",
     "discover_config",
@@ -39,6 +52,11 @@ const COMMANDS: &[&str] = &[
     "reveal_ai_tool_config_location",
     "preview_ai_tool_upgrade",
     "commit_ai_tool_upgrade",
+    "get_host_asset_catalog",
+    "scan_host_assets",
+    "load_host_asset_detail",
+    "preview_host_asset_action",
+    "commit_host_asset_action",
     "request_client_launch_v3",
     "import_ui_asset",
     "read_ui_asset",
@@ -60,6 +78,8 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
+    // Client ID 是公开构建配置，但必须在每次环境变化时重新编译注入。
+    println!("cargo:rerun-if-env-changed=BANDI_GITHUB_CLIENT_ID");
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),

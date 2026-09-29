@@ -1327,22 +1327,12 @@ pub(crate) fn project_managed_agent_at(
     let manifest = manifest
         .as_object()
         .ok_or_else(|| "AGENT_CANONICAL_INVALID: agent.yaml 必须是对象".to_string())?;
-    if manifest.get("functionId").is_some_and(|value| {
-        !matches!(
-            value.as_str(),
-            Some(
-                "product"
-                    | "design"
-                    | "engineering"
-                    | "testing"
-                    | "research"
-                    | "operations"
-                    | "general"
-                    | "other"
-            )
-        )
-    }) {
-        return Err("AGENT_CANONICAL_INVALID: agent.yaml 职能标识不受支持".into());
+    if let Some(function_id) = manifest.get("functionId") {
+        let function_id = function_id
+            .as_str()
+            .ok_or_else(|| "AGENT_CANONICAL_INVALID: agent.yaml 职能标识不受支持".to_string())?;
+        crate::agent_service::validate_agent_function_id(function_id)
+            .map_err(|_| "AGENT_CANONICAL_INVALID: agent.yaml 职能标识不受支持".to_string())?;
     }
     const IDENTITY_FIELDS: &[&str] = &[
         "id",

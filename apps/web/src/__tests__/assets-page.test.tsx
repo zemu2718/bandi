@@ -37,13 +37,13 @@ describe('资产索引', () => {
     expect(screen.queryByText('skills.yaml')).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '概览 1' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Skills 1' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '扫描资产' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '导入文件' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '刷新 Bandi 资产' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '导入资产' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '新增资产' })).toBeInTheDocument()
     fireEvent.click(screen.getByText('代码审查'))
     expect(screen.getByText('1 个 Agent 使用')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '周策' })).toHaveAttribute('href', '/agents/zhouce?tab=skills&asset=shared-review')
-    fireEvent.click(screen.getByRole('button', { name: '扫描资产' }))
+    fireEvent.click(screen.getByRole('button', { name: '刷新 Bandi 资产' }))
     await waitFor(() => expect(discover).toHaveBeenCalledTimes(2))
     expect(discover).toHaveBeenCalledWith({ requestId: 'discover-assets' })
   })
@@ -65,7 +65,13 @@ describe('资产索引', () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue(result({ sharedAssets: [], references: [] }))
     renderPage()
-    expect(await screen.findByText('共享资产池还是空的')).toBeInTheDocument()
+    expect(await screen.findByText('星河科技还没有资产')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '新增资产' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '导入资产' })).toHaveLength(1)
+    expect(screen.getByRole('tab', { name: 'Bandi 资产' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: '概览 0' })).not.toBeInTheDocument()
+    expect(screen.queryByText('全部资产')).not.toBeInTheDocument()
+    expect(screen.queryByText('关于 Bandi 资产')).not.toBeInTheDocument()
     expect(screen.queryByText('当前 Team 还没有 Agent')).not.toBeInTheDocument()
   })
 
@@ -73,8 +79,8 @@ describe('资产索引', () => {
     vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
     const discover = vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue(result({ sharedAssets: [], references: [] }))
     const create = vi.spyOn(desktopBridge, 'createSharedAsset').mockResolvedValue({ kind: 'saved', requestId: 'create', asset: result().sharedAssets[0], revision: {} as never, writeReceipt: {} as never })
-    renderPage(); await screen.findByText('共享资产池还是空的')
-    fireEvent.click(screen.getAllByRole('button', { name: '新增资产' })[0])
+    renderPage(); await screen.findByText('星河科技还没有资产')
+    fireEvent.click(screen.getByRole('button', { name: '新增资产' }))
     expect(screen.getByLabelText('类型')).toBeInTheDocument(); expect(screen.getByLabelText('名称')).toBeInTheDocument(); expect(screen.getByLabelText('稳定标识')).toBeInTheDocument(); expect(screen.getByLabelText('正文')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '创建资产' }))
     expect(screen.getByRole('alert')).toHaveTextContent('请填写名称')
@@ -82,6 +88,45 @@ describe('资产索引', () => {
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: '代码审查' } }); fireEvent.change(screen.getByLabelText('稳定标识'), { target: { value: 'skill-review' } }); fireEvent.change(screen.getByLabelText('正文'), { target: { value: '# Review' } }); fireEvent.click(screen.getByRole('button', { name: '创建资产' }))
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ teamId: 'xinghe', assetId: 'skill-review', kind: 'skill' })))
     await waitFor(() => expect(discover).toHaveBeenCalledTimes(2))
+  })
+
+  it('外部工具只在用户触发后扫描，展示 Logo 和可用操作，并在重扫失败时清除旧结果', async () => {
+    vi.spyOn(desktopBridge, 'isDesktopRuntime').mockReturnValue(true)
+    vi.spyOn(desktopBridge, 'discoverConfig').mockResolvedValue(result())
+    const capabilities = { canScan: true, canReadEntrypoint: true, canImportToBandi: true, canInstallFromBandi: false, canUpdateFromBandi: false }
+    vi.spyOn(desktopBridge, 'listHostAssetCatalog').mockResolvedValue({ tools: [
+      { toolId: 'claude-code', supportLevel: 'supported', reasonCode: 'supported', capabilities },
+      { toolId: 'claude-desktop', supportLevel: 'unsupported', reasonCode: 'official_ui_only', capabilities: { canScan: false, canReadEntrypoint: false, canImportToBandi: false, canInstallFromBandi: false, canUpdateFromBandi: false } },
+    ] })
+    const packageInfo = { containerKind: 'directory' as const, entrypoint: 'SKILL.md', packageFingerprint: hash, entrypointHash: hash, fileCount: 1, totalBytes: 128 }
+    const scan = vi.spyOn(desktopBridge, 'scanHostAssets')
+      .mockResolvedValueOnce({
+        requestId: 'scan-1', scanGeneration: 'generation-1', diagnostics: [],
+        tools: [{ toolId: 'claude-code', supportLevel: 'supported', reasonCode: 'supported', capabilities, checkState: 'ready', assetCount: 2, diagnostics: [] }],
+        assets: [
+          { hostInstanceId: 'instructions-1', toolId: 'claude-code', rootId: 'instructions', packageKey: 'CLAUDE.md', name: 'Claude Code Instructions', kind: 'instructions', relativeLocation: 'CLAUDE.md', package: { ...packageInfo, containerKind: 'file', entrypoint: 'CLAUDE.md' }, parseStatus: 'parsed', diagnostics: [] },
+          { hostInstanceId: 'skill-1', toolId: 'claude-code', rootId: 'skills', packageKey: 'review', name: '代码审查 Skill', kind: 'skill', relativeLocation: 'skills/review', package: packageInfo, parseStatus: 'parsed', diagnostics: [] },
+        ],
+      })
+      .mockRejectedValueOnce(new Error('scan failed'))
+    const { container } = renderPage('/assets?tab=external')
+    expect(await screen.findByText('尚未扫描外部工具')).toBeInTheDocument()
+    expect(screen.getByText(/不提供扫描/)).toBeInTheDocument()
+    expect(container.querySelectorAll('img')).toHaveLength(2)
+    expect(scan).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '扫描所选工具' }))
+    expect(await screen.findByText('代码审查 Skill')).toBeInTheDocument()
+    expect(scan).toHaveBeenCalledWith({ requestId: expect.any(String), toolIds: ['claude-code'] })
+    expect(screen.getByText('Claude Code Instructions')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '查看资产' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: '导入到 Bandi' })).toHaveLength(1)
+    expect(container.querySelectorAll('img')).toHaveLength(4)
+
+    fireEvent.click(screen.getByRole('button', { name: '重新扫描' }))
+    expect(await screen.findByText('扫描未完成')).toBeInTheDocument()
+    expect(screen.queryByText('代码审查 Skill')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '导入到 Bandi' })).not.toBeInTheDocument()
   })
 
   it('Web 保留明确的页面内存演示入口且不调用 discovery', () => {

@@ -19,6 +19,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
+      # GitHub OAuth Client ID 是公开标识；未配置时 Desktop 会明确保持不可用。
+      BANDI_GITHUB_CLIENT_ID: ${{ secrets.BANDI_GITHUB_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

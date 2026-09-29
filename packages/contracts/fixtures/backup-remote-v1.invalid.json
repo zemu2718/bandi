@@ -1,0 +1,5 @@
+{
+  "overview": {"github":{"status":"connected"},"repository":{"owner":"bandi-user","name":"backup","repositoryId":0},"automaticBackupEnabled":false,"includeMemory":false},
+  "history": [],
+  "uploadResult": {"snapshotId":"portable-snapshot-1","commitOid":"not-a-commit","uploadedAt":"2026-09-01T08:01:00Z"}
+}

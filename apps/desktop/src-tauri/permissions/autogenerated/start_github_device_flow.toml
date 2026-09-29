@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-github-device-flow"
+description = "Enables the start_github_device_flow command without any pre-configured scope."
+commands.allow = ["start_github_device_flow"]
+
+[[permission]]
+identifier = "deny-start-github-device-flow"
+description = "Denies the start_github_device_flow command without any pre-configured scope."
+commands.deny = ["start_github_device_flow"]

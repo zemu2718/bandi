@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-private-backup-repository"
+description = "Enables the create_private_backup_repository command without any pre-configured scope."
+commands.allow = ["create_private_backup_repository"]
+
+[[permission]]
+identifier = "deny-create-private-backup-repository"
+description = "Denies the create_private_backup_repository command without any pre-configured scope."
+commands.deny = ["create_private_backup_repository"]

@@ -1,0 +1,13 @@
+{
+  "tools": [
+    {"toolId":"claude-code","supportLevel":"supported","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"},
+    {"toolId":"claude-desktop","supportLevel":"unsupported","capabilities":{"canScan":false,"canReadEntrypoint":false,"canImportToBandi":false,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"no_safe_asset_root"},
+    {"toolId":"codex","supportLevel":"degraded","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"},
+    {"toolId":"gemini-cli","supportLevel":"degraded","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"},
+    {"toolId":"grok-build","supportLevel":"degraded","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"},
+    {"toolId":"opencode","supportLevel":"degraded","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"},
+    {"toolId":"openclaw","supportLevel":"degraded","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"},
+    {"toolId":"hermes","supportLevel":"degraded","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"},
+    {"toolId":"pi","supportLevel":"degraded","capabilities":{"canScan":true,"canReadEntrypoint":true,"canImportToBandi":true,"canInstallFromBandi":false,"canUpdateFromBandi":false},"reasonCode":"fixed_roots_read_only"}
+  ]
+}

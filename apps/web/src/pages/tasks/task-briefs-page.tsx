@@ -22,6 +22,7 @@ export function TaskBriefsPage() {
   const [archivingId, setArchivingId] = useState<string>()
   const [archiveError, setArchiveError] = useState<UserFacingError>()
   const teamTasks = state.taskBriefs.filter((item) => item.teamId === state.currentTeamId)
+  const currentTeamName = state.teams.find((team) => team.id === state.currentTeamId)?.name ?? '当前 Team'
   const active = teamTasks.filter((item) => !item.archivedAt)
   const archived = teamTasks.filter((item) => item.archivedAt)
   const visibleTasks = view === 'active' ? active : archived
@@ -51,14 +52,14 @@ export function TaskBriefsPage() {
   }
   const createAction = <Button onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" />新建需求</Button>
 
-  return <><PageHeader title="需求池" description="整理当前 Team 的需求，供外部 AI 编程工具使用。" action={teamTasks.length ? createAction : undefined} />
+  return <><PageHeader title="需求池" description="整理目标、背景和要求。" action={teamTasks.length ? createAction : undefined} />
     {teamTasks.length ? <section className="panel min-w-0 overflow-hidden" aria-label="需求池工作区">
       <EntityTabs tabs={[{ id: 'active', label: `当前 ${active.length}` }, { id: 'archived', label: `已归档 ${archived.length}` }]} active={view} onChange={(id) => selectView(id as TaskBriefView)} scope="task-briefs" ariaLabel="需求分类" className="mb-0 px-2 [&_[role=tab]]:border-b-0" />
       <div id={`task-briefs-panel-${view}`} role="tabpanel" aria-labelledby={`task-briefs-tab-${view}`} className="min-w-0 lg:grid lg:min-h-96 lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]">
         <aside className={`${showMobileDetail ? 'hidden' : 'block'} min-w-0 border-border lg:block lg:border-r`} aria-label={`${view === 'active' ? '当前' : '已归档'}需求列表`}><TaskBriefList items={visibleTasks} selectedId={selected?.id} onSelect={selectTaskBrief} /></aside>
         <div className={`${showMobileDetail ? 'block' : 'hidden'} min-w-0 lg:block`}>{selected ? <TaskBriefDetail item={selected} onBack={() => setShowMobileDetail(false)} onEdit={() => setEditing(selected)} onArchive={() => void archive(selected)} archiving={archivingId === selected.id} error={archiveError} /> : <div className="flex min-h-72 items-center justify-center p-8 text-center text-sm text-muted-foreground">{view === 'active' ? '当前没有需求' : '没有已归档需求'}</div>}</div>
       </div>
-    </section> : <div className="first-use-empty grid place-items-center"><EmptyState className="w-full max-w-lg border-0" title="还没有需求" action={createAction} /></div>}
+    </section> : <section className="panel grid min-h-80 place-items-center p-6"><EmptyState className="w-full max-w-2xl border-0" title={`${currentTeamName}还没有需求`} description="新建一份需求，记录目标、背景和任务要求。" action={createAction} /></section>}
     {(creating || editing) && <TaskBriefForm initial={editing ?? undefined} teamId={state.currentTeamId} desktop={desktop} onClose={() => { setCreating(false); setEditing(null) }} onSaved={(taskBrief) => { dispatch({ type: 'UPSERT_TASK_BRIEF', taskBrief }); setView(taskBrief.archivedAt ? 'archived' : 'active'); setSelectedTaskBriefId(taskBrief.id); setCreating(false); setEditing(null) }} onRemoved={(taskBriefId) => { dispatch({ type: 'REMOVE_TASK_BRIEF', taskBriefId }); setSelectedTaskBriefId(undefined); setShowMobileDetail(false); setEditing(null) }} />}
     {!desktop && <div className="mt-5"><MockBoundaryNote /></div>}
   </>

@@ -2,6 +2,8 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    sync::Mutex,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use chrono::Utc;
@@ -13,19 +15,174 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 mod agent_service;
 mod ai_adapters;
+mod ai_tool_cache;
 mod ai_tool_host;
 mod ai_tool_versions;
+mod asset_package;
 mod backup_service;
 mod claude_agent_import;
 pub mod cli_service;
 mod config_fs;
 mod domain_store;
 mod factory_reset;
+mod host_assets;
 mod local_service;
 mod memory_history;
 mod memory_service;
 mod memory_target;
 mod shared_assets;
+
+struct RemoteRuntime {
+    client: reqwest::Client,
+    flows: Mutex<backup_service::DeviceFlowStore>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupOverviewDto {
+    github: GithubConnectionDto,
+    repository: Option<backup_service::RemoteRepositoryState>,
+    automatic_backup_enabled: bool,
+    include_memory: bool,
+    last_successful_backup_at: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GithubConnectionDto {
+    status: String,
+    login: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RequestIdOnly {
+    request_id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PollGithubRequest {
+    request_id: String,
+    flow_id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreateRepositoryCommand {
+    request_id: String,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ConnectRepositoryCommand {
+    request_id: String,
+    owner: String,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UploadPortableCommand {
+    request_id: String,
+    snapshot_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MemoryPolicyCommand {
+    request_id: String,
+    include_memory: bool,
+    confirmed: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AutomaticBackupCommand {
+    request_id: String,
+    enabled: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteUploadDto {
+    snapshot_id: String,
+    commit_oid: String,
+    uploaded_at: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteHistoryItemDto {
+    snapshot_id: String,
+    created_at: String,
+    include_memory: bool,
+    entry_count: u64,
+    total_bytes: u64,
+    manifest_hash: String,
+    status: String,
+    commit_oid: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GithubFlowDto {
+    flow_id: String,
+    user_code: String,
+    verification_uri: String,
+    expires_at: String,
+    interval: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GithubPollDto {
+    status: String,
+    login: Option<String>,
+    retry_after_epoch_seconds: Option<u64>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteRepositoryDto {
+    owner: String,
+    name: String,
+    repository_id: u64,
+}
+
+fn require_request_id(value: &str) -> Result<(), String> {
+    validate_identifier(value)
+        .then_some(())
+        .ok_or_else(|| "备份请求标识无效".into())
+}
+
+fn remote_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join("remote-backup"))
+        .map_err(|_| "REMOTE_BACKUP_STORAGE_UNAVAILABLE: 无法访问远程备份目录".into())
+}
+
+fn remote_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(remote_root(app)?.join("state.json"))
+}
+fn remote_workspace_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(remote_root(app)?.join("workspace"))
+}
+fn now_epoch_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn github_client_id_configured() -> bool {
+    option_env!("BANDI_GITHUB_CLIENT_ID").is_some_and(|value| {
+        (8..=128).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    })
+}
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,9 +193,9 @@ struct UiAsset {
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AgentPackageFile {
-    path: String,
-    content: String,
+pub(crate) struct AgentPackageFile {
+    pub(crate) path: String,
+    pub(crate) content: String,
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -439,6 +596,7 @@ fn create_shared_asset(
         &revisions_root(&app)?.join("shared-assets"),
         request,
         shared_assets::SharedAssetSourceDto::Authored,
+        None,
     )
 }
 
@@ -447,7 +605,12 @@ fn select_shared_asset_import(
     app: tauri::AppHandle,
     request: shared_assets::SelectSharedAssetImportRequest,
 ) -> Result<Option<shared_assets::SharedAssetImportPreviewDto>, String> {
-    let Some(selected) = app.dialog().file().blocking_pick_file() else {
+    let selected = if request.kind == "skill" {
+        app.dialog().file().blocking_pick_folder()
+    } else {
+        app.dialog().file().blocking_pick_file()
+    };
+    let Some(selected) = selected else {
         return Ok(None);
     };
     let path = selected
@@ -572,6 +735,13 @@ fn backup_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|_| "BACKUP_STORAGE_UNAVAILABLE: 无法访问本地快照目录".to_string())
 }
 
+fn portable_backup_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join("portable-backups"))
+        .map_err(|_| "PORTABLE_SNAPSHOT_STORAGE_FAILED: 无法访问便携快照目录".to_string())
+}
+
 fn revisions_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -631,7 +801,8 @@ fn restart_after_factory_reset(app: tauri::AppHandle) -> Result<(), String> {
     }
     #[cfg(all(not(feature = "e2e"), not(debug_assertions)))]
     {
-        app.request_restart()
+        app.request_restart();
+        Ok(())
     }
 }
 
@@ -654,6 +825,66 @@ fn list_backup_snapshots(
     app: tauri::AppHandle,
 ) -> Result<Vec<backup_service::BackupSnapshotDto>, String> {
     backup_service::list_snapshots_at(&domain_database_path(&app)?)
+}
+
+#[tauri::command]
+fn create_portable_snapshot(
+    app: tauri::AppHandle,
+    request: backup_service::CreatePortableSnapshotRequest,
+) -> Result<backup_service::PortableSnapshotManifestV1, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    backup_service::create_portable_snapshot_at(
+        &domain_database_path(&app)?,
+        &managed_agents_root(&app)?,
+        &shared_assets_root(&app)?,
+        &portable_backup_root(&app)?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn list_portable_snapshots(
+    app: tauri::AppHandle,
+) -> Result<Vec<backup_service::PortableSnapshotSummaryDto>, String> {
+    backup_service::list_portable_snapshots_at(&portable_backup_root(&app)?)
+}
+
+#[tauri::command]
+fn preview_portable_restore(
+    app: tauri::AppHandle,
+    request: backup_service::PortableRestoreRequest,
+) -> Result<backup_service::PortableRestorePreviewDto, String> {
+    backup_service::preview_portable_restore_at(
+        &portable_backup_root(&app)?,
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "无法访问恢复预览目录")?
+            .join("portable-restore-previews"),
+        &request,
+    )
+}
+
+#[tauri::command]
+fn restore_portable_snapshot(
+    app: tauri::AppHandle,
+    request: backup_service::PortableRestoreRequest,
+) -> Result<backup_service::PortableRestoreResultDto, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    backup_service::restore_portable_snapshot_at(
+        &domain_database_path(&app)?,
+        &portable_backup_root(&app)?,
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "无法访问恢复预览目录")?
+            .join("portable-restore-previews"),
+        &managed_agents_root(&app)?,
+        &shared_assets_root(&app)?,
+        &app.path()
+            .app_data_dir()
+            .map_err(|_| "无法访问版本目录")?
+            .join("memory-revisions"),
+        request,
+    )
 }
 
 #[tauri::command]
@@ -682,6 +913,424 @@ fn restore_backup_snapshot(
         &backup_root(&app)?,
         request,
     )
+}
+
+async fn overview(app: &tauri::AppHandle) -> Result<BackupOverviewDto, String> {
+    let state = backup_service::load_remote_state(&remote_state_path(app)?)?;
+    let github = match backup_service::load_github_account(&backup_runtime(app)?.client).await {
+        Ok(account) => GithubConnectionDto {
+            status: "connected".into(),
+            login: Some(account.login),
+            reason: None,
+        },
+        Err(reason) => {
+            let configured = github_client_id_configured();
+            GithubConnectionDto {
+                status: if configured {
+                    "disconnected"
+                } else {
+                    "unavailable"
+                }
+                .into(),
+                login: None,
+                reason: Some(if configured {
+                    reason
+                } else {
+                    "此 Desktop 构建未启用 GitHub 远程备份，请使用已配置 GitHub OAuth 的构建版本"
+                        .into()
+                }),
+            }
+        }
+    };
+    Ok(BackupOverviewDto {
+        github,
+        repository: state.repository,
+        automatic_backup_enabled: state.automatic.enabled,
+        include_memory: state.include_agent_memory,
+        last_successful_backup_at: state.automatic.last_success_at,
+    })
+}
+
+fn backup_runtime(app: &tauri::AppHandle) -> Result<tauri::State<'_, RemoteRuntime>, String> {
+    app.try_state::<RemoteRuntime>()
+        .ok_or_else(|| "远程备份运行状态不可用".into())
+}
+
+const AUTOMATIC_BACKUP_INTERVAL: Duration = Duration::from_secs(300);
+
+fn has_local_changes(database: &Path, agents: &Path, assets: &Path, since: Option<u64>) -> bool {
+    let Some(since) = since else { return true };
+    [database, agents, assets].iter().any(|root| {
+        fs::metadata(root)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map_or(true, |time| time.as_secs() > since)
+    })
+}
+
+fn start_automatic_backup_scheduler(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(AUTOMATIC_BACKUP_INTERVAL);
+        if let Err(reason) = tauri::async_runtime::block_on(run_automatic_backup(&app)) {
+            eprintln!("自动远程备份未完成：{reason}");
+        }
+    });
+}
+
+async fn run_automatic_backup(app: &tauri::AppHandle) -> Result<(), String> {
+    let state_path = remote_state_path(app)?;
+    let state = backup_service::load_remote_state(&state_path)?;
+    let repository = state
+        .repository
+        .clone()
+        .ok_or_else(|| "自动远程备份尚未连接仓库".to_string())?;
+    let last_success = state
+        .automatic
+        .last_success_at
+        .as_deref()
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.timestamp().max(0) as u64);
+    let local_changes = has_local_changes(
+        &domain_database_path(app)?,
+        &managed_agents_root(app)?,
+        &shared_assets_root(app)?,
+        last_success,
+    );
+    if !backup_service::automatic_backup_due(
+        state.automatic.enabled,
+        true,
+        backup_service::load_access_token().is_ok(),
+        false,
+        local_changes,
+        now_epoch_seconds(),
+        last_success,
+        AUTOMATIC_BACKUP_INTERVAL.as_secs(),
+    ) {
+        return Ok(());
+    }
+    let database = domain_database_path(app)?;
+    let agents = managed_agents_root(app)?;
+    let assets = shared_assets_root(app)?;
+    let snapshots = portable_backup_root(app)?;
+    let workspace = remote_workspace_path(app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _mutation = factory_reset::mutation_guard()?;
+        let manifest = backup_service::create_portable_snapshot_at(
+            &database,
+            &agents,
+            &assets,
+            &snapshots,
+            backup_service::CreatePortableSnapshotRequest {
+                request_id: format!("automatic-{}", now_epoch_seconds()),
+                include_memory: state.include_agent_memory,
+            },
+        )?;
+        let result = backup_service::push_portable_snapshot(
+            &workspace,
+            &snapshots.join(&manifest.snapshot_id),
+            &manifest.snapshot_id,
+            &repository.owner,
+            &repository.name,
+            state.last_remote_head.as_deref(),
+        )?;
+        let mut next = state;
+        next.last_remote_head = Some(result.commit_id);
+        next.automatic.last_snapshot_id = Some(manifest.snapshot_id);
+        next.automatic.last_success_at = Some(Utc::now().to_rfc3339());
+        backup_service::store_remote_state(&state_path, &next)
+    })
+    .await
+    .map_err(|_| "自动远程备份任务异常终止".to_string())?
+}
+
+#[tauri::command]
+async fn get_backup_overview(app: tauri::AppHandle) -> Result<BackupOverviewDto, String> {
+    overview(&app).await
+}
+
+#[tauri::command]
+async fn start_github_device_flow(
+    app: tauri::AppHandle,
+    request: RequestIdOnly,
+) -> Result<GithubFlowDto, String> {
+    require_request_id(&request.request_id)?;
+    let runtime = backup_runtime(&app)?;
+    let result = backup_service::start_device_flow(
+        &runtime.client,
+        &runtime.flows,
+        option_env!("BANDI_GITHUB_CLIENT_ID").filter(|_| github_client_id_configured()),
+        now_epoch_seconds(),
+    )
+    .await?;
+    Ok(GithubFlowDto {
+        flow_id: result.flow_id,
+        user_code: result.user_code,
+        verification_uri: result.verification_uri,
+        expires_at: chrono::DateTime::from_timestamp(result.expires_at_epoch_seconds as i64, 0)
+            .ok_or_else(|| "登录流程时间无效".to_string())?
+            .to_rfc3339(),
+        interval: result.interval_seconds,
+    })
+}
+
+#[tauri::command]
+async fn poll_github_device_flow(
+    app: tauri::AppHandle,
+    request: PollGithubRequest,
+) -> Result<GithubPollDto, String> {
+    require_request_id(&request.request_id)?;
+    let runtime = backup_runtime(&app)?;
+    let result = backup_service::poll_device_flow(
+        &runtime.client,
+        &runtime.flows,
+        option_env!("BANDI_GITHUB_CLIENT_ID").filter(|_| github_client_id_configured()),
+        &request.flow_id,
+        now_epoch_seconds(),
+    )
+    .await?;
+    Ok(match result {
+        backup_service::DeviceFlowPollDto::Pending {
+            retry_after_epoch_seconds,
+        } => GithubPollDto {
+            status: "pending".into(),
+            login: None,
+            retry_after_epoch_seconds: Some(retry_after_epoch_seconds),
+        },
+        backup_service::DeviceFlowPollDto::SlowDown {
+            retry_after_epoch_seconds,
+        } => GithubPollDto {
+            status: "slow_down".into(),
+            login: None,
+            retry_after_epoch_seconds: Some(retry_after_epoch_seconds),
+        },
+        backup_service::DeviceFlowPollDto::Authorized { account } => GithubPollDto {
+            status: "authorized".into(),
+            login: Some(account.login),
+            retry_after_epoch_seconds: None,
+        },
+        backup_service::DeviceFlowPollDto::Expired => GithubPollDto {
+            status: "expired".into(),
+            login: None,
+            retry_after_epoch_seconds: None,
+        },
+        backup_service::DeviceFlowPollDto::Denied => GithubPollDto {
+            status: "denied".into(),
+            login: None,
+            retry_after_epoch_seconds: None,
+        },
+    })
+}
+
+#[tauri::command]
+fn disconnect_github(_app: tauri::AppHandle, request: RequestIdOnly) -> Result<(), String> {
+    require_request_id(&request.request_id)?;
+    backup_service::delete_access_token()
+}
+
+#[tauri::command]
+async fn create_private_backup_repository(
+    app: tauri::AppHandle,
+    request: CreateRepositoryCommand,
+) -> Result<RemoteRepositoryDto, String> {
+    require_request_id(&request.request_id)?;
+    let runtime = backup_runtime(&app)?;
+    let repo = backup_service::create_private_repository(
+        &runtime.client,
+        backup_service::CreatePrivateRepositoryRequest {
+            name: request.name,
+            private: true,
+            auto_init: true,
+        },
+    )
+    .await?;
+    let _mutation = factory_reset::mutation_guard()?;
+    let state = backup_service::RemoteBackupState {
+        repository: Some(backup_service::RemoteRepositoryState {
+            owner: repo.owner.clone(),
+            name: repo.name.clone(),
+            repository_id: repo.id,
+        }),
+        ..backup_service::load_remote_state(&remote_state_path(&app)?)?
+    };
+    backup_service::store_remote_state(&remote_state_path(&app)?, &state)?;
+    Ok(RemoteRepositoryDto {
+        owner: repo.owner,
+        name: repo.name,
+        repository_id: repo.id,
+    })
+}
+
+#[tauri::command]
+async fn connect_private_backup_repository(
+    app: tauri::AppHandle,
+    request: ConnectRepositoryCommand,
+) -> Result<RemoteRepositoryDto, String> {
+    require_request_id(&request.request_id)?;
+    let runtime = backup_runtime(&app)?;
+    let repo =
+        backup_service::connect_private_repository(&runtime.client, &request.owner, &request.name)
+            .await?;
+    let _mutation = factory_reset::mutation_guard()?;
+    let state = backup_service::RemoteBackupState {
+        repository: Some(backup_service::RemoteRepositoryState {
+            owner: repo.owner.clone(),
+            name: repo.name.clone(),
+            repository_id: repo.id,
+        }),
+        ..backup_service::load_remote_state(&remote_state_path(&app)?)?
+    };
+    backup_service::store_remote_state(&remote_state_path(&app)?, &state)?;
+    Ok(RemoteRepositoryDto {
+        owner: repo.owner,
+        name: repo.name,
+        repository_id: repo.id,
+    })
+}
+
+#[tauri::command]
+fn disconnect_remote_backup_repository(
+    app: tauri::AppHandle,
+    request: RequestIdOnly,
+) -> Result<(), String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    require_request_id(&request.request_id)?;
+    let mut state = backup_service::load_remote_state(&remote_state_path(&app)?)?;
+    state.repository = None;
+    state.last_remote_head = None;
+    state.automatic.enabled = false;
+    backup_service::store_remote_state(&remote_state_path(&app)?, &state)
+}
+
+#[tauri::command]
+fn list_remote_backup_history(app: tauri::AppHandle) -> Result<Vec<RemoteHistoryItemDto>, String> {
+    let state = backup_service::load_remote_state(&remote_state_path(&app)?)?;
+    let snapshots = backup_service::list_portable_snapshots_at(&portable_backup_root(&app)?)?;
+    let commits =
+        backup_service::list_remote_history(&remote_workspace_path(&app)?).unwrap_or_default();
+    Ok(snapshots
+        .into_iter()
+        .map(|snapshot| RemoteHistoryItemDto {
+            snapshot_id: snapshot.snapshot_id.clone(),
+            created_at: snapshot.created_at,
+            include_memory: snapshot.include_memory,
+            entry_count: snapshot.entry_count,
+            total_bytes: snapshot.total_bytes,
+            manifest_hash: snapshot.manifest_hash,
+            status: if state.failed_snapshot_id.as_deref() == Some(snapshot.snapshot_id.as_str()) {
+                "failed".into()
+            } else if state.pending_snapshot_id.as_deref() == Some(snapshot.snapshot_id.as_str())
+                || state.in_flight_snapshot_id.as_deref() == Some(snapshot.snapshot_id.as_str())
+            {
+                "pending_upload".into()
+            } else if state.automatic.last_snapshot_id.as_deref()
+                == Some(snapshot.snapshot_id.as_str())
+                && commits.contains_key(&snapshot.snapshot_id)
+                && !state.remote_conflict
+            {
+                "uploaded".into()
+            } else {
+                "pending_upload".into()
+            },
+            commit_oid: commits.get(&snapshot.snapshot_id).cloned(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+async fn set_remote_memory_policy(
+    app: tauri::AppHandle,
+    request: MemoryPolicyCommand,
+) -> Result<BackupOverviewDto, String> {
+    require_request_id(&request.request_id)?;
+    if request.include_memory && !request.confirmed {
+        return Err("启用 Agent 长期记忆备份必须单独确认".into());
+    }
+    let mut state = backup_service::load_remote_state(&remote_state_path(&app)?)?;
+    state.include_agent_memory = request.include_memory;
+    backup_service::store_remote_state(&remote_state_path(&app)?, &state)?;
+    overview(&app).await
+}
+
+#[tauri::command]
+async fn set_automatic_remote_backup(
+    app: tauri::AppHandle,
+    request: AutomaticBackupCommand,
+) -> Result<BackupOverviewDto, String> {
+    require_request_id(&request.request_id)?;
+    let mut state = backup_service::load_remote_state(&remote_state_path(&app)?)?;
+    if request.enabled && state.repository.is_none() {
+        return Err("请先连接 Private 备份仓库".into());
+    }
+    state.automatic.enabled = request.enabled;
+    backup_service::store_remote_state(&remote_state_path(&app)?, &state)?;
+    overview(&app).await
+}
+
+#[tauri::command]
+async fn upload_portable_snapshot(
+    app: tauri::AppHandle,
+    request: UploadPortableCommand,
+) -> Result<RemoteUploadDto, String> {
+    require_request_id(&request.request_id)?;
+    let snapshot_id = request
+        .snapshot_id
+        .ok_or_else(|| "请选择要上传的便携快照".to_string())?;
+    let state_path = remote_state_path(&app)?;
+    let workspace = remote_workspace_path(&app)?;
+    let snapshot = portable_backup_root(&app)?.join(&snapshot_id);
+    tauri::async_runtime::spawn_blocking(move || -> Result<RemoteUploadDto, String> {
+        let _mutation = factory_reset::mutation_guard()?;
+        let mut state = backup_service::load_remote_state(&state_path)?;
+        let repo = state
+            .repository
+            .clone()
+            .ok_or_else(|| "请先连接 Private 备份仓库".to_string())?;
+        state.pending_snapshot_id = Some(snapshot_id.clone());
+        state.in_flight_snapshot_id = Some(snapshot_id.clone());
+        state.failed_snapshot_id = None;
+        state.last_error = None;
+        state.remote_conflict = false;
+        backup_service::store_remote_state(&state_path, &state)?;
+        let result = backup_service::push_portable_snapshot(
+            &workspace,
+            &snapshot,
+            &snapshot_id,
+            &repo.owner,
+            &repo.name,
+            state.last_remote_head.as_deref(),
+        );
+        match result {
+            Ok(result) => {
+                state.last_remote_head = Some(result.commit_id.clone());
+                state.pending_snapshot_id = None;
+                state.in_flight_snapshot_id = None;
+                state.failed_snapshot_id = None;
+                state.last_error = None;
+                state.remote_conflict = false;
+                state.automatic.last_snapshot_id = Some(snapshot_id.clone());
+                state.automatic.last_success_at = Some(Utc::now().to_rfc3339());
+                backup_service::store_remote_state(&state_path, &state)?;
+                Ok(RemoteUploadDto {
+                    snapshot_id,
+                    commit_oid: result.commit_id,
+                    uploaded_at: Utc::now().to_rfc3339(),
+                })
+            }
+            Err(error) => {
+                state.in_flight_snapshot_id = None;
+                state.failed_snapshot_id = Some(snapshot_id);
+                state.last_error = Some(error.clone());
+                state.remote_conflict =
+                    error.contains("其他设备") || error.contains("fast-forward");
+                let _ = backup_service::store_remote_state(&state_path, &state);
+                Err(error)
+            }
+        }
+    })
+    .await
+    .map_err(|_| "远程备份任务异常终止".to_string())?
 }
 
 #[tauri::command]
@@ -757,14 +1406,24 @@ fn restore_config_revision(
 #[tauri::command]
 async fn list_ai_tool_host_statuses(
     app: tauri::AppHandle,
-) -> Result<Vec<ai_tool_host::AiToolHostStatusDto>, String> {
+    request: ai_tool_cache::ListAiToolHostStatusesRequest,
+) -> Result<ai_tool_cache::AiToolHostSnapshotDto, String> {
+    factory_reset::database_open_guard()?;
     let home = app
         .path()
         .home_dir()
         .map_err(|_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问用户目录")?;
-    tauri::async_runtime::spawn_blocking(move || ai_tool_host::list_at(&home))
-        .await
-        .map_err(|_| "AI_TOOL_HOST_FAILED: 工具检查任务异常结束".to_string())
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "AI_TOOL_HOST_UNAVAILABLE: 无法访问应用数据目录")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai_tool_cache::list_or_refresh(&app_data, request.force_refresh, || {
+            ai_tool_host::list_at(&home)
+        })
+    })
+    .await
+    .map_err(|_| "AI_TOOL_HOST_FAILED: 工具检查任务异常结束".to_string())?
 }
 
 #[tauri::command]
@@ -826,6 +1485,67 @@ async fn commit_ai_tool_upgrade(
 }
 
 #[tauri::command]
+fn get_host_asset_catalog() -> host_assets::CatalogDto {
+    host_assets::catalog()
+}
+
+#[tauri::command]
+fn scan_host_assets(
+    app: tauri::AppHandle,
+    request: host_assets::ScanRequest,
+) -> Result<host_assets::ScanResultDto, String> {
+    host_assets::scan(
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_ASSET_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn load_host_asset_detail(
+    app: tauri::AppHandle,
+    request: host_assets::DetailRequest,
+) -> Result<host_assets::DetailDto, String> {
+    host_assets::detail(
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_ASSET_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn preview_host_asset_action(
+    app: tauri::AppHandle,
+    request: host_assets::PreviewRequest,
+) -> Result<host_assets::PreviewDto, String> {
+    host_assets::preview(
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_ASSET_UNAVAILABLE: 无法访问用户目录")?,
+        request,
+    )
+}
+
+#[tauri::command]
+fn commit_host_asset_action(
+    app: tauri::AppHandle,
+    request: host_assets::CommitRequest,
+) -> Result<shared_assets::SharedAssetMutationResult, String> {
+    let _mutation = factory_reset::mutation_guard()?;
+    host_assets::commit_import(
+        &app.path()
+            .home_dir()
+            .map_err(|_| "HOST_ASSET_UNAVAILABLE: 无法访问用户目录")?,
+        &domain_database_path(&app)?,
+        &shared_assets_root(&app)?,
+        &revisions_root(&app)?.join("shared-assets"),
+        request,
+    )
+}
+
+#[tauri::command]
 fn request_client_launch_v3(
     app: tauri::AppHandle,
     request: ai_adapters::ClientLaunchRequestV3,
@@ -845,9 +1565,8 @@ fn request_client_launch_v3(
 
 fn asset_name(slot: &str) -> Result<(&'static str, usize), String> {
     match slot {
-        "logo" => Ok(("logo.asset", 5 * 1024 * 1024)),
         "background" => Ok(("background.asset", 15 * 1024 * 1024)),
-        _ => Err("INVALID_SLOT: 仅支持 logo 或 background".into()),
+        _ => Err("INVALID_SLOT: 仅支持 background".into()),
     }
 }
 
@@ -1049,17 +1768,6 @@ fn validate_agent_package_files(files: &[AgentPackageFile]) -> Result<(), String
     Ok(())
 }
 
-const AGENT_FUNCTION_IDS: &[&str] = &[
-    "product",
-    "design",
-    "engineering",
-    "testing",
-    "research",
-    "operations",
-    "general",
-    "other",
-];
-
 fn validate_agent_record(
     agent_id: &str,
     agent: &serde_json::Value,
@@ -1093,12 +1801,12 @@ fn validate_agent_record(
         .ok_or_else(|| "INVALID_AGENT_RECORD: Agent 名称必须是字符串".to_string())?;
     agent_service::validate_agent_name(name)
         .map_err(|message| format!("INVALID_AGENT_RECORD: {message}"))?;
-    if object.get("functionId").is_some_and(|value| {
-        value
+    if let Some(function_id) = object.get("functionId") {
+        let function_id = function_id
             .as_str()
-            .is_none_or(|function_id| !AGENT_FUNCTION_IDS.contains(&function_id))
-    }) {
-        return Err("INVALID_AGENT_RECORD: Agent 职能标识不受支持".into());
+            .ok_or_else(|| "INVALID_AGENT_RECORD: Agent 职能标识不受支持".to_string())?;
+        agent_service::validate_agent_function_id(function_id)
+            .map_err(|message| format!("INVALID_AGENT_RECORD: {message}"))?;
     }
     let avatar = object.get("avatarPath").and_then(serde_json::Value::as_str);
     if avatar.is_some_and(|value| value != "avatar.png")
@@ -1514,6 +2222,37 @@ fn save_managed_agent_identity_at(
     request: SaveManagedAgentIdentityRequest,
 ) -> SaveManagedAgentIdentityResult {
     save_managed_agent_identity_with_revision_source(root, revisions_root, request, None, None)
+}
+
+pub(crate) fn save_managed_agent_identity_for_restore(
+    root: &Path,
+    revisions_root: &Path,
+    agent_id: String,
+    agent: serde_json::Value,
+    manifest: String,
+) -> Result<(), String> {
+    let current = fs::read_to_string(root.join("agent.yaml"))
+        .map_err(|_| "便携 Agent manifest 读取失败".to_string())?;
+    let (_, _, _, baseline) = identity_asset_facts(root, &agent_id, &current);
+    match save_managed_agent_identity_with_revision_source(
+        root,
+        revisions_root,
+        SaveManagedAgentIdentityRequest {
+            request_id: format!("portable-restore-{agent_id}"),
+            agent_id,
+            agent,
+            manifest,
+            expected_baseline: baseline.clone(),
+            base_content: current,
+            avatar: AvatarChange::Keep,
+        },
+        None,
+        None,
+    ) {
+        SaveManagedAgentIdentityResult::Saved { .. }
+        | SaveManagedAgentIdentityResult::Unchanged { .. } => Ok(()),
+        _ => Err("便携 Agent 身份安全写入未完成".into()),
+    }
 }
 
 fn save_managed_agent_identity_with_revision_source(
@@ -2986,6 +3725,12 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_dialog::init())
+        .manage(RemoteRuntime {
+            client: backup_service::github_http_client()
+                .map_err(std::io::Error::other)
+                .expect("初始化远程备份 HTTP 客户端失败"),
+            flows: Mutex::new(backup_service::DeviceFlowStore::default()),
+        })
         .setup(|app| {
             if factory_reset::cleanup_committed_at(
                 &app.path().app_data_dir()?,
@@ -3007,6 +3752,7 @@ pub fn run() {
             }
             remove_legacy_project_files(&managed_agents_root(&app.handle())?)
                 .map_err(std::io::Error::other)?;
+            start_automatic_backup_scheduler(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3029,6 +3775,21 @@ pub fn run() {
             restart_after_factory_reset,
             create_backup_snapshot,
             list_backup_snapshots,
+            create_portable_snapshot,
+            list_portable_snapshots,
+            preview_portable_restore,
+            restore_portable_snapshot,
+            get_backup_overview,
+            start_github_device_flow,
+            poll_github_device_flow,
+            disconnect_github,
+            create_private_backup_repository,
+            connect_private_backup_repository,
+            disconnect_remote_backup_repository,
+            upload_portable_snapshot,
+            set_remote_memory_policy,
+            set_automatic_remote_backup,
+            list_remote_backup_history,
             preview_backup_restore,
             restore_backup_snapshot,
             discover_config,
@@ -3050,6 +3811,11 @@ pub fn run() {
             reveal_ai_tool_config_location,
             preview_ai_tool_upgrade,
             commit_ai_tool_upgrade,
+            get_host_asset_catalog,
+            scan_host_assets,
+            load_host_asset_detail,
+            preview_host_asset_action,
+            commit_host_asset_action,
             request_client_launch_v3,
             import_ui_asset,
             read_ui_asset,
@@ -3152,11 +3918,12 @@ mod tests {
         load_managed_agent_identity_at, preview_managed_agent_deletion_at,
         recover_managed_agent_identity_at, remove_legacy_project_files,
         restore_managed_agent_identity_at, save_managed_agent_identity_at, validate_agent_id,
-        validate_avatar, AgentPackageFile, AvatarChange, CreateManagedAgentRequest, DiagnosticDto,
-        LocalServiceEventDto, PreviewManagedAgentDeletionRequest,
-        RecoverManagedAgentIdentityRequest, RestoreManagedAgentIdentityRequest,
-        SaveManagedAgentIdentityRequest, SaveManagedAgentIdentityResult, AGENT_AVATAR_LIMIT,
-        COMMAND_IDS, REQUIRED_AGENT_PACKAGE_FILES,
+        validate_agent_record, validate_avatar, AgentPackageFile, AvatarChange,
+        CreateManagedAgentRequest, DiagnosticDto, LocalServiceEventDto,
+        PreviewManagedAgentDeletionRequest, RecoverManagedAgentIdentityRequest,
+        RestoreManagedAgentIdentityRequest, SaveManagedAgentIdentityRequest,
+        SaveManagedAgentIdentityResult, AGENT_AVATAR_LIMIT, COMMAND_IDS,
+        REQUIRED_AGENT_PACKAGE_FILES,
     };
 
     #[test]
@@ -3360,7 +4127,6 @@ mod tests {
 
     #[test]
     fn ui_asset_slots_are_whitelisted() {
-        assert_eq!(asset_name("logo"), Ok(("logo.asset", 5 * 1024 * 1024)));
         assert_eq!(
             asset_name("background"),
             Ok(("background.asset", 15 * 1024 * 1024))
@@ -3377,12 +4143,27 @@ mod tests {
     }
 
     #[test]
-    fn agent_avatar_and_id_are_validated() {
+    fn agent_avatar_id_and_function_are_validated() {
         assert!(validate_agent_id("agent-1").is_ok());
         assert!(validate_agent_id("../agent").is_err());
         assert!(validate_avatar(b"\x89PNG\r\n\x1a\nrest").is_ok());
         assert!(validate_avatar(b"not png").is_err());
         assert!(validate_avatar(&vec![0; AGENT_AVATAR_LIMIT + 1]).is_err());
+        assert!(validate_agent_record(
+            "agent-1",
+            &serde_json::json!({ "id": "agent-1", "name": "测试 Agent", "functionId": "安全审计" }),
+            false,
+        )
+        .is_ok());
+        assert_eq!(
+            validate_agent_record(
+                "agent-1",
+                &serde_json::json!({ "id": "agent-1", "name": "测试 Agent", "functionId": "   " }),
+                false,
+            )
+            .unwrap_err(),
+            "INVALID_AGENT_RECORD: Agent 职能标识不受支持"
+        );
     }
 
     fn minimal_agent_package_files(manifest: &str) -> Vec<AgentPackageFile> {
@@ -3601,7 +4382,7 @@ mod tests {
 
     fn canonical_agent_fixture(root: &Path) -> PathBuf {
         let files = vec![
-            ("agent.yaml", "schemaVersion: 1\nid: alpha\nname: Canonical\nteamId: team-personal\nstatus: active\nmission: canonical mission\nresponsibilities: []\ndeliverables: []\ndecisionBoundaries: []\nescalationConditions: []\nprohibitions: []\ncompletionDefinition: []\n"),
+            ("agent.yaml", "schemaVersion: 1\nid: alpha\nname: Canonical\nteamId: team-personal\nstatus: active\nmission: canonical mission\nfunctionId: 安全审计\nresponsibilities: []\ndeliverables: []\ndecisionBoundaries: []\nescalationConditions: []\nprohibitions: []\ncompletionDefinition: []\n"),
             ("instructions.md", "# Canonical\n"),
             ("config/context.yaml", "schemaVersion: 1\ncontextPolicy:\n  enabled: true\n  triggerRatio: 0.8\n  targetRatio: 0.5\n  protectRecentTurns: 6\n  protectOpeningTurns: 2\ncontextWindowTokens: 200000\noutputProfileId: \"\"\noutputParameterBindings: []\n"),
             ("config/rules.yaml", "schemaVersion: 1\nrules:\n  []\n"),
@@ -3775,6 +4556,7 @@ mod tests {
             std::fs::remove_file(package.join(path)).unwrap();
             let listed = list_managed_agents_at(root.path()).unwrap();
             assert_eq!(listed.agents[0][field], serde_json::json!([]), "{path}");
+            assert_eq!(listed.agents[0]["functionId"], "安全审计");
             assert!(
                 !listed.agents[0]["files"]
                     .as_array()

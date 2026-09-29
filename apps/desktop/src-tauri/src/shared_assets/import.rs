@@ -7,28 +7,48 @@ pub(crate) fn preview_import_at(
     if !valid_id(&request.team_id) || !SHARED_ASSET_KINDS.contains(&request.kind.as_str()) {
         return Err("SHARED_ASSET_VALIDATION_FAILED: Team 或类型无效".into());
     }
-    ensure_regular_file(&path, "导入来源")?;
-    let metadata = fs::metadata(&path)
+    let metadata = fs::symlink_metadata(&path)
         .map_err(|_| "SHARED_ASSET_SOURCE_UNREADABLE: 无法读取导入来源".to_string())?;
-    if metadata.len() > MAX_CONTENT_BYTES as u64 {
-        return Err("SHARED_ASSET_TOO_LARGE: 导入文件超过 256 KiB".into());
+    if metadata.file_type().is_symlink() {
+        return Err("SHARED_ASSET_SOURCE_INVALID: 导入来源不允许符号链接".into());
     }
-    let bytes = fs::read(&path)
-        .map_err(|_| "SHARED_ASSET_SOURCE_UNREADABLE: 无法读取导入来源".to_string())?;
-    let text = std::str::from_utf8(&bytes)
-        .map_err(|_| "SHARED_ASSET_SOURCE_INVALID: 导入文件必须是 UTF-8".to_string())?;
-    validate_content(&request.kind, text)?;
+    let package = if request.kind == "skill" && metadata.is_dir() {
+        asset_package::read_directory(&path, SKILL_LIMITS)?
+    } else {
+        ensure_regular_file(&path, "导入来源")?;
+        let bytes = fs::read(&path)
+            .map_err(|_| "SHARED_ASSET_SOURCE_UNREADABLE: 无法读取导入来源".to_string())?;
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| "SHARED_ASSET_SOURCE_INVALID: 导入文件必须是 UTF-8".to_string())?;
+        validate_content(&request.kind, text)?;
+        asset_package::from_files(
+            vec![PackageFile::text(
+                content_file(&request.kind).unwrap_or("CONTENT.md"),
+                text,
+            )],
+            SKILL_LIMITS,
+        )?
+    };
+    let entrypoint = package
+        .files
+        .iter()
+        .find(|file| file.path == content_file(&request.kind).unwrap_or("CONTENT.md"))
+        .ok_or_else(|| "SHARED_ASSET_SOURCE_INVALID: 导入包缺少固定入口文件".to_string())?;
+    validate_content(&request.kind, entrypoint.utf8()?)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| "SHARED_ASSET_SOURCE_INVALID: 文件名无效".to_string())?
+        .ok_or_else(|| "SHARED_ASSET_SOURCE_INVALID: 名称无效".to_string())?
         .to_string();
-    let suggested_name = path
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("asset")
-        .trim()
-        .to_string();
+    let suggested_name = if metadata.is_dir() {
+        path.file_name()
+    } else {
+        path.file_stem()
+    }
+    .and_then(|name| name.to_str())
+    .unwrap_or("asset")
+    .trim()
+    .to_string();
     let suggested_id = suggested_name
         .to_ascii_lowercase()
         .chars()
@@ -42,7 +62,7 @@ pub(crate) fn preview_import_at(
         .collect::<String>()
         .trim_matches('-')
         .to_string();
-    let source_hash = hash(&bytes);
+    let source_hash = package.fingerprint.clone();
     let now = SystemTime::now();
     let expires_at_time = now + IMPORT_TTL;
     let expires_at = chrono::DateTime::<Utc>::from(expires_at_time).to_rfc3339();
@@ -74,7 +94,8 @@ pub(crate) fn preview_import_at(
         preview_ref,
         file_name,
         kind: request.kind,
-        size: bytes.len(),
+        size: package.total_bytes as usize,
+        file_count: package.files.len(),
         source_hash,
         suggested_name,
         suggested_id,
@@ -103,14 +124,38 @@ pub(crate) fn commit_import_at(
     if record.team_id != request.team_id || record.source_hash != request.expected_source_hash {
         return Err("SHARED_ASSET_PREVIEW_MISMATCH: 导入预览与提交不一致".into());
     }
-    ensure_regular_file(&record.path, "导入来源")?;
-    let bytes = fs::read(&record.path)
+    let current_metadata = fs::symlink_metadata(&record.path)
         .map_err(|_| "SHARED_ASSET_SOURCE_CHANGED: 导入来源不可再读取".to_string())?;
-    if hash(&bytes) != record.source_hash {
+    if current_metadata.file_type().is_symlink() {
+        return Err("SHARED_ASSET_SOURCE_CHANGED: 导入来源类型已变化".into());
+    }
+    let current = if current_metadata.is_dir() {
+        asset_package::read_directory(&record.path, SKILL_LIMITS)
+            .map_err(|_| "SHARED_ASSET_SOURCE_CHANGED: 导入来源不可再读取".to_string())?
+    } else {
+        ensure_regular_file(&record.path, "导入来源")?;
+        let bytes = fs::read(&record.path)
+            .map_err(|_| "SHARED_ASSET_SOURCE_CHANGED: 导入来源不可再读取".to_string())?;
+        let content = String::from_utf8(bytes)
+            .map_err(|_| "SHARED_ASSET_SOURCE_CHANGED: 导入来源不再是 UTF-8".to_string())?;
+        asset_package::from_files(
+            vec![PackageFile::text(
+                content_file(&record.kind).unwrap_or("CONTENT.md"),
+                content,
+            )],
+            SKILL_LIMITS,
+        )?
+    };
+    if current.fingerprint != record.source_hash {
         return Err("SHARED_ASSET_SOURCE_CHANGED: 导入来源在预览后发生变化".into());
     }
-    let content = String::from_utf8(bytes)
-        .map_err(|_| "SHARED_ASSET_SOURCE_CHANGED: 导入来源不再是 UTF-8".to_string())?;
+    let content = current
+        .files
+        .iter()
+        .find(|file| file.path == content_file(&record.kind).unwrap_or("CONTENT.md"))
+        .ok_or_else(|| "SHARED_ASSET_SOURCE_CHANGED: 导入入口文件缺失".to_string())?
+        .utf8()?
+        .to_string();
     let source = SharedAssetSourceDto::Imported {
         file_name: record.file_name,
         imported_hash: record.source_hash,
@@ -125,9 +170,10 @@ pub(crate) fn commit_import_at(
             team_id: request.team_id,
             asset_id: request.asset_id,
             name: request.name,
-            kind: record.kind,
+            kind: record.kind.clone(),
             content,
         },
         source,
+        (record.kind == "skill").then_some(&current),
     )
 }

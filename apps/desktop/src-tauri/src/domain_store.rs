@@ -263,7 +263,7 @@ fn create_current_schema(connection: &Connection) -> Result<(), String> {
              );
              CREATE INDEX agent_recovery_operations_agent ON agent_recovery_operations(agent_id, created_at);
              INSERT INTO teams (id, name, mark, color, mission, boundary_text, member_agent_ids_json, shared_asset_ids_json, updated_at)
-               VALUES ('team-personal', '个人 Team', NULL, NULL, NULL, NULL, '[]', '[]', CURRENT_TIMESTAMP);
+               VALUES ('team-personal', '个人', NULL, NULL, NULL, NULL, '[]', '[]', CURRENT_TIMESTAMP);
              PRAGMA user_version = 18;
              COMMIT;",
         )

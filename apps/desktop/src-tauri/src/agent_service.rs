@@ -68,6 +68,18 @@ fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
+pub(crate) fn validate_agent_function_id(function_id: &str) -> Result<(), String> {
+    let trimmed = function_id.trim();
+    if function_id != trimmed
+        || trimmed.is_empty()
+        || function_id.chars().count() > 40
+        || function_id.chars().any(char::is_control)
+    {
+        return Err("Agent 职能标识不受支持".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_agent_name(name: &str) -> Result<(), String> {
     let trimmed = name.trim();
     let length = trimmed.chars().count();
@@ -351,6 +363,17 @@ pub(crate) fn set_operation_status_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_function_id_validation_accepts_custom_values_and_rejects_invalid_input() {
+        for function_id in ["product", "安全审计", "AI 研究", &"职".repeat(40)] {
+            assert!(validate_agent_function_id(function_id).is_ok());
+        }
+        for function_id in ["", "   ", " AI 研究 ", "安全\n审计", "安全\u{7f}审计"] {
+            assert!(validate_agent_function_id(function_id).is_err());
+        }
+        assert!(validate_agent_function_id(&"职".repeat(41)).is_err());
+    }
 
     #[test]
     fn agent_name_validation_matches_the_public_rules() {

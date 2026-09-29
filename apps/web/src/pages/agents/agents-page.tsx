@@ -1,4 +1,4 @@
-import { ArchiveRestore, Filter as FilterIcon, MoreHorizontal, Plus, Search, Upload, X } from 'lucide-react'
+import { ArchiveRestore, Filter as FilterIcon, MoreHorizontal, Pencil, Plus, Search, Upload, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
@@ -9,7 +9,7 @@ import { AgentAvatar } from '../../components/agents/agent-avatar'
 import { AiClientIcon } from '../../components/ai-clients'
 import { useApp } from '../../state'
 import { agentFunctionLabel, agentFunctionLabels, type FullAgent } from '../../domain'
-import { getAgentConfigStatus, getConfigurationStatusSummary } from '../../domain-selectors'
+import { getAgentConfigStatus } from '../../domain-selectors'
 import { groupDiscoveryDiagnostics } from '../../discovered-assets'
 import { DiscoveryIssues } from '../assets/discovered-assets-table'
 import { lifecycleSuccessMessage, saveAgentLifecycle } from './agent-lifecycle'
@@ -57,6 +57,9 @@ export function AgentsPage() {
     setParams(copy)
   }
   const teamAgents = state.agents.filter((agent) => agent.teamId === state.currentTeamId)
+  const presetFunctionIds = new Set(Object.keys(agentFunctionLabels))
+  const customFunctions = [...new Set(teamAgents.map((agent) => agent.functionId).filter((id): id is string => typeof id === 'string' && !presetFunctionIds.has(id)))].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+  const functionOptions = [...Object.entries(agentFunctionLabels), ...customFunctions.map((id) => [id, id] as const)]
   const assetNames = new Map(state.assets.map((asset) => [asset.id, asset.name]))
   const matches = (agent: FullAgent) => {
     const q = value('q').trim().toLocaleLowerCase()
@@ -76,9 +79,9 @@ export function AgentsPage() {
   const showFilterButton = teamAgents.length >= FILTER_THRESHOLD || hasAdvancedFilters
   const clear = () => { setParams({}); setFiltersExpanded(false) }
   const currentTeam = state.teams.find((team) => team.id === state.currentTeamId)
-  const firstUse = getConfigurationStatusSummary(state).phase === 'first-use'
-  const createAgentAction = <Button asChild><Link to="/agents/new"><Plus size={16} aria-hidden="true" />添加 Agent</Link></Button>
-  const createActions = <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button aria-label="添加 Agent"><Plus size={16} aria-hidden="true" /><span className="max-sm:hidden">添加 Agent</span></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6} className={menuContentClass}><DropdownMenu.Item asChild><Link className={menuItemClass} to="/agents/new"><Plus size={15} aria-hidden="true" />新建 Agent</Link></DropdownMenu.Item><DropdownMenu.Item asChild><Link className={menuItemClass} to="/agents/new?mode=import"><Upload size={15} aria-hidden="true" />导入已有 Agent</Link></DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+  const isTeamEmpty = teamAgents.length === 0
+  const createAgentAction = <Button asChild><Link to="/agents/new"><Plus size={16} aria-hidden="true" />新建 Agent</Link></Button>
+  const createActions = <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button aria-label="添加 Agent"><Plus size={16} aria-hidden="true" /><span className="max-sm:hidden">添加 Agent</span></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6} className={menuContentClass}><DropdownMenu.Item asChild><Link className={menuItemClass} to="/agents/new"><Plus size={15} aria-hidden="true" />新建 Agent</Link></DropdownMenu.Item><DropdownMenu.Item asChild><Link className={menuItemClass} to="/agents/new?mode=import"><Upload size={15} aria-hidden="true" />导入 Agent</Link></DropdownMenu.Item></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
   const startLifecycle = (agent: FullAgent, status: FullAgent['status']) => { setLifecycleError(''); lifecycleRequestId.current = undefined; setLifecycleAction({ agent, status }) }
   const closeLifecycle = () => { if (!lifecycleSaving) { setLifecycleAction(undefined); setLifecycleError(''); lifecycleRequestId.current = undefined } }
   const confirmLifecycle = async () => {
@@ -98,23 +101,23 @@ export function AgentsPage() {
   }
 
   return <>
-    <PageHeader title="Agent" description={`管理 ${currentTeam?.name ?? '当前 Team'} 中的长期 Agent。`} action={firstUse ? undefined : createActions} />
-    {firstUse ? <EmptyState className="max-w-2xl p-6 text-left" title="当前 Team 还没有 Agent" description="添加一个长期 Agent，或导入已有配置。" action={<div className="flex flex-wrap gap-2">{createAgentAction}<Button variant="outline" asChild><Link to="/agents/new?mode=import"><Upload size={16} aria-hidden="true" />导入已有 Agent</Link></Button></div>} /> : <section className="panel overflow-hidden">
+    <PageHeader title="Agent" description={`管理 ${currentTeam?.name ?? '当前 Team'} 中的长期 Agent。`} action={isTeamEmpty ? undefined : createActions} />
+    {isTeamEmpty ? <section className="panel grid min-h-80 place-items-center p-6"><EmptyState className="w-full max-w-2xl border-0" title={`${currentTeam?.name ?? '当前 Team'}还没有 Agent`} description="新建一个长期 Agent，或导入已有配置。" action={<div className="flex flex-col items-center gap-2">{createAgentAction}<Button variant="ghost" asChild><Link to="/agents/new?mode=import"><Upload size={16} aria-hidden="true" />导入 Agent</Link></Button></div>} /></section> : <section className="panel overflow-hidden">
       {state.agentDiagnostics.length > 0 && <DiscoveryIssues groups={groupDiscoveryDiagnostics(state.agentDiagnostics)} />}
       {showSearch && <div className="border-b border-border p-4">
         <div className="flex flex-col gap-2 sm:flex-row">
-          <label className="relative min-w-0 flex-1"><span className="sr-only">搜索 Agent</span><Search className="absolute left-3 top-2.5 text-muted-foreground" size={16} aria-hidden="true" /><input value={value('q')} onChange={(event) => set('q', event.target.value)} className="h-10 w-full pl-9 pr-3" placeholder="搜索名称或职责说明" /></label>
+          <label className="relative min-w-0 flex-1"><span className="sr-only">搜索 Agent</span><Search className="absolute left-3 top-2.5 text-muted-foreground" size={16} aria-hidden="true" /><input value={value('q')} onChange={(event) => set('q', event.target.value)} className="h-10 w-full pl-9 pr-3" placeholder="搜索名称、职能或职责说明" /></label>
           {showFilterButton && <Button type="button" variant="outline" aria-expanded={filtersExpanded} onClick={() => setFiltersExpanded((open) => !open)}><FilterIcon size={16} aria-hidden="true" />筛选</Button>}
           {hasFilters && <Button type="button" variant="ghost" onClick={clear}><X size={15} aria-hidden="true" />清除筛选</Button>}
         </div>
         {filtersExpanded && <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <Filter label="职能" value={value('function')} onChange={(next) => set('function', next)} options={Object.entries(agentFunctionLabels)} />
+          <Filter label="职能" value={value('function')} onChange={(next) => set('function', next)} options={functionOptions} />
           <Filter label="配置状态" value={value('health')} onChange={(next) => set('health', next)} options={Object.entries(healthLabels)} />
           <Filter label="使用状态" value={value('lifecycle')} onChange={(next) => set('lifecycle', next)} options={Object.entries(lifecycleLabels)} />
         </div>}
         {hasFilters && <p className="mt-3 text-xs text-muted-foreground">找到 {resultCount} 个 Agent</p>}
       </div>}
-      {!archivedOnly && (currentRows.length ? <AgentList agents={currentRows} onLifecycle={startLifecycle} /> : <div className="p-5"><EmptyState title={hasFilters ? '没有匹配的 Agent' : '当前列表没有 Agent'} description={hasFilters ? '调整搜索内容或筛选条件后重试。' : '可以从已归档列表移回 Agent，或添加新的 Agent。'} /></div>)}
+      {!archivedOnly && (currentRows.length ? <AgentList agents={currentRows} onLifecycle={startLifecycle} /> : <div className="p-5"><EmptyState title={hasFilters ? '没有匹配的 Agent' : '当前没有可用的 Agent'} description={hasFilters ? '调整搜索内容或筛选条件后重试。' : '已归档的 Agent 可从下方移回当前列表。'} /></div>)}
       {(archivedRows.length > 0 || archivedOnly) && <details open={archivedOnly || undefined} className="border-t border-border">
         <summary className="cursor-pointer px-5 py-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">已归档 {archivedRows.length}</summary>
         {archivedRows.length ? <AgentList agents={archivedRows} onLifecycle={startLifecycle} /> : <div className="px-5 pb-5 text-sm text-muted-foreground">没有匹配的已归档 Agent。</div>}
@@ -129,9 +132,10 @@ function AgentList({ agents, onLifecycle }: { agents: FullAgent[]; onLifecycle: 
   return <ul className="divide-y divide-border" aria-label="Agent 列表">{agents.map((agent) => {
     const config = getAgentConfigStatus(state, agent)
     const configTarget = getAgentConfigIssueTarget(agent, config.level, config.label)
-    return <li key={agent.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center hover:bg-muted/35 focus-within:bg-muted/35">
-      <div className="flex min-w-0 items-start gap-3"><AgentAvatar agent={agent} /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Link className="rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={`/agents/${agent.id}`} aria-label={`查看 ${agent.name} Agent 详情`}>{agent.name}</Link><span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{agentFunctionLabel(agent.functionId)}</span></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.mission || '尚未设置一句话描述'}</p></div></div>
-      <div className="col-start-1 flex flex-wrap items-center gap-2 pl-11 sm:col-start-auto sm:max-w-52 sm:pl-0"><StatusBadge tone={agent.status === 'active' ? 'success' : 'neutral'}>{lifecycleLabels[agent.status]}</StatusBadge>{configTarget ? <Link className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={configTarget} aria-label={`处理 ${agent.name} 的${healthLabels[config.level as keyof typeof healthLabels]}`}><StatusBadge tone={config.level === 'warning' ? 'warning' : 'danger'}>{healthLabels[config.level as keyof typeof healthLabels]}</StatusBadge></Link> : <StatusBadge tone="success">配置正常</StatusBadge>}</div>
+    return <li key={agent.id} className="relative grid grid-cols-[minmax(0,1fr)_auto] gap-4 px-5 py-4 transition-colors hover:bg-muted/35 focus-within:bg-muted/35 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+      <Link className="absolute inset-0 z-0 cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" to={`/agents/${agent.id}`} aria-label={`查看 ${agent.name} Agent 详情`} />
+      <div className="pointer-events-none relative z-10 flex min-w-0 items-start gap-3"><AgentAvatar agent={agent} /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{agent.name}</span>{agent.functionId && <span className="text-xs text-muted-foreground">{agentFunctionLabel(agent.functionId)}</span>}</div><p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{agent.mission || '尚未设置一句话描述'}</p></div></div>
+      <div className="pointer-events-none relative z-10 col-start-1 flex flex-wrap items-center gap-2 pl-11 sm:col-start-auto sm:max-w-52 sm:pl-0"><StatusBadge tone={agent.status === 'active' ? 'success' : 'neutral'}>{lifecycleLabels[agent.status]}</StatusBadge>{configTarget ? <Link className="pointer-events-auto rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" to={configTarget} aria-label={`处理 ${agent.name} 的${healthLabels[config.level as keyof typeof healthLabels]}`}><StatusBadge tone={config.level === 'warning' ? 'warning' : 'danger'}>{healthLabels[config.level as keyof typeof healthLabels]}</StatusBadge></Link> : <StatusBadge tone="success">配置正常</StatusBadge>}</div>
       <AgentActions agent={agent} onLifecycle={onLifecycle} onClient={(clientId) => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'client-guide', clientId, agentId: agent.id } })} />
     </li>
   })}</ul>
@@ -139,7 +143,9 @@ function AgentList({ agents, onLifecycle }: { agents: FullAgent[]; onLifecycle: 
 
 function AgentActions({ agent, onLifecycle, onClient }: { agent: FullAgent; onLifecycle: (agent: FullAgent, status: FullAgent['status']) => void; onClient: (clientId: string) => void }) {
   const { state } = useApp()
-  return <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button type="button" variant="ghost" className="col-start-2 row-span-2 row-start-1 size-11 self-center p-0 sm:col-start-auto sm:row-span-1 sm:row-start-auto" aria-label={`更多操作：${agent.name}`}><MoreHorizontal size={18} aria-hidden="true" /></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6} className={menuContentClass}>
+  return <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button type="button" variant="ghost" className="relative z-10 col-start-2 row-span-2 row-start-1 size-11 self-center p-0 sm:col-start-auto sm:row-span-1 sm:row-start-auto" aria-label={`更多操作：${agent.name}`}><MoreHorizontal size={18} aria-hidden="true" /></Button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={6} className={menuContentClass}>
+    <DropdownMenu.Item asChild><Link className={menuItemClass} to={`/agents/${agent.id}?tab=identity&edit=1`}><Pencil size={15} aria-hidden="true" />编辑 Agent</Link></DropdownMenu.Item>
+    <DropdownMenu.Separator className="my-1 h-px bg-border" />
     {agent.status !== 'archived' && <><DropdownMenu.Label className="px-3 py-2 text-xs font-medium text-muted-foreground">在 AI 工具中使用</DropdownMenu.Label>{state.aiClients.map((client) => <DropdownMenu.Item key={client.id} disabled={agent.status !== 'active'} className={menuItemClass} onSelect={() => onClient(client.id)}><AiClientIcon client={client} size={17} />{client.name}</DropdownMenu.Item>)}<DropdownMenu.Separator className="my-1 h-px bg-border" /></>}
     {agent.status === 'active' && <DropdownMenu.Item className={menuItemClass} onSelect={() => onLifecycle(agent, 'inactive')}>停用 Agent</DropdownMenu.Item>}
     {agent.status === 'inactive' && <DropdownMenu.Item className={menuItemClass} onSelect={() => onLifecycle(agent, 'active')}>重新启用</DropdownMenu.Item>}

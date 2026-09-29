@@ -24,15 +24,21 @@ button,a { cursor:pointer; }
 .panel { border:1px solid var(--border); background:var(--card); border-radius:10px; }
 .agent-table-scroll:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .shell-main { padding:calc(1.5rem * var(--ui-space)); }
-.first-use-empty { min-height:calc(100vh - 8rem); padding-bottom:min(10vh,6rem); }
 @media (max-width:1280px) { .shell-main { padding:calc(1.25rem * var(--ui-space)); } }
-@media (max-width:700px) { .shell-main { padding:calc(1rem * var(--ui-space)); } .first-use-empty { min-height:calc(100vh - 7rem); padding-bottom:5vh; } }
+@media (max-width:700px) { .shell-main { padding:calc(1rem * var(--ui-space)); } }
 .label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
 .status { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
 .status::before { content:""; width:6px; height:6px; border-radius:999px; background:currentColor; }
 .status-good { color:var(--success); } .status-warn { color:var(--warning); } .status-bad { color:var(--danger); }
 input,select,textarea { border:1px solid var(--border); background:var(--background); color:var(--foreground); border-radius:7px; outline:none; }
 input:focus,select:focus,textarea:focus { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 18%,transparent); }
+.color-range { appearance:none; border:0; border-radius:999px; padding:0; }
+.color-range::-webkit-slider-runnable-track { height:8px; border:1px solid var(--border); border-radius:999px; background:transparent; }
+.color-range::-webkit-slider-thumb { appearance:none; width:20px; height:20px; margin-top:-7px; border:2px solid var(--card); border-radius:999px; background:var(--accent); box-shadow:0 0 0 1px var(--foreground); }
+.color-range::-moz-range-track { height:8px; border:1px solid var(--border); border-radius:999px; background:transparent; }
+.color-range::-moz-range-thumb { width:18px; height:18px; border:2px solid var(--card); border-radius:999px; background:var(--accent); box-shadow:0 0 0 1px var(--foreground); }
+.color-range:focus { box-shadow:none; }
+.color-range:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
 @keyframes sheet-right { from { transform:translateX(20px); opacity:.4 } }
 @keyframes sheet-left { from { transform:translateX(-20px); opacity:.4 } }
 @keyframes fade { from { opacity:0 } }

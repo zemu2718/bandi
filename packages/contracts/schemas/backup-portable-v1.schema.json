@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bandi.local/contracts/backup-portable-v1.schema.json",
+  "title": "Bandi Portable Backup v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["createRequest", "snapshot", "previewRequest", "restorePreview", "restoreRequest", "restoreResult"],
+  "properties": {
+    "createRequest": { "$ref": "#/$defs/createRequest" },
+    "snapshot": { "$ref": "#/$defs/manifest" },
+    "previewRequest": { "$ref": "#/$defs/restoreRequest" },
+    "restorePreview": { "$ref": "#/$defs/preview" },
+    "restoreRequest": { "$ref": "#/$defs/restoreRequest" },
+    "restoreResult": { "$ref": "#/$defs/result" }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._-]+$" },
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "time": { "type": "string", "format": "date-time" },
+    "createRequest": {
+      "type": "object", "additionalProperties": false, "required": ["requestId", "includeMemory"],
+      "properties": { "requestId": { "$ref": "#/$defs/id" }, "includeMemory": { "type": "boolean" } }
+    },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "ownerId", "path", "objectRef", "sizeBytes", "contentHash"],
+      "properties": {
+        "kind": { "enum": ["domain", "agent_file", "shared_asset_file", "memory"] },
+        "ownerId": { "$ref": "#/$defs/id" },
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "objectRef": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "contentHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["snapshotId", "createdAt", "includeMemory", "entryCount", "totalBytes", "manifestHash"],
+      "properties": {
+        "snapshotId": { "$ref": "#/$defs/id" }, "createdAt": { "$ref": "#/$defs/time" }, "includeMemory": { "type": "boolean" },
+        "entryCount": { "type": "integer", "minimum": 1, "maximum": 10000 }, "totalBytes": { "type": "integer", "minimum": 0 }, "manifestHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "manifest": {
+      "allOf": [
+        { "$ref": "#/$defs/summary" },
+        { "type": "object", "required": ["schemaVersion", "profileVersion", "entries"], "properties": {
+          "schemaVersion": { "const": 1 }, "profileVersion": { "const": "portable-backup-v1" },
+          "entries": { "type": "array", "minItems": 1, "maxItems": 10000, "items": { "$ref": "#/$defs/entry" } }
+        } }
+      ]
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": { "kind": { "enum": ["all", "team", "agent"] }, "teamId": { "$ref": "#/$defs/id" }, "agentId": { "$ref": "#/$defs/id" } }
+    },
+    "restoreRequest": {
+      "type": "object", "additionalProperties": false, "required": ["requestId", "snapshotId", "scope"],
+      "properties": { "requestId": { "$ref": "#/$defs/id" }, "snapshotId": { "$ref": "#/$defs/id" }, "scope": { "$ref": "#/$defs/scope" }, "previewRef": { "$ref": "#/$defs/id" }, "confirmed": { "type": "boolean" } }
+    },
+    "closure": {
+      "type": "object", "additionalProperties": false, "required": ["teamIds", "agentIds", "taskBriefIds", "sharedAssetIds", "memoryIds"],
+      "properties": { "teamIds": { "type": "array", "items": { "$ref": "#/$defs/id" } }, "agentIds": { "type": "array", "items": { "$ref": "#/$defs/id" } }, "taskBriefIds": { "type": "array", "items": { "$ref": "#/$defs/id" } }, "sharedAssetIds": { "type": "array", "items": { "$ref": "#/$defs/id" } }, "memoryIds": { "type": "array", "items": { "$ref": "#/$defs/id" } } }
+    },
+    "preview": {
+      "type": "object", "additionalProperties": false, "required": ["requestId", "previewRef", "packageHash", "scope", "expiresAt", "closure", "entries", "canRestore", "requiresConfirmation"],
+      "properties": {
+        "requestId": { "$ref": "#/$defs/id" }, "previewRef": { "$ref": "#/$defs/id" }, "packageHash": { "$ref": "#/$defs/hash" }, "scope": { "$ref": "#/$defs/scope" }, "expiresAt": { "$ref": "#/$defs/time" }, "closure": { "$ref": "#/$defs/closure" },
+        "entries": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["action", "kind", "id"], "properties": { "action": { "enum": ["create", "update", "preserve"] }, "kind": { "type": "string", "minLength": 1 }, "id": { "$ref": "#/$defs/id" } } } },
+        "canRestore": { "type": "boolean" }, "requiresConfirmation": { "type": "boolean" }, "diagnostics": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false, "required": ["requestId", "packageHash", "status", "entries"],
+      "properties": { "requestId": { "$ref": "#/$defs/id" }, "packageHash": { "$ref": "#/$defs/hash" }, "status": { "enum": ["restored", "partial_failure", "restore_failed"] }, "entries": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["kind", "id", "status"], "properties": { "kind": { "type": "string", "minLength": 1 }, "id": { "$ref": "#/$defs/id" }, "status": { "type": "string", "minLength": 1 }, "recoveryRef": { "$ref": "#/$defs/id" } } } }, "diagnostics": { "type": "array", "items": { "type": "string" } } }
+    }
+  }
+}

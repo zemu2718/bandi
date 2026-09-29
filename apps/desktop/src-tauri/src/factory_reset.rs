@@ -28,6 +28,12 @@ const APP_TARGETS: &[(&str, &str, TargetKind)] = &[
     ("revisions", "revisions", TargetKind::Directory),
     ("formalMemory", "memory", TargetKind::Directory),
     ("uiAssets", "ui-assets", TargetKind::Directory),
+    (
+        "aiToolHostCache",
+        "ai-tool-host-cache.json",
+        TargetKind::File,
+    ),
+    ("remoteBackup", "remote-backup", TargetKind::Directory),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -651,6 +657,7 @@ mod tests {
         fs::create_dir_all(app.join("memory/projects/project-one/departments")).unwrap();
         fs::create_dir_all(home.join(".bandi/agents/agt_one")).unwrap();
         fs::write(app.join("bandi.db"), b"db").unwrap();
+        fs::write(app.join("ai-tool-host-cache.json"), b"cache").unwrap();
         fs::write(
             app.join("memory/projects/project-one/public.md"),
             b"project memory",
@@ -682,9 +689,13 @@ mod tests {
         assert!(result.requires_restart && app.join(MARKER_NAME).is_file());
         assert!(!app.join("bandi.db").exists());
         assert!(!app.join("memory").exists());
+        assert!(!app.join("ai-tool-host-cache.json").exists());
         assert!(result
             .quarantined_target_ids
             .contains(&"formalMemory".into()));
+        assert!(result
+            .quarantined_target_ids
+            .contains(&"aiToolHostCache".into()));
         assert!(mutation_guard().unwrap_err().contains("RESTART_REQUIRED"));
         assert!(restart_guard_at(&app, &home).is_ok());
         let database_error = crate::domain_store::open_at(&app.join("bandi.db")).unwrap_err();
@@ -694,6 +705,7 @@ mod tests {
         assert!(!app.join("bandi.db").exists());
         assert!(!app.join("bandi.db-wal").exists());
         assert!(!app.join("bandi.db-shm").exists());
+        assert!(!app.join("ai-tool-host-cache.json").exists());
         assert_eq!(
             fs::read(project_directory.join("keep.txt")).unwrap(),
             b"external project data"

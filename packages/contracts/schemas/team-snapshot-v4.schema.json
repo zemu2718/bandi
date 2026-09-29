@@ -43,12 +43,15 @@
     "taskBrief": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "teamId", "title"],
+      "required": ["id", "teamId", "title", "goal", "context", "constraints", "expectedOutput"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "teamId": { "$ref": "#/$defs/id" },
         "title": { "$ref": "#/$defs/nonEmptyText" },
-        "brief": { "$ref": "#/$defs/text" },
+        "goal": { "$ref": "#/$defs/text" },
+        "context": { "$ref": "#/$defs/text" },
+        "constraints": { "$ref": "#/$defs/text" },
+        "expectedOutput": { "$ref": "#/$defs/text" },
         "archivedAt": { "$ref": "#/$defs/timestamp" }
       }
     }

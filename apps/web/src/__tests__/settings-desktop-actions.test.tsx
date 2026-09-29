@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AiToolHostStatusDto } from '../contracts'
 import { FactoryResetPanel } from '../pages/settings/factory-reset-panel'
 import { ToolsPage } from '../pages/tools/tools-page'
 import { AppProvider, initialState, useApp } from '../state'
-import { MAIN_MENU_LAYOUT_STORAGE_KEY } from '../navigation-layout'
 import { LEGACY_THEME_STORAGE_KEY, UI_PREFERENCES_STORAGE_KEY } from '../ui-preferences'
 
 const bridge = vi.hoisted(() => ({
@@ -23,7 +24,7 @@ const bridge = vi.hoisted(() => ({
 
 vi.mock('../desktop-bridge', () => bridge)
 
-const hostStatuses = initialState.aiClients.map((client) => ({
+const hostStatuses: AiToolHostStatusDto[] = initialState.aiClients.map((client) => ({
   toolId: client.id,
   availability: client.id === 'claude-code' ? 'installed' : 'not_found',
   contextMode: client.id === 'claude-code' ? 'initial_prompt' : 'manual_context',
@@ -40,18 +41,30 @@ const hostStatuses = initialState.aiClients.map((client) => ({
   installationCount: client.id === 'claude-code' ? 1 : 0,
 }))
 
-function renderTools() {
-  render(
-    <AppProvider initialState={{ ...initialState, runtime: 'desktop' }}>
+function renderTools(state = { ...initialState, runtime: 'desktop' as const }) {
+  return render(
+    <AppProvider initialState={state}>
       <ToolsPage />
     </AppProvider>,
   )
 }
 
+function ToolsSession() {
+  const [visible, setVisible] = useState(true)
+  return <>
+    <button type="button" onClick={() => setVisible((value) => !value)}>切换工具页</button>
+    {visible && <ToolsPage />}
+  </>
+}
+
 const storage = new Map<string, string>()
 beforeEach(() => {
   vi.clearAllMocks()
-  bridge.listAiToolHostStatuses.mockResolvedValue(hostStatuses)
+  bridge.listAiToolHostStatuses.mockResolvedValue({
+    statuses: hostStatuses,
+    checkedAt: '2026-09-10T08:30:00.000Z',
+    stale: false,
+  })
   storage.clear()
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -74,7 +87,9 @@ describe('Desktop AI 工具', () => {
     renderTools()
 
     expect((await screen.findAllByText('Claude Code')).length).toBeGreaterThan(0)
-    fireEvent.click(screen.getByRole('button', { name: '已检测到' }))
+    expect(screen.getAllByText('已检测到').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('未检测到').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('tab', { name: '已安装' }))
     expect(screen.getAllByText('Claude Code')).toHaveLength(2)
     expect(screen.queryByText('ChatGPT')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '在文件管理器中显示' }))
@@ -82,12 +97,50 @@ describe('Desktop AI 工具', () => {
       toolId: 'claude-code', requestId: '00000000-0000-4000-8000-000000000001',
     }))
 
-    fireEvent.click(screen.getByRole('button', { name: '未检测到' }))
+    fireEvent.click(screen.getByRole('tab', { name: '未安装' }))
     fireEvent.click(screen.getByRole('button', { name: /ChatGPT/ }))
     fireEvent.click(screen.getByRole('button', { name: '查看官方安装方式' }))
     await waitFor(() => expect(bridge.openAiToolInstallPage).toHaveBeenCalledWith({
       toolId: 'codex', requestId: '00000000-0000-4000-8000-000000000001',
     }))
+  })
+
+  it('在同一会话复用检查结果，仅在手动刷新时重新检查', async () => {
+    render(
+      <AppProvider initialState={{ ...initialState, runtime: 'desktop' }}>
+        <ToolsSession />
+      </AppProvider>,
+    )
+
+    expect(await screen.findByText('上次检查', { exact: false })).toBeInTheDocument()
+    expect(bridge.listAiToolHostStatuses).toHaveBeenCalledTimes(1)
+    expect(bridge.listAiToolHostStatuses).toHaveBeenCalledWith(false)
+    expect(screen.getByText('macOS')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '切换工具页' }))
+    fireEvent.click(screen.getByRole('button', { name: '切换工具页' }))
+    expect(await screen.findAllByText('Claude Code')).not.toHaveLength(0)
+    expect(bridge.listAiToolHostStatuses).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '重新检查 AI 工具' }))
+    await waitFor(() => expect(bridge.listAiToolHostStatuses).toHaveBeenCalledTimes(2))
+    expect(bridge.listAiToolHostStatuses).toHaveBeenLastCalledWith(true)
+  })
+
+  it('有会话快照时不自动检查，刷新失败时保留已有结果', async () => {
+    bridge.listAiToolHostStatuses.mockRejectedValueOnce(new Error('刷新失败'))
+    renderTools({
+      ...initialState,
+      runtime: 'desktop',
+      toolHostStatuses: hostStatuses,
+      toolHostCheckedAt: '2026-09-10T08:30:00.000Z',
+    })
+
+    expect(bridge.listAiToolHostStatuses).not.toHaveBeenCalled()
+    expect(screen.getAllByText('Claude Code')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: '重新检查 AI 工具' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('刷新失败')
+    expect(screen.getAllByText('Claude Code')).toHaveLength(2)
   })
 
   it('单项升级先预览确认，只提交稳定标识并在完成后刷新', async () => {
@@ -114,6 +167,18 @@ describe('Desktop AI 工具', () => {
     }))
     expect(JSON.stringify(bridge.commitAiToolUpgrade.mock.lastCall)).not.toMatch(/path|executable|argv|source|packageName/i)
     await waitFor(() => expect(bridge.listAiToolHostStatuses).toHaveBeenCalledTimes(2))
+    expect(bridge.listAiToolHostStatuses).toHaveBeenLastCalledWith(true)
+  })
+
+  it('缓存过期时先展示旧结果并在后台强制更新', async () => {
+    bridge.listAiToolHostStatuses
+      .mockResolvedValueOnce({ statuses: hostStatuses, checkedAt: '2026-09-09T08:30:00.000Z', stale: true })
+      .mockResolvedValueOnce({ statuses: hostStatuses, checkedAt: '2026-09-10T08:30:00.000Z', stale: false })
+    renderTools()
+
+    expect((await screen.findAllByText('Claude Code')).length).toBeGreaterThan(0)
+    await waitFor(() => expect(bridge.listAiToolHostStatuses).toHaveBeenCalledTimes(2))
+    expect(bridge.listAiToolHostStatuses.mock.calls).toEqual([[false], [true]])
   })
 
 })
@@ -150,7 +215,6 @@ describe('重置 Bandi 面板', () => {
     localStorage.clear()
     localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, '{}')
     localStorage.setItem(LEGACY_THEME_STORAGE_KEY, 'dark')
-    localStorage.setItem(MAIN_MENU_LAYOUT_STORAGE_KEY, '[]')
     localStorage.setItem('unrelated-key', 'keep')
     bridge.previewFactoryReset.mockResolvedValue(preview)
   })
@@ -197,7 +261,6 @@ describe('重置 Bandi 面板', () => {
     expect(screen.getByLabelText('重置状态')).toHaveTextContent('restarting')
     expect(localStorage.getItem(UI_PREFERENCES_STORAGE_KEY)).toBeNull()
     expect(localStorage.getItem(LEGACY_THEME_STORAGE_KEY)).toBeNull()
-    expect(localStorage.getItem(MAIN_MENU_LAYOUT_STORAGE_KEY)).toBeNull()
     expect(localStorage.getItem('unrelated-key')).toBe('keep')
     expect(bridge.commitFactoryReset).toHaveBeenCalledWith({
       requestId: 'reset-1',
@@ -215,7 +278,6 @@ describe('重置 Bandi 面板', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('目标已变化')
     expect(localStorage.getItem(UI_PREFERENCES_STORAGE_KEY)).not.toBeNull()
     expect(localStorage.getItem(LEGACY_THEME_STORAGE_KEY)).toBe('dark')
-    expect(localStorage.getItem(MAIN_MENU_LAYOUT_STORAGE_KEY)).toBe('[]')
     expect(localStorage.getItem('unrelated-key')).toBe('keep')
     expect(bridge.restartAfterFactoryReset).not.toHaveBeenCalled()
     expect(screen.getByLabelText('重置状态')).toHaveTextContent('idle')

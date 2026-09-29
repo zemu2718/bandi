@@ -26,7 +26,7 @@ enum Candidate {
     AbsoluteDirectory(&'static str),
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AiToolAvailability {
     Installed,
@@ -35,7 +35,7 @@ pub(crate) enum AiToolAvailability {
     DetectionFailed,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ContextMode {
     InitialPrompt,
@@ -43,22 +43,22 @@ pub(crate) enum ContextMode {
     Unavailable,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct AiToolHostStatusDto {
     pub(crate) tool_id: BuiltInClientId,
     pub(crate) availability: AiToolAvailability,
     pub(crate) context_mode: ContextMode,
-    pub(crate) config_location_label: &'static str,
+    pub(crate) config_location_label: String,
     pub(crate) can_reveal_config: bool,
     pub(crate) can_open_official_install_page: bool,
-    pub(crate) reason_code: &'static str,
+    pub(crate) reason_code: String,
     pub(crate) current_version: Option<String>,
     pub(crate) latest_version: Option<String>,
     pub(crate) install_source: InstallSource,
     pub(crate) version_state: VersionState,
     pub(crate) can_upgrade: bool,
-    pub(crate) version_reason_code: &'static str,
+    pub(crate) version_reason_code: String,
     pub(crate) installation_count: usize,
 }
 
@@ -146,8 +146,11 @@ const TARGETS: [ToolHostTarget; 9] = [
         config_relative_path: ".openclaw",
         mac_candidates: &[
             Candidate::HomeFile(".local/bin/openclaw"),
+            Candidate::HomeFile(".openclaw/bin/openclaw"),
             Candidate::AbsoluteFile("/opt/homebrew/bin/openclaw"),
             Candidate::AbsoluteFile("/usr/local/bin/openclaw"),
+            Candidate::AbsoluteDirectory("/Applications/OpenClaw.app"),
+            Candidate::HomeDirectory("Applications/OpenClaw.app"),
         ],
     },
     ToolHostTarget {
@@ -190,6 +193,10 @@ fn target(tool_id: BuiltInClientId) -> &'static ToolHostTarget {
         .iter()
         .find(|target| target.tool_id == tool_id)
         .expect("固定九工具 catalog 必须完整")
+}
+
+pub(crate) fn catalog_tool_ids() -> [BuiltInClientId; 9] {
+    TARGETS.map(|target| target.tool_id)
 }
 
 fn config_path(home: &Path, target: &ToolHostTarget) -> PathBuf {
@@ -273,7 +280,7 @@ pub(crate) fn list_at(home: &Path) -> Vec<AiToolHostStatusDto> {
                 tool_id: target.tool_id,
                 availability,
                 context_mode,
-                config_location_label: target.config_relative_path,
+                config_location_label: target.config_relative_path.into(),
                 can_reveal_config: cfg!(target_os = "macos")
                     && existing_directory_without_following(&config_path(home, target)),
                 can_open_official_install_page: cfg!(target_os = "macos"),
@@ -282,13 +289,14 @@ pub(crate) fn list_at(home: &Path) -> Vec<AiToolHostStatusDto> {
                     AiToolAvailability::NotFound => "not_found",
                     AiToolAvailability::UnsupportedPlatform => "unsupported_platform",
                     AiToolAvailability::DetectionFailed => "detection_failed",
-                },
+                }
+                .into(),
                 current_version: versions.current_version,
                 latest_version: versions.latest_version,
                 install_source: versions.install_source,
                 version_state: versions.version_state,
                 can_upgrade: versions.can_upgrade,
-                version_reason_code: versions.version_reason_code,
+                version_reason_code: versions.version_reason_code.into(),
                 installation_count: versions.installation_count,
             }
         })
@@ -379,6 +387,21 @@ mod tests {
         let app_path = home.path().join("Tool.app");
         std::fs::write(&app_path, b"not an app bundle").unwrap();
         assert!(!detect_candidate(&app_path, Candidate::HomeDirectory("Tool.app")).unwrap());
+    }
+
+    #[test]
+    fn detects_openclaw_from_fixed_home_cli() {
+        let home = tempfile::tempdir().unwrap();
+        let cli = home.path().join(".openclaw/bin/openclaw");
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(cli, b"isolated openclaw").unwrap();
+
+        let status = list_at(home.path())
+            .into_iter()
+            .find(|item| item.tool_id == BuiltInClientId::Openclaw)
+            .unwrap();
+
+        assert_eq!(status.availability, AiToolAvailability::Installed);
     }
 
     #[test]

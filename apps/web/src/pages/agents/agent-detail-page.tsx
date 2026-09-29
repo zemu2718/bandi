@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Copy, FileDiff, History, KeyRound, Save, Search, ShieldCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Copy, FileDiff, FileSearch2, History, KeyRound, Save, ShieldCheck } from 'lucide-react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AiClientLaunchAction } from '../../components/ai-clients'
 import { Button } from '../../components/ui/button'
@@ -9,7 +9,7 @@ import { useUnsavedChangesGuard } from '../../hooks/use-unsaved-changes-guard'
 import { ErrorNotice, errorFromCause, type UserFacingError } from '../../components/app/error-notice'
 import { EmptyState, EntityNotFound, EntityTabPanel, EntityTabs, FieldRow, MonoPath, PageHeader, PathActions, StatusBadge, toneForStatus } from '../../components/app/page'
 import { useApp } from '../../state'
-import { agentFunctionLabel, agentFunctionLabels, type ContextPolicy, type FullAgent } from '../../domain'
+import { agentFunctionLabel, agentFunctionLabels, normalizeAgentFunction, validateAgentFunction, type ContextPolicy, type FullAgent } from '../../domain'
 import { applyAgentConfig, normalizeAgentName, parseAgentContextConfig, parseAgentMcpRefs, parseAgentPermissions, parseAgentRuleRefs, parseAgentSkillRefs, parseAgentSopRefs, serializeAgentConfig, validateAgentName, validateContextPolicy, validateContextWindowTokens, type AgentContextConfig, type AgentIdentityConfig } from '../../agent-config-model'
 import { getAgentConfigStatus, getLatestRevisionForAgent } from '../../domain-selectors'
 import { useRegisterEditorSession } from '../../editor-session'
@@ -21,6 +21,7 @@ import { AgentConfigNavigation } from './agent-config-navigation'
 import { AgentDangerZone } from './agent-danger-zone'
 import { AgentAvatar } from '../../components/agents/agent-avatar'
 import { AgentAvatarPicker } from '../../components/agents/agent-avatar-picker'
+import { AgentFunctionInput } from '../../components/agents/agent-function-input'
 import { MemoryTab } from './memory-tab'
 import { agentIdentityConfig, canPersistAgentIdentity, saveAgentLifecycle } from './agent-lifecycle'
 import { commitManagedAgentIdentity, discoverConfig, isDesktopRuntime, listConfigRevisions, loadConfigEditor, loadManagedAgentIdentity, readConfigRevisionContent, recoverConfigRevision, recoverManagedAgentIdentity, restoreConfigRevision, restoreManagedAgentIdentity, saveConfig } from '../../desktop-bridge'
@@ -95,7 +96,7 @@ export function AgentDetailPage() {
   const activeMode = packageMode ? 'package' : 'management'
 
   return <>
-    <PageHeader leading={<AgentAvatar agent={agent} className="size-12 text-lg" />} title={agent.name} description={identitySummary} action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'source', agentId: agent.id, section: route.section } })}><Search size={16} aria-hidden="true" />诊断来源</Button><AiClientLaunchAction agentId={agent.id} agentName={agent.name} disabled={agent.status !== 'active'} /></div>} />
+    <PageHeader leading={<AgentAvatar agent={agent} className="size-12 text-lg" />} title={agent.name} description={identitySummary} action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => dispatch({ type: 'OPEN_DIALOG', dialog: { kind: 'source', agentId: agent.id, section: route.section } })}><FileSearch2 size={16} aria-hidden="true" />诊断来源</Button><AiClientLaunchAction agentId={agent.id} agentName={agent.name} disabled={agent.status !== 'active'} /></div>} />
     <section aria-label="Agent 状态与视图" className="panel mb-5 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-5">
         <div className="min-w-0 max-w-3xl"><div className="flex flex-wrap gap-2"><StatusBadge tone={toneForStatus(agent.status)}>{lifecycleLabel}</StatusBadge><StatusBadge tone={configStatus?.level === 'healthy' ? 'success' : configStatus?.level === 'warning' ? 'warning' : configStatus?.level === 'unknown' ? 'neutral' : 'danger'}>{configStatus?.label}</StatusBadge></div><p className="mt-3 leading-7 text-muted-foreground">{agent.mission || '尚未设置职责说明'}</p><div className="mt-2"><MonoPath>{agent.packagePath}</MonoPath></div></div>
@@ -159,6 +160,7 @@ function Overview({ agent }: { agent: FullAgent }) {
 
 function IdentityTab({ agent }: { agent: FullAgent }) {
   const { state, dispatch } = useApp()
+  const [params, setParams] = useSearchParams()
   const [editing, setEditing] = useState(false)
   const [lifecycleTarget, setLifecycleTarget] = useState<FullAgent['status']>()
   const canonical: AgentIdentityConfig = useMemo(() => agentIdentityConfig(agent), [agent])
@@ -179,9 +181,17 @@ function IdentityTab({ agent }: { agent: FullAgent }) {
   const saveRequestId = useRef<string | undefined>(undefined)
   const lifecycleRequestId = useRef<string | undefined>(undefined)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const functionInputRef = useRef<HTMLInputElement>(null)
   const normalizedName = normalizeAgentName(draft.name)
   const duplicateName = state.agents.some((item) => item.id !== agent.id && normalizeAgentName(item.name).toLocaleLowerCase() === normalizedName.toLocaleLowerCase())
   const nameError = validateAgentName(draft.name) ?? (duplicateName ? '已有同名 Agent，请使用其他名称。' : undefined)
+  const functionError = validateAgentFunction(draft.functionId)
+  const presetFunctionIds = new Set(Object.keys(agentFunctionLabels))
+  const functionSuggestions = [...new Set(state.agents
+    .filter((item) => item.teamId === draft.teamId)
+    .map((item) => item.functionId)
+    .filter((id): id is string => typeof id === 'string' && !presetFunctionIds.has(id)))]
+    .sort((left, right) => left.localeCompare(right, 'zh-CN'))
   const managedAvatar = canPersistAgentIdentity(agent)
   useEffect(() => { if (!editing) { setDraft(canonical); setAvatar(undefined); setRemoveAvatar(false); setIdentityConflict(undefined) } }, [canonical, editing])
   const dirty = editing && (JSON.stringify(draft) !== JSON.stringify(canonical) || Boolean(avatar) || removeAvatar)
@@ -189,7 +199,7 @@ function IdentityTab({ agent }: { agent: FullAgent }) {
   const unsavedDialog = useUnsavedChangesGuard({ dirty, resetDraft: reset })
   const update = <K extends keyof AgentIdentityConfig>(key: K, value: AgentIdentityConfig[K]) => setDraft((item) => ({ ...item, [key]: value }))
   const cancel = reset
-  const beginEdit = async () => {
+  const beginEdit = useCallback(async () => {
     setSaveError(undefined)
     if (managedAvatar) {
       try {
@@ -200,7 +210,14 @@ function IdentityTab({ agent }: { agent: FullAgent }) {
       }
     }
     setEditing(true)
-  }
+  }, [agent.id, managedAvatar])
+  useEffect(() => {
+    if (params.get('edit') !== '1') return
+    const next = new URLSearchParams(params)
+    next.delete('edit')
+    setParams(next, { replace: true })
+    void beginEdit()
+  }, [beginEdit, params, setParams])
   const updateManagedAgent = (result: Extract<SaveManagedAgentIdentityResult, { kind: 'saved' | 'unchanged' }>, message: string) => {
     const packageSource = agent.packageSource.kind === 'managed-agent-import' || agent.packageSource.kind === 'claude-agent-import'
       ? agent.packageSource
@@ -265,11 +282,12 @@ function IdentityTab({ agent }: { agent: FullAgent }) {
   }
   const save = async () => {
     if (!dirty) { setEditing(false); return }
-    if (nameError) {
-      nameInputRef.current?.focus()
+    if (nameError || functionError) {
+      if (nameError) nameInputRef.current?.focus()
+      else functionInputRef.current?.focus()
       return
     }
-    const value = { ...draft, name: normalizedName, avatarPath: avatar ? 'avatar.png' as const : removeAvatar ? undefined : draft.avatarPath }
+    const value = { ...draft, name: normalizedName, functionId: normalizeAgentFunction(draft.functionId), avatarPath: avatar ? 'avatar.png' as const : removeAvatar ? undefined : draft.avatarPath }
     if (!managedAvatar) {
       dispatch({ type: 'SAVE_AGENT_CONFIG', input: { agentId: agent.id, kind: 'identity', value } })
       setEditing(false)
@@ -328,9 +346,9 @@ function IdentityTab({ agent }: { agent: FullAgent }) {
     }
   }
   const displayedAgentId = agent.id.length <= 16 ? agent.id : `${agent.id.slice(0, 8)}…${agent.id.slice(-4)}`
-  useRegisterEditorSession(editing ? { id: `agent:${agent.id}:identity`, dirty, canSave: dirty && !nameError, save, cancel } : undefined)
-  return <><section className="panel overflow-hidden"><TabHeader title="身份与职责" description="加入 Team 不会自动获得权限。" editing={editing} onEdit={beginEdit} onCancel={cancel} onSave={save} canSave={!nameError} saveLabel={managedAvatar ? '保存' : '保存到当前页面'} />
-    <div className="p-5">{editing ? <div className="grid gap-5 sm:grid-cols-2"><AgentAvatarPicker name={draft.name} file={avatar} onChange={(file) => { setAvatar(file); if (file) setRemoveAvatar(false) }} disabled={!managedAvatar} help={managedAvatar ? undefined : '仅受管 Agent 支持替换头像。'} /><Labeled label="名称"><input ref={nameInputRef} value={draft.name} onChange={(e) => update('name', e.target.value)} aria-invalid={Boolean(nameError)} aria-describedby={nameError ? 'agent-name-error' : undefined} className="h-10 w-full px-3" />{nameError && <p id="agent-name-error" className="mt-1 text-xs text-danger">{nameError}</p>}</Labeled><Labeled label="Team"><select value={draft.teamId} onChange={(e) => update('teamId', e.target.value)} className="h-10 w-full px-3">{state.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Labeled><Labeled label="职能"><select value={draft.functionId ?? ''} onChange={(e) => update('functionId', (e.target.value || undefined) as AgentIdentityConfig['functionId'])} className="h-10 w-full px-3"><option value="">未分类</option>{Object.entries(agentFunctionLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></Labeled><Labeled label="一句话描述"><textarea value={draft.mission} onChange={(e) => update('mission', e.target.value)} className="min-h-28 w-full p-3" /></Labeled><ListEditor label="主要职责" values={draft.responsibilities} onChange={(value) => update('responsibilities', value)} /><ListEditor label="交付物" values={draft.deliverables} onChange={(value) => update('deliverables', value)} /><ListEditor label="决策边界" values={draft.decisionBoundaries} onChange={(value) => update('decisionBoundaries', value)} /><ListEditor label="升级条件" values={draft.escalationConditions} onChange={(value) => update('escalationConditions', value)} /><ListEditor label="禁止事项" values={draft.prohibitions} onChange={(value) => update('prohibitions', value)} /><ListEditor label="完成定义" values={draft.completionDefinition} onChange={(value) => update('completionDefinition', value)} /></div> : <div><FieldRow label="Agent ID"><div className="flex min-w-0 flex-wrap items-center gap-2"><code className="break-all text-xs" title={agent.id}>{displayedAgentId}</code><Tooltip content="复制完整 Agent ID"><Button type="button" variant="outline" size="sm" aria-label="复制完整 Agent ID" onClick={() => void copyAgentId()}><Copy size={14} aria-hidden="true" />复制</Button></Tooltip></div></FieldRow><FieldRow label="Team">{state.teams.find((team) => team.id === agent.teamId)?.name ?? agent.teamId}</FieldRow><FieldRow label="职能">{agentFunctionLabel(agent.functionId)}</FieldRow><FieldRow label="一句话描述">{agent.mission}</FieldRow><FieldRow label="主要职责">{agent.responsibilities.join('；')}</FieldRow><FieldRow label="交付物">{agent.deliverables.join('；')}</FieldRow><FieldRow label="决策边界">{agent.decisionBoundaries.join('；')}</FieldRow><FieldRow label="升级条件">{agent.escalationConditions.join('；')}</FieldRow><FieldRow label="禁止事项">{agent.prohibitions.join('；')}</FieldRow><FieldRow label="完成定义">{agent.completionDefinition.join('；')}</FieldRow></div>}
+  useRegisterEditorSession(editing ? { id: `agent:${agent.id}:identity`, dirty, canSave: dirty && !nameError && !functionError, save, cancel } : undefined)
+  return <><section className="panel overflow-hidden"><TabHeader title="身份与职责" description="加入 Team 不会自动获得权限。" editing={editing} onEdit={beginEdit} onCancel={cancel} onSave={save} canSave={!nameError && !functionError} saveLabel={managedAvatar ? '保存' : '保存到当前页面'} />
+    <div className="p-5">{editing ? <div className="grid gap-5 sm:grid-cols-2"><AgentAvatarPicker name={draft.name} file={avatar} onChange={(file) => { setAvatar(file); if (file) setRemoveAvatar(false) }} disabled={!managedAvatar} help={managedAvatar ? undefined : '仅受管 Agent 支持替换头像。'} /><Labeled label="名称"><input ref={nameInputRef} value={draft.name} onChange={(e) => update('name', e.target.value)} aria-invalid={Boolean(nameError)} aria-describedby={nameError ? 'agent-name-error' : undefined} className="h-10 w-full px-3" />{nameError && <p id="agent-name-error" className="mt-1 text-xs text-danger">{nameError}</p>}</Labeled><Labeled label="Team"><select value={draft.teamId} onChange={(e) => update('teamId', e.target.value)} className="h-10 w-full px-3">{state.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Labeled><AgentFunctionInput ref={functionInputRef} id="agent-detail-function" label="职能" value={draft.functionId} onChange={(value) => update('functionId', value || undefined)} error={functionError} suggestions={functionSuggestions} /><Labeled label="一句话描述"><textarea value={draft.mission} onChange={(e) => update('mission', e.target.value)} className="min-h-28 w-full p-3" /></Labeled><ListEditor label="主要职责" values={draft.responsibilities} onChange={(value) => update('responsibilities', value)} /><ListEditor label="交付物" values={draft.deliverables} onChange={(value) => update('deliverables', value)} /><ListEditor label="决策边界" values={draft.decisionBoundaries} onChange={(value) => update('decisionBoundaries', value)} /><ListEditor label="升级条件" values={draft.escalationConditions} onChange={(value) => update('escalationConditions', value)} /><ListEditor label="禁止事项" values={draft.prohibitions} onChange={(value) => update('prohibitions', value)} /><ListEditor label="完成定义" values={draft.completionDefinition} onChange={(value) => update('completionDefinition', value)} /></div> : <div><FieldRow label="Agent ID"><div className="flex min-w-0 flex-wrap items-center gap-2"><code className="break-all text-xs" title={agent.id}>{displayedAgentId}</code><Tooltip content="复制完整 Agent ID"><Button type="button" variant="outline" size="sm" aria-label="复制完整 Agent ID" onClick={() => void copyAgentId()}><Copy size={14} aria-hidden="true" />复制</Button></Tooltip></div></FieldRow><FieldRow label="Team">{state.teams.find((team) => team.id === agent.teamId)?.name ?? agent.teamId}</FieldRow><FieldRow label="职能">{agentFunctionLabel(agent.functionId)}</FieldRow><FieldRow label="一句话描述">{agent.mission}</FieldRow><FieldRow label="主要职责">{agent.responsibilities.join('；')}</FieldRow><FieldRow label="交付物">{agent.deliverables.join('；')}</FieldRow><FieldRow label="决策边界">{agent.decisionBoundaries.join('；')}</FieldRow><FieldRow label="升级条件">{agent.escalationConditions.join('；')}</FieldRow><FieldRow label="禁止事项">{agent.prohibitions.join('；')}</FieldRow><FieldRow label="完成定义">{agent.completionDefinition.join('；')}</FieldRow></div>}
       {saveError && (typeof saveError === 'string' ? <div role="alert" className="mt-4 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger"><p>{saveError}</p>{recoveryRef && <Button className="mt-3" variant="outline" size="sm" onClick={recoverIdentityRevision}>补记配置版本</Button>}</div> : <ErrorNotice error={saveError} className="mt-4" />)}
       {identityConflict && <div className="mt-4"><div className="grid gap-3 lg:grid-cols-3" aria-label="身份配置外部变化比较">{([{ label: '原始内容', side: identityConflict.base }, { label: '文件当前内容', side: identityConflict.current }, { label: '你的修改', side: identityConflict.proposed }] as const).map(({ label, side }) => <section key={label} className="min-w-0 rounded-lg border border-border p-3"><b className="text-xs">{label}</b><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs leading-5">{side.content}</pre></section>)}</div><div className="mt-3 flex justify-end"><Button variant="outline" size="sm" onClick={reloadIdentityConflict}>使用文件当前内容继续编辑</Button></div></div>}
       {!editing && <div className="mt-6 flex flex-wrap gap-2"><Button variant="ghost" disabled={historyLoading} onClick={openIdentityHistory}><History size={15} aria-hidden="true" />{historyLoading ? '加载历史中…' : '版本历史'}</Button>{agent.status === 'archived' ? <Button variant="outline" onClick={() => setLifecycleTarget('inactive')}>移回当前 Agent</Button> : <><Button variant="outline" onClick={() => setLifecycleTarget(agent.status === 'inactive' ? 'active' : 'inactive')}>{agent.status === 'inactive' ? '重新启用' : '停用 Agent'}</Button><Button variant="outline" onClick={() => setLifecycleTarget('archived')}>归档</Button></>}</div>}

@@ -1,19 +1,9 @@
 {
   "space": {
     "id": "memory-agent-zhouce",
-    "scopeType": "agent_long_term",
-    "scopeKey": {
-      "kind": "agent_long_term",
-      "agentId": "zhouce"
-    },
-    "owner": {
-      "kind": "agent",
-      "agentId": "zhouce"
-    },
-    "stewardAgentId": "zhouce",
-    "visibilityPolicy": "agent_private",
-    "storageProfileVersion": "memory-v4",
+    "agentId": "zhouce",
     "state": "active",
+    "storageProfileVersion": "memory-v4",
     "storageLocator": {
       "rootKind": "managed",
       "displayPath": "memory/long-term.md",
@@ -26,46 +16,46 @@
   "saveRequest": {
     "requestId": "memory-save-18",
     "spaceId": "memory-agent-zhouce",
-    "expectedOwner": {
-      "kind": "agent",
-      "agentId": "zhouce"
-    },
+    "agentId": "zhouce",
     "content": "# 长期记忆\n\n交付必须附验证证据。\n",
+    "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "expectedBaseline": {
       "id": "memory-baseline-17",
       "assetId": "memory-agent-zhouce",
       "containerId": "memory-agent-zhouce",
       "assetContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "containerContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    },
-    "baseContent": "# 长期记忆\n"
+      "containerContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "targetExists": true
+    }
   },
   "savedResult": {
     "kind": "saved",
     "requestId": "memory-save-18",
-    "space": {
-      "id": "memory-agent-zhouce",
-      "scopeType": "agent_long_term",
-      "scopeKey": {
-        "kind": "agent_long_term",
-        "agentId": "zhouce"
+    "memory": {
+      "requestId": "memory-save-18",
+      "space": {
+        "id": "memory-agent-zhouce",
+        "agentId": "zhouce",
+        "state": "active",
+        "storageProfileVersion": "memory-v4",
+        "storageLocator": {
+          "rootKind": "managed",
+          "displayPath": "memory/long-term.md",
+          "relativePath": "memory/long-term.md"
+        },
+        "currentRevisionId": "memory-revision-18",
+        "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "updatedAt": "2026-09-01T00:02:00Z"
       },
-      "owner": {
-        "kind": "agent",
-        "agentId": "zhouce"
-      },
-      "stewardAgentId": "zhouce",
-      "visibilityPolicy": "agent_private",
-      "storageProfileVersion": "memory-v4",
-      "state": "active",
-      "storageLocator": {
-        "rootKind": "managed",
-        "displayPath": "memory/long-term.md",
-        "relativePath": "memory/long-term.md"
-      },
-      "currentRevisionId": "memory-revision-18",
-      "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "updatedAt": "2026-09-01T00:02:00Z"
+      "content": "# 长期记忆\n\n交付必须附验证证据。\n",
+      "baselineRef": {
+        "id": "memory-baseline-18",
+        "assetId": "memory-agent-zhouce",
+        "containerId": "memory-agent-zhouce",
+        "assetContentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "containerContentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "targetExists": true
+      }
     },
     "revision": {
       "id": "memory-revision-18",
@@ -73,11 +63,6 @@
       "parentRevisionId": "memory-revision-17",
       "sourceContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "storageLocator": {
-        "rootKind": "managed",
-        "displayPath": "memory/long-term.md",
-        "relativePath": "memory/long-term.md"
-      },
       "writeReceiptId": "memory-write-18",
       "writtenAt": "2026-09-01T00:02:00Z"
     },

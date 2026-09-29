@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-connect-private-backup-repository"
+description = "Enables the connect_private_backup_repository command without any pre-configured scope."
+commands.allow = ["connect_private_backup_repository"]
+
+[[permission]]
+identifier = "deny-connect-private-backup-repository"
+description = "Denies the connect_private_backup_repository command without any pre-configured scope."
+commands.deny = ["connect_private_backup_repository"]

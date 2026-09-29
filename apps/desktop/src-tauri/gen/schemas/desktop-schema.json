@@ -195,6 +195,12 @@
           "markdownDescription": "Enables the commit_factory_reset command without any pre-configured scope."
         },
         {
+          "description": "Enables the commit_host_asset_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-commit-host-asset-action",
+          "markdownDescription": "Enables the commit_host_asset_action command without any pre-configured scope."
+        },
+        {
           "description": "Enables the commit_managed_agent_creation command without any pre-configured scope.",
           "type": "string",
           "const": "allow-commit-managed-agent-creation",
@@ -219,6 +225,12 @@
           "markdownDescription": "Enables the commit_shared_asset_import command without any pre-configured scope."
         },
         {
+          "description": "Enables the connect_private_backup_repository command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-private-backup-repository",
+          "markdownDescription": "Enables the connect_private_backup_repository command without any pre-configured scope."
+        },
+        {
           "description": "Enables the continue_agent_recovery command without any pre-configured scope.",
           "type": "string",
           "const": "allow-continue-agent-recovery",
@@ -231,6 +243,18 @@
           "markdownDescription": "Enables the create_backup_snapshot command without any pre-configured scope."
         },
         {
+          "description": "Enables the create_portable_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-portable-snapshot",
+          "markdownDescription": "Enables the create_portable_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_private_backup_repository command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-private-backup-repository",
+          "markdownDescription": "Enables the create_private_backup_repository command without any pre-configured scope."
+        },
+        {
           "description": "Enables the create_shared_asset command without any pre-configured scope.",
           "type": "string",
           "const": "allow-create-shared-asset",
@@ -241,6 +265,18 @@
           "type": "string",
           "const": "allow-delete-ui-asset",
           "markdownDescription": "Enables the delete_ui_asset command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the disconnect_github command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-disconnect-github",
+          "markdownDescription": "Enables the disconnect_github command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the disconnect_remote_backup_repository command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-disconnect-remote-backup-repository",
+          "markdownDescription": "Enables the disconnect_remote_backup_repository command without any pre-configured scope."
         },
         {
           "description": "Enables the discover_config command without any pre-configured scope.",
@@ -259,6 +295,18 @@
           "type": "string",
           "const": "allow-generate-entity-id",
           "markdownDescription": "Enables the generate_entity_id command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_backup_overview command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-backup-overview",
+          "markdownDescription": "Enables the get_backup_overview command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_host_asset_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-host-asset-catalog",
+          "markdownDescription": "Enables the get_host_asset_catalog command without any pre-configured scope."
         },
         {
           "description": "Enables the import_claude_agent command without any pre-configured scope.",
@@ -315,10 +363,28 @@
           "markdownDescription": "Enables the list_memory_revisions command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_portable_snapshots command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-portable-snapshots",
+          "markdownDescription": "Enables the list_portable_snapshots command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_remote_backup_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-remote-backup-history",
+          "markdownDescription": "Enables the list_remote_backup_history command without any pre-configured scope."
+        },
+        {
           "description": "Enables the load_config_editor command without any pre-configured scope.",
           "type": "string",
           "const": "allow-load-config-editor",
           "markdownDescription": "Enables the load_config_editor command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_host_asset_detail command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-host-asset-detail",
+          "markdownDescription": "Enables the load_host_asset_detail command without any pre-configured scope."
         },
         {
           "description": "Enables the load_long_term_domain_snapshot_v4 command without any pre-configured scope.",
@@ -351,6 +417,12 @@
           "markdownDescription": "Enables the open_ai_tool_install_page command without any pre-configured scope."
         },
         {
+          "description": "Enables the poll_github_device_flow command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-poll-github-device-flow",
+          "markdownDescription": "Enables the poll_github_device_flow command without any pre-configured scope."
+        },
+        {
           "description": "Enables the preview_ai_tool_upgrade command without any pre-configured scope.",
           "type": "string",
           "const": "allow-preview-ai-tool-upgrade",
@@ -375,10 +447,22 @@
           "markdownDescription": "Enables the preview_factory_reset command without any pre-configured scope."
         },
         {
+          "description": "Enables the preview_host_asset_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preview-host-asset-action",
+          "markdownDescription": "Enables the preview_host_asset_action command without any pre-configured scope."
+        },
+        {
           "description": "Enables the preview_managed_agent_deletion command without any pre-configured scope.",
           "type": "string",
           "const": "allow-preview-managed-agent-deletion",
           "markdownDescription": "Enables the preview_managed_agent_deletion command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preview_portable_restore command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preview-portable-restore",
+          "markdownDescription": "Enables the preview_portable_restore command without any pre-configured scope."
         },
         {
           "description": "Enables the read_agent_avatar command without any pre-configured scope.",
@@ -483,6 +567,12 @@
           "markdownDescription": "Enables the restore_memory_revision command without any pre-configured scope."
         },
         {
+          "description": "Enables the restore_portable_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-restore-portable-snapshot",
+          "markdownDescription": "Enables the restore_portable_snapshot command without any pre-configured scope."
+        },
+        {
           "description": "Enables the reveal_ai_tool_config_location command without any pre-configured scope.",
           "type": "string",
           "const": "allow-reveal-ai-tool-config-location",
@@ -519,10 +609,40 @@
           "markdownDescription": "Enables the save_team_v4 command without any pre-configured scope."
         },
         {
+          "description": "Enables the scan_host_assets command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-scan-host-assets",
+          "markdownDescription": "Enables the scan_host_assets command without any pre-configured scope."
+        },
+        {
           "description": "Enables the select_shared_asset_import command without any pre-configured scope.",
           "type": "string",
           "const": "allow-select-shared-asset-import",
           "markdownDescription": "Enables the select_shared_asset_import command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_automatic_remote_backup command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-automatic-remote-backup",
+          "markdownDescription": "Enables the set_automatic_remote_backup command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_remote_memory_policy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-remote-memory-policy",
+          "markdownDescription": "Enables the set_remote_memory_policy command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_github_device_flow command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-github-device-flow",
+          "markdownDescription": "Enables the start_github_device_flow command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the upload_portable_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-upload-portable-snapshot",
+          "markdownDescription": "Enables the upload_portable_snapshot command without any pre-configured scope."
         },
         {
           "description": "Denies the allocate_agent_id command without any pre-configured scope.",
@@ -541,6 +661,12 @@
           "type": "string",
           "const": "deny-commit-factory-reset",
           "markdownDescription": "Denies the commit_factory_reset command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the commit_host_asset_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-commit-host-asset-action",
+          "markdownDescription": "Denies the commit_host_asset_action command without any pre-configured scope."
         },
         {
           "description": "Denies the commit_managed_agent_creation command without any pre-configured scope.",
@@ -567,6 +693,12 @@
           "markdownDescription": "Denies the commit_shared_asset_import command without any pre-configured scope."
         },
         {
+          "description": "Denies the connect_private_backup_repository command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-private-backup-repository",
+          "markdownDescription": "Denies the connect_private_backup_repository command without any pre-configured scope."
+        },
+        {
           "description": "Denies the continue_agent_recovery command without any pre-configured scope.",
           "type": "string",
           "const": "deny-continue-agent-recovery",
@@ -579,6 +711,18 @@
           "markdownDescription": "Denies the create_backup_snapshot command without any pre-configured scope."
         },
         {
+          "description": "Denies the create_portable_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-portable-snapshot",
+          "markdownDescription": "Denies the create_portable_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_private_backup_repository command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-private-backup-repository",
+          "markdownDescription": "Denies the create_private_backup_repository command without any pre-configured scope."
+        },
+        {
           "description": "Denies the create_shared_asset command without any pre-configured scope.",
           "type": "string",
           "const": "deny-create-shared-asset",
@@ -589,6 +733,18 @@
           "type": "string",
           "const": "deny-delete-ui-asset",
           "markdownDescription": "Denies the delete_ui_asset command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the disconnect_github command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-disconnect-github",
+          "markdownDescription": "Denies the disconnect_github command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the disconnect_remote_backup_repository command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-disconnect-remote-backup-repository",
+          "markdownDescription": "Denies the disconnect_remote_backup_repository command without any pre-configured scope."
         },
         {
           "description": "Denies the discover_config command without any pre-configured scope.",
@@ -607,6 +763,18 @@
           "type": "string",
           "const": "deny-generate-entity-id",
           "markdownDescription": "Denies the generate_entity_id command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_backup_overview command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-backup-overview",
+          "markdownDescription": "Denies the get_backup_overview command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_host_asset_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-host-asset-catalog",
+          "markdownDescription": "Denies the get_host_asset_catalog command without any pre-configured scope."
         },
         {
           "description": "Denies the import_claude_agent command without any pre-configured scope.",
@@ -663,10 +831,28 @@
           "markdownDescription": "Denies the list_memory_revisions command without any pre-configured scope."
         },
         {
+          "description": "Denies the list_portable_snapshots command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-portable-snapshots",
+          "markdownDescription": "Denies the list_portable_snapshots command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_remote_backup_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-remote-backup-history",
+          "markdownDescription": "Denies the list_remote_backup_history command without any pre-configured scope."
+        },
+        {
           "description": "Denies the load_config_editor command without any pre-configured scope.",
           "type": "string",
           "const": "deny-load-config-editor",
           "markdownDescription": "Denies the load_config_editor command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_host_asset_detail command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-host-asset-detail",
+          "markdownDescription": "Denies the load_host_asset_detail command without any pre-configured scope."
         },
         {
           "description": "Denies the load_long_term_domain_snapshot_v4 command without any pre-configured scope.",
@@ -699,6 +885,12 @@
           "markdownDescription": "Denies the open_ai_tool_install_page command without any pre-configured scope."
         },
         {
+          "description": "Denies the poll_github_device_flow command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-poll-github-device-flow",
+          "markdownDescription": "Denies the poll_github_device_flow command without any pre-configured scope."
+        },
+        {
           "description": "Denies the preview_ai_tool_upgrade command without any pre-configured scope.",
           "type": "string",
           "const": "deny-preview-ai-tool-upgrade",
@@ -723,10 +915,22 @@
           "markdownDescription": "Denies the preview_factory_reset command without any pre-configured scope."
         },
         {
+          "description": "Denies the preview_host_asset_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preview-host-asset-action",
+          "markdownDescription": "Denies the preview_host_asset_action command without any pre-configured scope."
+        },
+        {
           "description": "Denies the preview_managed_agent_deletion command without any pre-configured scope.",
           "type": "string",
           "const": "deny-preview-managed-agent-deletion",
           "markdownDescription": "Denies the preview_managed_agent_deletion command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preview_portable_restore command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preview-portable-restore",
+          "markdownDescription": "Denies the preview_portable_restore command without any pre-configured scope."
         },
         {
           "description": "Denies the read_agent_avatar command without any pre-configured scope.",
@@ -831,6 +1035,12 @@
           "markdownDescription": "Denies the restore_memory_revision command without any pre-configured scope."
         },
         {
+          "description": "Denies the restore_portable_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-restore-portable-snapshot",
+          "markdownDescription": "Denies the restore_portable_snapshot command without any pre-configured scope."
+        },
+        {
           "description": "Denies the reveal_ai_tool_config_location command without any pre-configured scope.",
           "type": "string",
           "const": "deny-reveal-ai-tool-config-location",
@@ -867,10 +1077,40 @@
           "markdownDescription": "Denies the save_team_v4 command without any pre-configured scope."
         },
         {
+          "description": "Denies the scan_host_assets command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-scan-host-assets",
+          "markdownDescription": "Denies the scan_host_assets command without any pre-configured scope."
+        },
+        {
           "description": "Denies the select_shared_asset_import command without any pre-configured scope.",
           "type": "string",
           "const": "deny-select-shared-asset-import",
           "markdownDescription": "Denies the select_shared_asset_import command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_automatic_remote_backup command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-automatic-remote-backup",
+          "markdownDescription": "Denies the set_automatic_remote_backup command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_remote_memory_policy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-remote-memory-policy",
+          "markdownDescription": "Denies the set_remote_memory_policy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_github_device_flow command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-github-device-flow",
+          "markdownDescription": "Denies the start_github_device_flow command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the upload_portable_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-upload-portable-snapshot",
+          "markdownDescription": "Denies the upload_portable_snapshot command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

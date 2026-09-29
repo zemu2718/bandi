@@ -28,3 +28,6 @@ for (const phase of ['configure', 'reset', 'fresh']) {
 
 await resetSandbox()
 await runSpec('specs/fresh-restart.spec.ts')
+
+await resetSandbox()
+await runSpec('specs/host-assets-lifecycle.spec.ts')

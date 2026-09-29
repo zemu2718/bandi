@@ -321,6 +321,10 @@ export type AiToolContextMode = 'initial_prompt' | 'manual_context' | 'unavailab
 export type AiToolInstallSource = 'npm' | 'homebrew' | 'native' | 'app_bundle' | 'unknown' | 'not_applicable'
 export type AiToolVersionState = 'not_applicable' | 'unknown' | 'up_to_date' | 'update_available' | 'ahead_or_prerelease' | 'conflicting_installs'
 
+export type ListAiToolHostStatusesRequest = {
+  forceRefresh: boolean
+}
+
 export type AiToolHostStatusDto = {
   toolId: import('./client-adapters').BuiltInClientId
   availability: AiToolAvailability
@@ -336,6 +340,12 @@ export type AiToolHostStatusDto = {
   canUpgrade: boolean
   versionReasonCode: string
   installationCount: number
+}
+
+export type AiToolHostSnapshotDto = {
+  statuses: AiToolHostStatusDto[]
+  checkedAt: Timestamp
+  stale: boolean
 }
 
 export type AiToolHostRequest = {
@@ -452,6 +462,154 @@ export type BackupSnapshotDto = {
   entries: BackupSnapshotEntryDto[]
 }
 
+export type CreatePortableSnapshotRequest = {
+  requestId: Id
+  includeMemory: boolean
+}
+
+export type PortableSnapshotEntryKind = 'domain' | 'agent_file' | 'shared_asset_file' | 'memory'
+
+export type PortableSnapshotEntryDto = {
+  kind: PortableSnapshotEntryKind
+  ownerId: Id
+  path: string
+  objectRef: string
+  sizeBytes: number
+  contentHash: ContentHash
+}
+
+export type PortableSnapshotSummaryDto = {
+  snapshotId: Id
+  createdAt: Timestamp
+  includeMemory: boolean
+  entryCount: number
+  totalBytes: number
+  manifestHash: ContentHash
+}
+
+export type PortableSnapshotManifestDto = PortableSnapshotSummaryDto & {
+  schemaVersion: 1
+  profileVersion: 'portable-backup-v1'
+  entries: PortableSnapshotEntryDto[]
+}
+
+export type GithubConnectionDto = {
+  status: 'connected' | 'disconnected' | 'unavailable'
+  login?: string
+  reason?: string
+}
+
+export type RemoteRepositoryDto = {
+  owner: string
+  name: string
+  repositoryId: number
+}
+
+export type BackupHistoryItemDto = {
+  snapshotId: Id
+  createdAt: Timestamp
+  includeMemory: boolean
+  entryCount: number
+  totalBytes: number
+  manifestHash: ContentHash
+  status: 'uploaded' | 'pending_upload' | 'failed'
+  commitOid?: string
+  uploadedAt?: Timestamp
+  failure?: BackupFailureDto
+}
+
+export type BackupOverviewDto = {
+  github: GithubConnectionDto
+  repository: RemoteRepositoryDto | null
+  automaticBackupEnabled: boolean
+  includeMemory: boolean
+  lastSuccessfulBackupAt?: Timestamp
+  capabilities?: { portableRestore: boolean }
+}
+
+export type GithubDeviceFlowDto = {
+  flowId: Id
+  userCode: string
+  verificationUri: 'https://github.com/login/device'
+  expiresAt: Timestamp
+  interval: number
+}
+
+export type GithubDeviceFlowPollDto = {
+  status: 'pending' | 'slow_down' | 'authorized' | 'denied' | 'expired'
+  login?: string
+  retryAfterEpochSeconds?: number
+}
+
+export type BackupFailureDto = {
+  code: string
+  message: string
+  retryable: boolean
+  source?: 'github' | 'filesystem' | 'repository' | 'snapshot' | 'restore'
+  details?: Diagnostic[]
+}
+
+export type PortableRestoreScope =
+  | { kind: 'all' }
+  | { kind: 'team'; teamId: Id }
+  | { kind: 'agent'; agentId: Id }
+
+export type PortableRestorePlanEntry = {
+  action: 'create' | 'update' | 'preserve'
+  kind: string
+  id: Id
+}
+
+export type PortableRestoreClosure = {
+  teamIds: Id[]
+  agentIds: Id[]
+  taskBriefIds: Id[]
+  sharedAssetIds: Id[]
+  memoryIds: Id[]
+}
+
+export type PortableRestorePreviewDto = {
+  requestId: Id
+  previewRef: Id
+  packageHash: ContentHash
+  scope: PortableRestoreScope
+  expiresAt: Timestamp
+  closure: PortableRestoreClosure
+  entries: PortableRestorePlanEntry[]
+  canRestore: boolean
+  requiresConfirmation: boolean
+  diagnostics?: string[]
+}
+
+export type PortableRestoreResultDto = {
+  requestId: Id
+  packageHash: ContentHash
+  preRestoreSnapshotId: Id
+  status: 'restored' | 'partial_failure' | 'restore_failed'
+  entries: {
+    kind: string
+    id: Id
+    status: string
+    revisionId?: Id
+    writeReceiptId?: Id
+    recoveryRef?: Id
+    retryable?: boolean
+    diagnostics?: string[]
+  }[]
+  diagnostics?: string[]
+}
+
+export type RemoteBackupHistoryItemDto = PortableSnapshotSummaryDto & {
+  status: 'uploaded' | 'pending_upload' | 'failed'
+  commitOid?: string
+}
+
+export type RemoteUploadResultDto = {
+  snapshotId: Id
+  commitOid: string
+  uploadedAt: Timestamp
+}
+
 export type PreviewBackupRestoreRequest = {
   requestId: Id
   snapshotId: Id
@@ -556,6 +714,7 @@ export type SharedAssetImportPreviewDto = {
   fileName: string
   kind: ManageableSharedAssetKind
   size: number
+  fileCount: number
   sourceHash: ContentHash
   suggestedName: string
   suggestedId: Id
@@ -572,10 +731,16 @@ export type CommitSharedAssetImportRequest = {
   confirmed: boolean
 }
 
+export type PackageFileDto = {
+  path: string
+  bytes: number[]
+}
+
 export type SharedAssetEditorDto = {
   requestId: Id
   asset: SharedAssetNodeDto
   canonicalContent: string
+  packageFiles: PackageFileDto[]
   baselineRef: BaselineRefDto
   currentRevisionId?: Id
 }
@@ -586,6 +751,7 @@ export type SaveSharedAssetRequest = {
   expectedBaseline: BaselineRefDto
   baseContent: string
   proposedContent: string
+  packageFiles?: PackageFileDto[]
   confirmationRef?: Id
 }
 
@@ -624,6 +790,103 @@ export type LoadEditorResult = {
   redacted: boolean
   baselineRef: BaselineRefDto
   diagnostics: Diagnostic[]
+}
+
+export type HostAssetCapabilities = {
+  canScan: boolean
+  canReadEntrypoint: boolean
+  canImportToBandi: boolean
+  canInstallFromBandi: boolean
+  canUpdateFromBandi: boolean
+}
+
+export type HostAssetSupportLevel = 'supported' | 'degraded' | 'unsupported'
+export type HostAssetCheckState = 'not_checked' | 'checking' | 'ready' | 'failed'
+export type HostAssetKind = 'instructions' | 'skill'
+
+export type AssetPackageDescriptor = {
+  containerKind: 'file' | 'directory'
+  entrypoint: string
+  packageFingerprint: ContentHash
+  entrypointHash: ContentHash
+  fileCount: number
+  totalBytes: number
+}
+
+export type HostAssetCatalogEntryDto = {
+  toolId: import('./client-adapters').BuiltInClientId
+  supportLevel: HostAssetSupportLevel
+  capabilities: HostAssetCapabilities
+  reasonCode: string
+}
+
+export type HostAssetCatalogDto = {
+  tools: HostAssetCatalogEntryDto[]
+}
+
+export type ScanHostAssetsRequest = {
+  requestId: Id
+  toolIds: import('./client-adapters').BuiltInClientId[]
+}
+
+export type HostAssetToolScanDto = HostAssetCatalogEntryDto & {
+  checkState: Exclude<HostAssetCheckState, 'not_checked' | 'checking'>
+  assetCount: number
+  diagnostics: Diagnostic[]
+}
+
+export type HostAssetSummaryDto = {
+  hostInstanceId: Id
+  toolId: import('./client-adapters').BuiltInClientId
+  rootId: Id
+  packageKey: string
+  name: string
+  kind: HostAssetKind
+  relativeLocation: string
+  package: AssetPackageDescriptor
+  parseStatus: 'parsed' | 'invalid'
+  diagnostics: Diagnostic[]
+}
+
+export type ScanHostAssetsResult = {
+  requestId: Id
+  scanGeneration: Id
+  tools: HostAssetToolScanDto[]
+  assets: HostAssetSummaryDto[]
+  diagnostics: Diagnostic[]
+}
+
+export type LoadHostAssetDetailRequest = {
+  requestId: Id
+  hostInstanceId: Id
+  scanGeneration: Id
+}
+
+export type HostAssetDetailDto = HostAssetSummaryDto & {
+  entrypointContent?: string
+  files: { relativePath: string; size: number }[]
+}
+
+export type PreviewHostAssetImportRequest = LoadHostAssetDetailRequest & {
+  action: 'import'
+  teamId: Id
+  assetId: Id
+}
+
+export type HostAssetImportPreviewDto = PreviewHostAssetImportRequest & {
+  previewRef: Id
+  expiresAt: Timestamp
+  confirmationText: string
+  sourceFingerprint: ContentHash
+  diagnostics: Diagnostic[]
+}
+
+export type CommitHostAssetImportRequest = {
+  requestId: Id
+  action: 'import'
+  previewRef: Id
+  sourceFingerprint: ContentHash
+  confirmed: true
 }
 
 export type LocalServiceEvent =

@@ -3,7 +3,7 @@ import { deriveTeamMark, normalizeTeamMark, resolveTeamIdentity } from '../team-
 
 describe('Team 文字标识', () => {
   it.each([
-    ['个人 Team', '个人'],
+    ['个人', '个人'],
     ['星河科技', '星河'],
     ['Bandi Studio', 'BS'],
     ['Team Alpha', 'AL'],

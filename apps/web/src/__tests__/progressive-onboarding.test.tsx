@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HomePage } from '../pages/home-page'
-import { OrganizationPage } from '../pages/organization/organization-pages'
+import { OrganizationPage, TeamDetailPage } from '../pages/organization/organization-pages'
 import { GlobalSheets } from '../sheets'
 import { AppProvider, initialState, type State, useApp } from '../state'
 
@@ -16,10 +16,6 @@ const desktopBridge = vi.hoisted(() => ({
   listAgents: vi.fn(),
   listAgentRecoveryOperations: vi.fn(),
   continueAgentRecovery: vi.fn(),
-  generateEntityId: vi.fn(),
-  saveTeamV4: vi.fn(),
-  allocateAgentId: vi.fn(),
-  commitManagedAgentCreation: vi.fn(),
 }))
 
 vi.mock('../desktop-bridge', () => ({
@@ -30,10 +26,6 @@ vi.mock('../desktop-bridge', () => ({
   loadLongTermDomainSnapshotV4: desktopBridge.loadLongTermDomainSnapshotV4,
   listAgentRecoveryOperations: desktopBridge.listAgentRecoveryOperations,
   continueAgentRecovery: desktopBridge.continueAgentRecovery,
-  generateEntityId: desktopBridge.generateEntityId,
-  saveTeamV4: desktopBridge.saveTeamV4,
-  allocateAgentId: desktopBridge.allocateAgentId,
-  commitManagedAgentCreation: desktopBridge.commitManagedAgentCreation,
 }))
 
 const storage = new Map<string, string>()
@@ -52,10 +44,6 @@ beforeEach(() => {
   desktopBridge.discoverConfig.mockReset().mockResolvedValue({ requestId: 'hydrate-shared-assets', profileVersion: 'agent-package-v1', containers: [], assets: [], sharedAssets: [], references: [], diagnostics: [] })
   desktopBridge.listAgentRecoveryOperations.mockReset()
   desktopBridge.continueAgentRecovery.mockReset()
-  desktopBridge.generateEntityId.mockReset()
-  desktopBridge.saveTeamV4.mockReset()
-  desktopBridge.allocateAgentId.mockReset()
-  desktopBridge.commitManagedAgentCreation.mockReset()
   desktopBridge.listAgents.mockResolvedValue({ agents: [], diagnostics: [] })
   desktopBridge.listAgentRecoveryOperations.mockResolvedValue([])
   vi.stubGlobal('Request', class extends NativeRequest {
@@ -83,6 +71,7 @@ function renderRoutes(initialEntry: string, state: State) {
     children: [
       { index: true, element: <HomePage /> },
       { path: 'organization', element: <OrganizationPage /> },
+      { path: 'organization/teams/:id', element: <TeamDetailPage /> },
       { path: 'agents', element: <div>Agent 列表</div> },
       { path: 'agents/:id', element: <div>Agent 详情</div> },
     ],
@@ -155,7 +144,7 @@ describe('渐进式首次体验', () => {
 
     desktopBridge.listAgentRecoveryOperations.mockResolvedValue([])
     fireEvent.click(screen.getByRole('button', { name: '重新读取' }))
-    expect(await screen.findByRole('heading', { name: '建立你的长期 Agent Team' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '创建你的第一个长期 Agent' })).toBeInTheDocument()
     expect(desktopBridge.listAgents).toHaveBeenCalledTimes(2)
   })
 
@@ -194,10 +183,10 @@ describe('渐进式首次体验', () => {
 
     expect(screen.getByText('Agent 配置尚未完整保存')).toBeInTheDocument()
     expect(screen.getByText('1 项')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '建立你的长期 Agent Team' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '创建你的第一个长期 Agent' })).not.toBeInTheDocument()
   })
 
-  it('正常配置状态只保留查看 Agent', () => {
+  it('正常配置状态只保留管理 Agent', () => {
     const healthyAgents = initialState.agents.map((agent) => ({
       ...agent,
       files: agent.files.map((file) => ({ ...file, status: '已同步' })),
@@ -211,7 +200,10 @@ describe('渐进式首次体验', () => {
     })
 
     expect(screen.getByRole('heading', { name: '配置状态' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '查看 Agent' })).toHaveAttribute('href', '/agents')
+    expect(screen.getByRole('heading', { name: '配置正常' })).toBeInTheDocument()
+    expect(screen.getByText('当前演示配置已就绪。')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '管理 Agent' })).toHaveAttribute('href', '/agents')
+    expect(screen.queryByText('0 项')).not.toBeInTheDocument()
     expect(screen.queryByText('快捷入口')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '新建 Agent' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '需求池' })).not.toBeInTheDocument()
@@ -224,35 +216,31 @@ describe('渐进式首次体验', () => {
     expect(screen.getByText('还没有 Team')).toBeInTheDocument()
   })
 
-  it('首次使用可创建团队，或直接添加、导入和稍后设置', () => {
-    renderRoutes('/', { ...emptyState, agents: [] })
+  it('个人 Team 使用简洁名称并隐藏编辑入口', () => {
+    renderRoutes('/organization/teams/team-personal', initialState)
 
-    expect(screen.getByRole('heading', { name: '建立你的长期 Agent Team' })).toBeInTheDocument()
-    expect(screen.getByText(/包含产品、设计、研发和测试 Agent/)).toBeInTheDocument()
-    expect(screen.getByText(/首次添加时默认归属 Personal Team/)).toBeInTheDocument()
-    expect(screen.getByText(/每个 Agent 都有独立的长期配置、Memory 和版本历史/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '创建产品研发团队' })).toBeInTheDocument()
-    expect(screen.getByText(/浏览器演示不会读取或写入本机文件/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '添加单个 Agent' })).toHaveAttribute('href', '/agents/new')
-    expect(screen.getByRole('link', { name: '导入已有 Agent' })).toHaveAttribute('href', '/agents/new?mode=import')
-    expect(screen.getByRole('button', { name: '稍后设置' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '个人' })).toBeInTheDocument()
+    expect(screen.getByText('Bandi 内置的个人 Team，始终保留，不能删除')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '编辑 Team' })).not.toBeInTheDocument()
   })
 
-  it('Web 创建产品研发团队后进入 Agent 列表', async () => {
-    const { router } = renderRoutes('/', { ...emptyState, agents: [] })
+  it('首次使用聚焦创建或导入单个长期 Agent', () => {
+    renderRoutes('/', { ...emptyState, agents: [] })
 
-    fireEvent.click(screen.getByRole('button', { name: '创建产品研发团队' }))
-    expect(screen.getByRole('dialog')).toHaveTextContent('1 个 Team')
-    expect(screen.getByRole('dialog')).toHaveTextContent('4 个 Agent')
-    expect(screen.getByRole('dialog')).toHaveTextContent('产品 Agent')
-    expect(screen.getByRole('dialog')).toHaveTextContent('初始均不授予文件、命令、网络或委派权限')
-    expect(screen.getByRole('dialog')).toHaveTextContent('不会自动引用 Team 共享资产')
-    expect(desktopBridge.saveTeamV4).not.toHaveBeenCalled()
-    expect(desktopBridge.commitManagedAgentCreation).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: '创建团队和 Agent' }))
-
-    await waitFor(() => expect(router.state.location.pathname).toBe('/agents'))
-    expect(screen.getByText('Agent 列表')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '创建你的第一个长期 Agent' })).toBeInTheDocument()
+    expect(screen.getByText(/首次新建或导入的 Agent 会加入“个人” Team/)).toBeInTheDocument()
+    expect(screen.getByText('Skills（技能）')).toBeInTheDocument()
+    expect(screen.getByText('职责与指令')).toBeInTheDocument()
+    expect(screen.getByText('长期记忆')).toBeInTheDocument()
+    expect(screen.getByText('权限与其他配置')).toBeInTheDocument()
+    expect(screen.getByText(/浏览器演示不会读取或写入本机文件/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '新建 Agent' })).toHaveAttribute('href', '/agents/new')
+    expect(screen.getByRole('link', { name: '导入已有 Agent' })).toHaveAttribute('href', '/agents/new?mode=import')
+    expect(screen.getByRole('button', { name: '稍后设置' })).toBeInTheDocument()
+    expect(screen.queryByText('创建产品研发团队')).not.toBeInTheDocument()
+    expect(screen.queryByText('01')).not.toBeInTheDocument()
+    expect(screen.queryByText('02')).not.toBeInTheDocument()
+    expect(screen.queryByText('03')).not.toBeInTheDocument()
   })
 
   it('稍后设置后写入本机偏好并显示配置状态', async () => {
@@ -262,27 +250,6 @@ describe('渐进式首次体验', () => {
 
     expect(screen.getByRole('heading', { name: '配置状态' })).toBeInTheDocument()
     await waitFor(() => expect(JSON.parse(storage.get('bandi-ui-preferences-v1')!).firstUseTeamSetupDismissed).toBe(true))
-  })
-
-  it('Desktop 先保存 Team，再逐个创建 Agent；部分成功时停止并保留结果', async () => {
-    desktopBridge.desktop = true
-    desktopBridge.generateEntityId.mockResolvedValue('team-product')
-    desktopBridge.saveTeamV4.mockImplementation(async (team) => team)
-    desktopBridge.allocateAgentId.mockResolvedValueOnce('agent-product').mockResolvedValueOnce('agent-design')
-    desktopBridge.commitManagedAgentCreation
-      .mockImplementationOnce(async (_requestId, agent) => ({ operation: { id: 'op-product', agentId: agent.id, operationKind: 'create', status: 'completed', createdAt: '2026-09-09T00:00:00Z' }, agent }))
-      .mockImplementationOnce(async (_requestId, agent) => ({ operation: { id: 'op-design', agentId: agent.id, operationKind: 'create', status: 'team_pending', createdAt: '2026-09-09T00:00:01Z' }, agent }))
-    renderRoutes('/', { ...emptyState, runtime: 'desktop', agents: [] })
-
-    fireEvent.click(screen.getByRole('button', { name: '创建产品研发团队' }))
-    fireEvent.click(screen.getByRole('button', { name: '创建团队和 Agent' }))
-
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('已保留：产品研发 Team、产品 Agent')
-    expect(desktopBridge.saveTeamV4).toHaveBeenCalledBefore(desktopBridge.commitManagedAgentCreation)
-    expect(desktopBridge.commitManagedAgentCreation).toHaveBeenCalledTimes(2)
-    expect(desktopBridge.commitManagedAgentCreation.mock.calls[0][1]).toMatchObject({ id: 'agent-product', teamId: 'team-product', functionId: 'product' })
-    expect(desktopBridge.allocateAgentId).toHaveBeenCalledTimes(2)
   })
 
 })

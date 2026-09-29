@@ -3,12 +3,10 @@ import { aiClients as initialAiClients, type AiClient } from './mock'
 import {
   initialAgents,
   initialAssets,
-  initialBackupSnapshots,
   initialTeams,
   initialConfigRevisions,
   initialMemorySpaces,
   initialPluginInstallations,
-  type BackupSnapshot,
   type ConfigRevision,
   type FullAgent,
   type FullAsset,
@@ -20,7 +18,7 @@ import { getAgentPackageEditability } from './agent-package-schema'
 import { applyAgentConfig, describeAgentConfigFile, getAgentConfigPath, isAgentConfigPayload, serializeAgentConfig, snapshotAgentConfig, type AgentConfigPayload, type SaveAgentConfigInput } from './agent-config-model'
 import { appendConfigRevision } from './config-revisions'
 import { projectSharedAssets } from './discovered-assets'
-import type { AgentRecoveryOperationSummaryDto, AssetReferenceDto, Diagnostic, LongTermDomainSnapshotDtoV4, SharedAssetNodeDto, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentRecoveryOperationSummaryDto, AiToolHostStatusDto, AssetReferenceDto, Diagnostic, LongTermDomainSnapshotDtoV4, SharedAssetNodeDto, TaskBriefDto, TeamDto } from './contracts'
 import type { TerminalId } from './terminal-model'
 import type { UsageGuideTopic } from './components/usage-guide'
 import { discoverConfig, isDesktopRuntime, listAgentRecoveryOperations, listAgents, loadLongTermDomainSnapshotV4 } from './desktop-bridge'
@@ -54,14 +52,8 @@ export type DialogState =
   | { kind: 'client-guide'; clientId?: string; agentId?: string }
   | { kind: 'usage-guide'; topic: UsageGuideTopic }
   | { kind: 'config-history'; ownerType: ConfigRevision['ownerType']; ownerId: string; path: string }
-  | { kind: 'backup-restore'; snapshotId: string }
   | { kind: 'organization'; entity: 'team'; id?: string; mode: 'create' | 'edit'; returnTo?: '/agents' }
   | null
-
-export type BackupSettings = {
-  gitConnection: { status: 'disconnected'; visibility: 'private' } | { status: 'connected-demo'; visibility: 'private'; repository: string }
-  formalMemoryRemote: 'excluded' | 'confirmed'
-}
 
 export type NetworkProxySettings = {
   mode: 'system' | 'none' | 'manual'
@@ -111,10 +103,11 @@ export type State = {
   pluginInstallations: PluginInstallation[]
   memorySpaces: MemorySpace[]
   configRevisions: ConfigRevision[]
-  backupSnapshots: BackupSnapshot[]
-  backupSettings: BackupSettings
   settings: SettingsState
   aiClients: AiClient[]
+  toolHostStatuses: AiToolHostStatusDto[]
+  toolHostCheckedAt?: string
+  toolHostStale?: boolean
   uiPreferences: UiPreferences
   theme: EffectiveTheme
   dialog: DialogState
@@ -162,10 +155,8 @@ export type Action =
   | { type: 'CREATE_ASSET'; asset: FullAsset }
   | { type: 'APPLY_SKILL_ACTION'; skillId: string; action: SkillAction; version?: string }
   | { type: 'APPLY_PLUGIN_ACTION'; pluginId: string; action: PluginAction; version?: string }
-  | { type: 'UPDATE_BACKUP_SETTINGS'; changes: Partial<BackupSettings> }
-  | { type: 'CREATE_DEMO_BACKUP_SNAPSHOT'; snapshot: BackupSnapshot }
-  | { type: 'SIMULATE_RESTORE'; snapshotId: string; beforeSnapshot: BackupSnapshot }
   | { type: 'UPDATE_SETTINGS'; changes: Partial<SettingsState> }
+  | { type: 'UPDATE_TOOL_HOST_SNAPSHOT'; statuses: AiToolHostStatusDto[]; checkedAt: string; stale: boolean }
   | { type: 'SHOW_NOTICE'; notice: Omit<Notice, 'id'> }
   | { type: 'CLEAR_NOTICE'; id?: string }
   | { type: 'TOAST'; text?: string }
@@ -173,9 +164,10 @@ export type Action =
 function reconcileAgentTeamMembership(teams: TeamDto[], agents: FullAgent[]): TeamDto[] {
   const nextTeams = teams.some((team) => team.id === 'team-personal')
     ? teams
-    : [...teams, { id: 'team-personal', name: '个人 Team', memberAgentIds: [], sharedAssetIds: [] }]
+    : [...teams, { id: 'team-personal', name: '个人', memberAgentIds: [], sharedAssetIds: [] }]
   return nextTeams.map((team) => ({
     ...team,
+    name: team.id === 'team-personal' ? '个人' : team.name,
     memberAgentIds: agents.filter((agent) => agent.teamId === team.id).map((agent) => agent.id),
   }))
 }
@@ -214,8 +206,6 @@ export const initialState: State = {
   pluginInstallations: initialPluginInstallations,
   memorySpaces: initialMemorySpaces,
   configRevisions: initialConfigRevisions,
-  backupSnapshots: initialBackupSnapshots,
-  backupSettings: { gitConnection: { status: 'disconnected', visibility: 'private' }, formalMemoryRemote: 'excluded' },
   settings: {
     language: '简体中文',
     agentRoot: '~/.bandi/agents',
@@ -225,6 +215,7 @@ export const initialState: State = {
     networkProxy: { mode: 'system', httpProxy: '', httpsProxy: '', socksProxy: '', noProxy: '' },
   },
   aiClients: initialAiClients,
+  toolHostStatuses: [],
   uiPreferences: initialUiPreferences,
   theme: resolveTheme(initialUiPreferences.theme, false),
   dialog: null,
@@ -248,7 +239,6 @@ function createDesktopInitialState(): State {
     pluginInstallations: [],
     memorySpaces: [],
     configRevisions: [],
-    backupSnapshots: [],
     aiClients: initialAiClients,
   }
 }
@@ -355,6 +345,8 @@ export function reducer(state: State, action: Action): State {
           }
     case 'SET_EFFECTIVE_THEME':
       return state.theme === action.theme ? state : { ...state, theme: action.theme }
+    case 'UPDATE_TOOL_HOST_SNAPSHOT':
+      return { ...state, toolHostStatuses: action.statuses, toolHostCheckedAt: action.checkedAt, toolHostStale: action.stale }
     case 'SELECT_TEAM':
       return state.teams.some((team) => team.id === action.teamId) && state.currentTeamId !== action.teamId
         ? { ...state, currentTeamId: action.teamId }
@@ -626,12 +618,6 @@ export function reducer(state: State, action: Action): State {
       const labels: Record<PluginAction, string> = { install: '安装', update: '更新', rollback: '回滚', uninstall: '卸载' }
       return { ...state, pluginInstallations: state.pluginInstallations.map((item) => item.pluginId === action.pluginId ? next : item), notice: notice('success', `插件已模拟${labels[action.action]}`, '仅更新当前页面中的插件安装记录 · 未检查电脑、下载、运行安装脚本或写入文件 · 未自动更改 Agent 的使用位置') }
     }
-    case 'UPDATE_BACKUP_SETTINGS':
-      return { ...state, backupSettings: { ...state.backupSettings, ...action.changes }, notice: notice('info', '备份演示策略已更新', '仅在当前页面有效 · 未连接 Git、上传文件或读取凭据') }
-    case 'CREATE_DEMO_BACKUP_SNAPSHOT':
-      return { ...state, backupSnapshots: [action.snapshot, ...state.backupSnapshots], notice: notice('success', '已创建演示快照记录', '未读取、打包或写入真实文件') }
-    case 'SIMULATE_RESTORE':
-      return { ...state, backupSnapshots: [action.beforeSnapshot, ...state.backupSnapshots], dialog: null, notice: notice('info', `已记录模拟恢复 ${action.snapshotId}`, '未恢复任何真实文件') }
     case 'UPDATE_SETTINGS':
       return { ...state, settings: { ...state.settings, ...action.changes }, notice: notice('success', '设置已在当前页面更新', '未写入配置文件') }
     case 'SHOW_NOTICE':
@@ -643,7 +629,7 @@ export function reducer(state: State, action: Action): State {
   }
 }
 
-export type UiPreviewAssets = { logo?: string | null; background?: string | null }
+export type UiPreviewAssets = { background?: string | null }
 
 type AppContextValue = {
   state: State
@@ -706,7 +692,7 @@ export function AppProvider({ children, initialState: providedState }: { childre
 
   useEffect(() => {
     const root = document.documentElement
-    const accent = getAccessibleAccent(effectiveUiPreferences.accentColor)
+    const accent = getAccessibleAccent(effectiveUiPreferences.accentColor, effectiveUiPreferences.accentOpacity)
     root.classList.toggle('dark', effectiveTheme === 'dark')
     root.dataset.theme = effectiveTheme
     root.dataset.interfaceFont = effectiveUiPreferences.interfaceFont
@@ -714,8 +700,8 @@ export function AppProvider({ children, initialState: providedState }: { childre
     root.dataset.fontScale = effectiveUiPreferences.fontScale
     root.dataset.density = effectiveUiPreferences.density
     root.dataset.backgroundStyle = effectiveUiPreferences.backgroundStyle
-    root.style.setProperty('--accent', accent?.color ?? DEFAULT_UI_PREFERENCES.accentColor)
-    root.style.setProperty('--accent-foreground', accent?.foreground ?? '#ffffff')
+    root.style.setProperty('--accent', accent?.cssColor ?? DEFAULT_UI_PREFERENCES.accentColor)
+    root.style.setProperty('--accent-foreground', accent?.[effectiveTheme].foreground ?? '#ffffff')
     root.style.setProperty('--background-dim', `${effectiveUiPreferences.backgroundDim / 100}`)
   }, [effectiveTheme, effectiveUiPreferences])
 

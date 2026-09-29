@@ -98,6 +98,19 @@ pnpm install
 pnpm desktop:dev
 ```
 
+远程 GitHub 备份由构建维护者预先启用，普通用户不需要配置 Client ID。构建维护者需要：
+
+1. 在 GitHub 的 **Settings → Developer settings → OAuth Apps** 创建 OAuth App。
+2. 开启 **Enable Device Flow**，记录公开的 **Client ID**（不要把 Client Secret 放进 Bandi）。
+3. 在构建 Desktop 前注入 Client ID：
+
+```bash
+BANDI_GITHUB_CLIENT_ID=<GitHub OAuth App 的 Client ID> pnpm desktop:dev
+BANDI_GITHUB_CLIENT_ID=<GitHub OAuth App 的 Client ID> pnpm desktop:build
+```
+
+发布包应在 CI 的构建环境中设置 `BANDI_GITHUB_CLIENT_ID`（例如 GitHub Actions Secret），再重新构建并发布。用户安装已配置的版本后，只需点击“登录 GitHub”，在 GitHub 页面输入设备代码；Client ID、密码和 Token 都不需要由用户填写。未配置的开发构建会显示“此 Desktop 构建未启用 GitHub 远程备份”。
+
 只查看 Web 界面演示：
 
 ```bash

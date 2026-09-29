@@ -1,25 +1,20 @@
 import { useState } from 'react'
-import { ArrowRight, CircleAlert, Plus, RefreshCw, ScanSearch } from 'lucide-react'
+import { ArrowRight, CheckCircle2, CircleAlert, Plus, RefreshCw, ScanSearch } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { continueAgentRecovery } from '../desktop-bridge'
 import { Button } from '../components/ui/button'
-import { MockBoundaryNote, PageHeader, StatusBadge } from '../components/app/page'
+import { PageHeader, StatusBadge } from '../components/app/page'
 import { useApp } from '../state'
 import { getConfigurationStatusSummary, type ConfigurationStatusItem } from '../domain-selectors'
-import { ProductTeamInitializer } from './onboarding/product-team-initializer'
 
 export function HomePage() {
   const { state, dispatch, hydrateDesktop } = useApp()
   const navigate = useNavigate()
   const [recovering, setRecovering] = useState<string>()
-  const [initializerOpen, setInitializerOpen] = useState(false)
   const summary = getConfigurationStatusSummary(state)
   if (summary.phase === 'failed') return <HomeHydrationFailed onRetry={hydrateDesktop} />
   if (summary.phase === 'loading') return <HomeHydrationPending />
-  if (summary.phase === 'first-use') return <>
-    <ProductTeamInitializer open={initializerOpen} onOpenChange={setInitializerOpen} />
-    <FirstAgentWelcome onInitialize={() => setInitializerOpen(true)} />
-  </>
+  if (summary.phase === 'first-use') return <FirstAgentWelcome />
   const desktop = state.runtime === 'desktop'
   const refreshing = desktop && Object.values(state.hydration).some((status) => status === 'loading')
   const recover = async (operationId: string) => {
@@ -57,13 +52,13 @@ export function HomePage() {
   }
 
   return <>
-    <ProductTeamInitializer open={initializerOpen} onOpenChange={setInitializerOpen} />
-    <PageHeader title="配置状态" description={desktop ? '查看并处理长期配置问题，再回到 AI 编程工具继续工作。' : '查看演示配置与待处理事项。'} action={!desktop ? <Button variant="outline" onClick={() => dispatch({ type: 'TOAST', text: '浏览器演示未执行本机扫描 · 未读取文件或运行命令' })}><ScanSearch size={16} aria-hidden="true" />查看扫描边界</Button> : undefined} />
-    <section id="pending-config" className={`panel scroll-mt-24 p-5 ${summary.items.length ? 'border-l-[3px] border-l-warning' : ''}`}>
-      <div className="flex items-center justify-between"><div className="label">{summary.items.length ? '待处理' : '配置正常'}</div><StatusBadge tone={summary.items.length ? 'warning' : 'success'}>{summary.items.length} 项</StatusBadge></div>
-      {summary.items.length ? <div className="mt-4 space-y-4">{summary.items.map(renderItem)}</div> : <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-success">{desktop ? '当前没有待处理配置。' : '当前演示配置已就绪。'}</p><Button asChild variant="outline" size="sm"><Link to="/agents">查看 Agent</Link></Button></div>}
-    </section>
-    <div className="mt-5"><MockBoundaryNote>{state.runtime === 'desktop' ? 'Bandi Desktop 用于管理多个不同职责的长期 Agent 及其各自配置，也可整理需求。任务执行、协作和验收仍在 AI 编程工具中完成。' : '浏览器演示中的更改只保存在当前页面，刷新后恢复初始状态；不会读取或写入本机配置。任务执行、协作和验收仍在 AI 编程工具中完成。'}</MockBoundaryNote></div>
+    <PageHeader title="配置状态" description={desktop ? '集中查看并处理 Agent 的长期配置问题。' : '查看演示配置与待处理事项。'} action={!desktop ? <Button variant="outline" onClick={() => dispatch({ type: 'TOAST', text: '浏览器演示未执行本机扫描 · 未读取文件或运行命令' })}><ScanSearch size={16} aria-hidden="true" />查看扫描边界</Button> : undefined} />
+    {summary.items.length ? <section id="pending-config" className="panel max-w-5xl scroll-mt-24 border-l-[3px] border-l-warning p-5">
+      <div className="flex items-center justify-between"><div className="label">待处理配置</div><StatusBadge tone="warning">{summary.items.length} 项</StatusBadge></div>
+      <div className="mt-4 space-y-4">{summary.items.map(renderItem)}</div>
+    </section> : <section id="pending-config" className="panel grid min-h-56 max-w-5xl scroll-mt-24 place-items-center p-6 text-center">
+      <div><CheckCircle2 className="mx-auto text-success" size={28} aria-hidden="true" /><h2 className="mt-3 font-semibold">配置正常</h2><p className="mt-2 text-sm text-muted-foreground">{desktop ? '当前没有需要处理的 Agent 配置问题。' : '当前演示配置已就绪。'}</p><Button asChild variant="outline" size="sm" className="mt-5"><Link to="/agents">管理 Agent</Link></Button></div>
+    </section>}
   </>
 }
 
@@ -102,7 +97,13 @@ function HomeHydrationFailed({ onRetry }: { onRetry: () => void }) {
   </div>
 }
 
-function FirstAgentWelcome({ onInitialize }: { onInitialize: () => void }) {
+function FirstAgentWelcome() {
   const { state, dispatch } = useApp()
-  return <div className="mx-auto max-w-5xl pt-4 pb-8 sm:pt-6 sm:pb-12"><section className="panel overflow-hidden"><div className="grid gap-8 p-6 sm:p-10 lg:grid-cols-[1.15fr_.85fr]"><div><div className="label">欢迎使用 Bandi</div><h1 className="mt-3 max-w-xl text-3xl font-semibold tracking-tight sm:text-4xl">建立你的长期 Agent Team</h1><p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">创建包含产品、设计、研发和测试 Agent 的团队，也可以添加或导入单个 Agent。首次添加时默认归属 Personal Team。每个 Agent 都有独立的长期配置、Memory 和版本历史。</p><div className="mt-7 flex flex-wrap items-center gap-x-3 gap-y-2"><Button onClick={onInitialize}><Plus size={16} aria-hidden="true" />创建产品研发团队</Button><Button asChild variant="outline"><Link to="/agents/new">添加单个 Agent</Link></Button><Button asChild variant="ghost"><Link to="/agents/new?mode=import">导入已有 Agent</Link></Button><Button variant="ghost" className="text-muted-foreground" onClick={() => dispatch({ type: 'COMPLETE_ONBOARDING' })}>稍后设置</Button></div></div><ol className="divide-y divide-border border-y border-border" aria-label="首次使用步骤">{[['01', '选择起点', '创建团队，或添加、导入 Agent'], ['02', '完善长期配置', '按需设置权限、配置引用和 Memory'], ['03', '在 AI 编程工具中使用', '任务执行、协作与验收由所选工具负责']].map(([number, title, text]) => <li key={number} className="flex gap-4 py-4"><span className="font-mono text-xs text-muted-foreground">{number}</span><span><b className="block text-sm">{title}</b><small className="mt-1 block leading-5 text-muted-foreground">{text}</small></span></li>)}</ol></div><MockBoundaryNote>{state.runtime === 'desktop' ? 'Bandi 只管理自身配置，不扫描或读取现有工具配置。创建中断时，已完成内容会保留。' : '浏览器演示不会读取或写入本机文件，也不会申请本地访问；页面更改仅保留在当前会话。'}</MockBoundaryNote></section></div>
+  const capabilities = [
+    ['Skills（技能）', '为 Agent 提供可复用的专业能力。'],
+    ['职责与指令', '定义它负责什么，以及如何工作。'],
+    ['长期记忆', '保留需要持续使用的信息。'],
+    ['权限与其他配置', '约束访问范围，并连接所需配置资产。'],
+  ]
+  return <div className="mx-auto max-w-5xl pb-8 sm:pb-10"><section className="panel overflow-hidden"><div className="grid gap-10 p-6 sm:p-10 lg:grid-cols-[1.1fr_.9fr] lg:gap-14"><div className="self-center"><div className="label">欢迎使用 Bandi</div><h1 className="mt-3 max-w-xl text-3xl font-semibold tracking-tight sm:text-4xl">创建你的第一个长期 Agent</h1><p className="mt-4 max-w-xl text-[15px] leading-7 text-muted-foreground">Bandi 用于管理不同职责 Agent 的长期配置。首次新建或导入的 Agent 会加入“个人” Team。</p><div className="mt-7 flex flex-wrap items-center gap-3"><Button asChild><Link to="/agents/new"><Plus size={16} aria-hidden="true" />新建 Agent</Link></Button><Button asChild variant="outline"><Link to="/agents/new?mode=import">导入已有 Agent</Link></Button><Button variant="ghost" className="text-muted-foreground" onClick={() => dispatch({ type: 'COMPLETE_ONBOARDING' })}>稍后设置</Button></div><p className="mt-4 text-xs leading-5 text-muted-foreground">{state.runtime === 'desktop' ? '仅在你主动操作时检查固定配置位置。' : '浏览器演示不会读取或写入本机文件。'}</p></div><section className="border-y border-border py-1" aria-labelledby="agent-capabilities-title"><h2 id="agent-capabilities-title" className="sr-only">一个长期 Agent 包含</h2><div className="label py-4">一个长期 Agent 包含</div><ul className="divide-y divide-border">{capabilities.map(([title, text], index) => <li key={title} className="py-4"><b className={`block text-sm ${index === 0 ? 'text-foreground' : ''}`}>{title}</b><p className="mt-1 text-sm leading-6 text-muted-foreground">{text}</p></li>)}</ul></section></div></section></div>
 }

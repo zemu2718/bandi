@@ -1,0 +1,8 @@
+{
+  "createRequest": {"requestId":"portable-create-1","includeMemory":true},
+  "snapshot": {"schemaVersion":1,"profileVersion":"portable-backup-v1","snapshotId":"portable-snapshot-1","createdAt":"2026-09-01T08:00:00Z","includeMemory":true,"entryCount":1,"totalBytes":12,"manifestHash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","entries":[{"kind":"domain","ownerId":"domain-v4","path":"domain/domain-v4.json","objectRef":"objects/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.blob","sizeBytes":12,"contentHash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]},
+  "previewRequest": {"requestId":"portable-preview-1","snapshotId":"portable-snapshot-1","scope":{"kind":"all"}},
+  "restorePreview": {"requestId":"portable-preview-1","previewRef":"portable-preview-ref-1","packageHash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","scope":{"kind":"all"},"expiresAt":"2026-09-01T08:10:00Z","closure":{"teamIds":[],"agentIds":[],"taskBriefIds":[],"sharedAssetIds":[],"memoryIds":[]},"entries":[{"action":"preserve","kind":"domain","id":"domain-v4"}],"canRestore":true,"requiresConfirmation":true,"diagnostics":[]},
+  "restoreRequest": {"requestId":"portable-restore-1","snapshotId":"portable-snapshot-1","scope":{"kind":"all"},"previewRef":"portable-preview-ref-1","confirmed":true},
+  "restoreResult": {"requestId":"portable-restore-1","packageHash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"restored","entries":[{"kind":"domain","id":"domain-v4","status":"restored"}],"diagnostics":[]}
+}

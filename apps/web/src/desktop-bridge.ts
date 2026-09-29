@@ -1,6 +1,6 @@
 import type { AppCommandId } from './app-commands'
 import type { FullAgent } from './domain'
-import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, AiToolHostRequest, AiToolHostStatusDto, AiToolUpgradeCommitRequest, AiToolUpgradePreviewDto, AiToolUpgradeResultDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitManagedAgentDeletionRequest, CommitSharedAssetImportRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, CreateSharedAssetRequest, DiscoverMemorySpacesRequest, DiscoverMemorySpacesResult, DiscoveryRequest, DiscoveryResult, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, LoadedMemoryDto, LoadMemoryRequest, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, OpenAiToolInstallPageResultDto, PreviewBackupRestoreRequest, PreviewManagedAgentDeletionRequest, ReadMemoryRevisionContentRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RecoverMemoryRevisionRequest, RecoverSharedAssetRevisionRequest, RepairSharedAssetRegistrationRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, RestoreMemoryRevisionRequest, RevealAiToolConfigLocationResultDto, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, SaveSharedAssetRequest, SaveSharedAssetResult, SharedAssetEditorDto, SharedAssetImportPreviewDto, SharedAssetMutationResult, TaskBriefDto, TeamDto } from './contracts'
+import type { AgentCommitResultDto, AgentListResult, AgentRecoveryOperationSummaryDto, AiToolHostRequest, AiToolHostSnapshotDto, AiToolUpgradeCommitRequest, AiToolUpgradePreviewDto, AiToolUpgradeResultDto, BackupRestorePreviewDto, BackupRestoreResultDto, BackupSnapshotDto, BaselineRefDto, BackupOverviewDto, CreatePortableSnapshotRequest, GithubDeviceFlowDto, GithubDeviceFlowPollDto, PortableRestorePreviewDto, PortableRestoreResultDto, PortableRestoreScope, PortableSnapshotManifestDto, PortableSnapshotSummaryDto, RemoteBackupHistoryItemDto, RemoteRepositoryDto, RemoteUploadResultDto, ClaudeAgentPreviewDto, ClientLaunchResultV3, CommitHostAssetImportRequest, CommitManagedAgentDeletionRequest, CommitSharedAssetImportRequest, ConfigRevisionDto, CreateBackupSnapshotRequest, CreateSharedAssetRequest, DiscoverMemorySpacesRequest, DiscoverMemorySpacesResult, DiscoveryRequest, DiscoveryResult, HostAssetImportPreviewDto, HostAssetCatalogDto, Id, HostAssetDetailDto, ListMemoryRevisionsRequest, LoadEditorRequest, LoadEditorResult, LoadedMemoryDto, LoadHostAssetDetailRequest, LoadMemoryRequest, ManagedAgentDeletionPreviewDto, ManagedAgentDeletionResultDto, ManagedAgentIdentityEditorResult, MemoryRevisionDto, LongTermDomainSnapshotDtoV4, OpenAiToolInstallPageResultDto, PreviewBackupRestoreRequest, PreviewHostAssetImportRequest, PreviewManagedAgentDeletionRequest, ReadMemoryRevisionContentRequest, RecoverConfigRevisionRequest, RecoverManagedAgentIdentityRequest, RecoverMemoryRevisionRequest, RecoverSharedAssetRevisionRequest, RepairSharedAssetRegistrationRequest, RequestClientLaunchV3, RestoreBackupSnapshotRequest, RestoreConfigRevisionRequest, RestoreManagedAgentIdentityRequest, RestoreMemoryRevisionRequest, RevealAiToolConfigLocationResultDto, SaveConfigRequest, SaveConfigResult, SaveManagedAgentIdentityResult, SaveMemoryRequest, SaveMemoryResult, SaveSharedAssetRequest, SaveSharedAssetResult, ScanHostAssetsRequest, ScanHostAssetsResult, SharedAssetEditorDto, SharedAssetImportPreviewDto, SharedAssetMutationResult, TaskBriefDto, TeamDto } from './contracts'
 
 const commandEvent = 'bandi://app-command'
 
@@ -27,7 +27,7 @@ export function desktopCommandEventName(): string {
 }
 
 export type DesktopCommand = AppCommandId
-export type UiAssetSlot = 'logo' | 'background'
+export type UiAssetSlot = 'background'
 
 export type CapabilityStatus = 'supported' | 'degraded' | 'unavailable' | 'not_checked'
 export type CapabilityFactDto = {
@@ -79,8 +79,8 @@ export async function requestClientLaunchV3(input: RequestClientLaunchV3): Promi
   return invokeDesktop<ClientLaunchResultV3>('request_client_launch_v3', { request: input })
 }
 
-export async function listAiToolHostStatuses(): Promise<AiToolHostStatusDto[]> {
-  return invokeDesktop('list_ai_tool_host_statuses', {})
+export async function listAiToolHostStatuses(forceRefresh: boolean): Promise<AiToolHostSnapshotDto> {
+  return invokeDesktop('list_ai_tool_host_statuses', { request: { forceRefresh } })
 }
 
 export async function openAiToolInstallPage(input: AiToolHostRequest): Promise<OpenAiToolInstallPageResultDto> {
@@ -177,6 +177,26 @@ export async function discoverConfig(input: DiscoveryRequest): Promise<Discovery
   return invokeDesktop('discover_config', { request: input })
 }
 
+export async function listHostAssetCatalog(): Promise<HostAssetCatalogDto> {
+  return invokeDesktop('get_host_asset_catalog', {})
+}
+
+export async function scanHostAssets(input: ScanHostAssetsRequest): Promise<ScanHostAssetsResult> {
+  return invokeDesktop('scan_host_assets', { request: input })
+}
+
+export async function loadHostAssetDetail(input: LoadHostAssetDetailRequest): Promise<HostAssetDetailDto> {
+  return invokeDesktop('load_host_asset_detail', { request: input })
+}
+
+export async function previewHostAssetImport(input: PreviewHostAssetImportRequest): Promise<HostAssetImportPreviewDto> {
+  return invokeDesktop('preview_host_asset_action', { request: input })
+}
+
+export async function commitHostAssetImport(input: CommitHostAssetImportRequest): Promise<SharedAssetMutationResult> {
+  return invokeDesktop('commit_host_asset_action', { request: input })
+}
+
 export async function createSharedAsset(input: CreateSharedAssetRequest): Promise<SharedAssetMutationResult> {
   return invokeDesktop('create_shared_asset', { request: input })
 }
@@ -211,6 +231,78 @@ export async function createBackupSnapshot(input: CreateBackupSnapshotRequest): 
 
 export async function listBackupSnapshots(): Promise<BackupSnapshotDto[]> {
   return invokeDesktop('list_backup_snapshots', {})
+}
+
+export async function createPortableSnapshot(input: CreatePortableSnapshotRequest): Promise<PortableSnapshotManifestDto> {
+  return invokeDesktop('create_portable_snapshot', { request: input })
+}
+
+export async function listPortableSnapshots(): Promise<PortableSnapshotSummaryDto[]> {
+  return invokeDesktop('list_portable_snapshots', {})
+}
+
+export async function previewPortableRestore(input: {
+  requestId: Id
+  snapshotId: Id
+  scope: PortableRestoreScope
+  previewRef?: Id
+  confirmed?: boolean
+}): Promise<PortableRestorePreviewDto> {
+  return invokeDesktop('preview_portable_restore', { request: input })
+}
+
+export async function restorePortableSnapshot(input: {
+  requestId: Id
+  snapshotId: Id
+  scope: PortableRestoreScope
+  previewRef: Id
+  confirmed: true
+}): Promise<PortableRestoreResultDto> {
+  return invokeDesktop('restore_portable_snapshot', { request: input })
+}
+
+export async function getBackupOverview(): Promise<BackupOverviewDto> {
+  return invokeDesktop('get_backup_overview', {})
+}
+
+export async function startGithubDeviceFlow(input: { requestId: Id }): Promise<GithubDeviceFlowDto> {
+  return invokeDesktop('start_github_device_flow', { request: input })
+}
+
+export async function pollGithubDeviceFlow(input: { requestId: Id; flowId: Id }): Promise<GithubDeviceFlowPollDto> {
+  return invokeDesktop('poll_github_device_flow', { request: input })
+}
+
+export async function disconnectGithub(input: { requestId: Id }): Promise<void> {
+  return invokeDesktop('disconnect_github', { request: input })
+}
+
+export async function createPrivateBackupRepository(input: { requestId: Id; name: string }): Promise<RemoteRepositoryDto> {
+  return invokeDesktop('create_private_backup_repository', { request: input })
+}
+
+export async function connectPrivateBackupRepository(input: { requestId: Id; owner: string; name: string }): Promise<RemoteRepositoryDto> {
+  return invokeDesktop('connect_private_backup_repository', { request: input })
+}
+
+export async function disconnectRemoteBackupRepository(input: { requestId: Id }): Promise<void> {
+  return invokeDesktop('disconnect_remote_backup_repository', { request: input })
+}
+
+export async function uploadPortableSnapshot(input: { requestId: Id; snapshotId?: Id }): Promise<RemoteUploadResultDto> {
+  return invokeDesktop('upload_portable_snapshot', { request: input })
+}
+
+export async function listRemoteBackupHistory(): Promise<RemoteBackupHistoryItemDto[]> {
+  return invokeDesktop('list_remote_backup_history', {})
+}
+
+export async function setRemoteMemoryPolicy(input: { requestId: Id; includeMemory: boolean; confirmed: boolean }): Promise<BackupOverviewDto> {
+  return invokeDesktop('set_remote_memory_policy', { request: input })
+}
+
+export async function setAutomaticRemoteBackup(input: { requestId: Id; enabled: boolean }): Promise<BackupOverviewDto> {
+  return invokeDesktop('set_automatic_remote_backup', { request: input })
 }
 
 export async function previewBackupRestore(input: PreviewBackupRestoreRequest): Promise<BackupRestorePreviewDto> {

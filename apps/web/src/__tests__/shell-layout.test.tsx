@@ -11,7 +11,6 @@ import { GuidePage } from '../pages/guide-page'
 import { PageHeader } from '../components/app/page'
 import { Button } from '../components/ui/button'
 import { AppProvider, initialState, type State } from '../state'
-import type { MainMenuLayoutPreference } from '../navigation-layout'
 
 type MediaListener = (event: MediaQueryListEvent) => void
 
@@ -50,20 +49,16 @@ function createMatchMedia(initialWidth: number) {
 }
 
 function renderShell(
-  preference: MainMenuLayoutPreference,
   theme: State['theme'] = 'light',
   initialEntry = '/',
-  recentAgentIds: string[] = [],
   overrides: Partial<State> = {},
 ) {
   const state: State = {
     ...initialState,
     ...overrides,
     theme,
-    onboarding: { status: 'completed' },
-    mainMenuLayoutPreference: preference,
-    uiPreferences: { ...initialState.uiPreferences, ...overrides.uiPreferences, mainMenuLayout: preference },
-    recentAgentIds,
+    onboarding: overrides.onboarding ?? { status: 'completed' },
+    uiPreferences: { ...initialState.uiPreferences, ...overrides.uiPreferences },
   }
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -113,7 +108,7 @@ afterEach(() => {
 describe('应用壳导航布局', () => {
   it.each(['light', 'dark'] as const)('%s 主题显示当前 Team 标识', (theme) => {
     createMatchMedia(1440)
-    renderShell('expanded', theme)
+    renderShell(theme)
 
     const switcher = screen.getByRole('button', { name: /切换 Team，当前为/ })
     expect(switcher).toHaveTextContent('星河')
@@ -122,7 +117,7 @@ describe('应用壳导航布局', () => {
 
   it('Team 切换器显示当前 Team 的一致标识', () => {
     createMatchMedia(1440)
-    renderShell('expanded')
+    renderShell()
 
     const switcher = screen.getByRole('button', { name: /切换 Team，当前为/ })
     expect(switcher).toHaveTextContent('星河')
@@ -131,7 +126,7 @@ describe('应用壳导航布局', () => {
 
   it('一级菜单以需求池为首项，不显示概览和项目', () => {
     createMatchMedia(1440)
-    renderShell('expanded')
+    renderShell()
     const rail = screen.getByLabelText('Bandi 配置管理')
     const navigation = within(rail).getByRole('navigation', { name: '一级导航' })
 
@@ -146,9 +141,32 @@ describe('应用壳导航布局', () => {
     expect(within(screen.getByRole('navigation', { name: '全局工具' })).getByRole('button', { name: '切换到深色' })).toBeInTheDocument()
   })
 
+  it('首次使用首页不渲染空页面顶栏', () => {
+    createMatchMedia(1440)
+    renderShell('light', '/', { agents: [], onboarding: { status: 'active' } })
+
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument()
+    expect(screen.getByText('配置状态内容')).toBeInTheDocument()
+  })
+
+  it('正常首页保留页面顶栏', () => {
+    createMatchMedia(1440)
+    renderShell('light', '/', { agents: [], onboarding: { status: 'completed' } })
+
+    expect(screen.getByRole('banner')).toBeInTheDocument()
+  })
+
+  it('首次使用状态不影响非首页顶栏', () => {
+    createMatchMedia(1440)
+    renderShell('light', '/agents', { agents: [], onboarding: { status: 'active' } })
+
+    expect(screen.getByRole('banner')).toBeInTheDocument()
+    expect(screen.getByText('Agents 内容')).toBeInTheDocument()
+  })
+
   it('页面标题和主操作进入顶栏，正文不重复', () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/tasks')
+    renderShell('light', '/tasks')
 
     const header = screen.getByRole('banner')
     expect(within(header).getByRole('heading', { level: 1, name: '需求池' })).toBeInTheDocument()
@@ -159,7 +177,7 @@ describe('应用壳导航布局', () => {
 
   it('历史导航固定在窗口顶栏并保留页面唯一标题', () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/tasks')
+    renderShell('light', '/tasks')
 
     const titlebar = screen.getByRole('navigation', { name: '全局工具' }).parentElement!
     const sidebarButton = within(titlebar).getByRole('button', { name: '收起侧栏' })
@@ -177,7 +195,7 @@ describe('应用壳导航布局', () => {
 
   it('使用指南和设置固定在窗口顶栏，指南按当前页面显示相关主题', async () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/tasks')
+    renderShell('light', '/tasks')
 
     const pageHeader = screen.getByRole('banner')
     const rail = screen.getByLabelText('Bandi 配置管理')
@@ -200,7 +218,7 @@ describe('应用壳导航布局', () => {
 
     guideButton.focus()
     fireEvent.click(guideButton)
-    expect(screen.getByRole('dialog')).toHaveTextContent('整理需求并在外部工具中继续')
+    expect(screen.getByRole('dialog')).toHaveTextContent('把长期上下文带到 AI 工具')
     expect(screen.getByRole('dialog')).toHaveTextContent('不关联 Agent，也不记录执行状态')
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -209,17 +227,20 @@ describe('应用壳导航布局', () => {
 
   it('可在指南弹窗中切换主题并进入相关页面', async () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/agents/zhouce')
+    renderShell('light', '/agents/zhouce')
 
     fireEvent.click(screen.getByRole('button', { name: '使用指南' }))
     const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveTextContent('维护 Agent 配置与长期记忆')
+    expect(dialog).toHaveTextContent('完善 Agent 的长期配置')
     expect(within(within(dialog).getByRole('navigation', { name: '使用指南主题' })).getAllByRole('button')).toHaveLength(6)
-    expect(within(dialog).getByRole('button', { name: '配置与记忆' })).toHaveAttribute('aria-current', 'page')
+    expect(within(dialog).getByRole('button', { name: '长期配置' })).toHaveAttribute('aria-current', 'page')
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '需求与 AI 工具' }))
-    expect(dialog).toHaveTextContent('整理需求并在外部工具中继续')
-    expect(within(dialog).getByRole('button', { name: '需求与 AI 工具' })).toHaveAttribute('aria-current', 'page')
+    fireEvent.click(within(dialog).getByRole('button', { name: '需求池与 AI 工具' }))
+    expect(dialog).toHaveTextContent('把长期上下文带到 AI 工具')
+    const selectedTopic = within(dialog).getByRole('button', { name: '需求池与 AI 工具' })
+    expect(selectedTopic).toHaveAttribute('aria-current', 'page')
+    expect(selectedTopic).toHaveClass('bg-primary', 'text-primary-foreground')
+    expect(dialog.querySelector('[class~="h-[560px]"]')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: '选择 AI 工具' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -228,7 +249,7 @@ describe('应用壳导航布局', () => {
 
   it('按实际访问顺序后退和前进', async () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/agents')
+    renderShell('light', '/agents')
 
     fireEvent.click(screen.getByRole('link', { name: '进入周策' }))
     const history = screen.getByRole('navigation', { name: '浏览历史' })
@@ -248,16 +269,16 @@ describe('应用壳导航布局', () => {
 
   it('旧指南地址回到首页并打开默认指南弹窗', async () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/guide')
+    renderShell('light', '/guide')
 
     await waitFor(() => expect(screen.getByText('配置状态内容')).toBeInTheDocument())
-    expect(screen.getByRole('dialog')).toHaveTextContent('开始管理长期 Agent')
+    expect(screen.getByRole('dialog')).toHaveTextContent('从一个 Agent 开始')
     expect(screen.queryByRole('heading', { level: 1, name: '使用指南' })).not.toBeInTheDocument()
   })
 
   it('待处理配置只从顶栏进入，不加入一级菜单', () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/agents')
+    renderShell('light', '/agents')
 
     expect(screen.getByRole('link', { name: /配置状态 · \d+ 项/ })).toHaveAttribute('href', '/')
     const navigation = within(screen.getByLabelText('Bandi 配置管理')).getByRole('navigation', { name: '一级导航' })
@@ -267,7 +288,7 @@ describe('应用壳导航布局', () => {
   it('正常冷启动直接进入 Agent，主动返回配置状态后不再次跳转', async () => {
     createMatchMedia(1440)
     const agents = initialState.agents.map((agent) => ({ ...agent, files: agent.files.map((file) => ({ ...file, status: '已同步' })) }))
-    renderShell('expanded', 'light', '/', [], {
+    renderShell('light', '/', {
       agents,
       agentDiagnostics: [],
       agentRecoveryOperations: [],
@@ -280,7 +301,7 @@ describe('应用壳导航布局', () => {
 
   it('/projects 路由显示 NotFound', () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/projects')
+    renderShell('light', '/projects')
 
     expect(screen.getByRole('heading', { level: 1, name: '页面不存在' })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
@@ -290,7 +311,7 @@ describe('应用壳导航布局', () => {
 
   it('宽屏默认展开一级菜单，并可独立收起和展开', () => {
     createMatchMedia(1440)
-    const { container } = renderShell('expanded')
+    const { container } = renderShell()
     const rail = screen.getByLabelText('Bandi 配置管理')
     const titlebar = screen.getByRole('navigation', { name: '全局工具' }).parentElement!
 
@@ -306,7 +327,6 @@ describe('应用壳导航布局', () => {
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'compact')
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).toHaveTextContent('星河')
     expect(screen.getByRole('button', { name: /切换 Team，当前为/ })).not.toHaveTextContent('星河科技')
-    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'expanded')
 
     fireEvent.click(within(titlebar).getByRole('button', { name: '展开侧栏' }))
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'expanded')
@@ -314,74 +334,15 @@ describe('应用壳导航布局', () => {
 
   it('窄屏默认收起一级菜单', () => {
     createMatchMedia(1024)
-    const { container } = renderShell('expanded')
+    const { container } = renderShell()
 
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'compact')
     expect(screen.getByRole('button', { name: '展开侧栏' })).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it.each([
-    ['follow-window', 1280, 'expanded'],
-    ['follow-window', 1279, 'compact'],
-    ['expanded', 960, 'expanded'],
-    ['expanded', 959, 'compact'],
-    ['compact', 1440, 'compact'],
-  ] as const)('%s 在 %spx 使用 %s Agent 栏', (preference, width, expected) => {
-    createMatchMedia(width)
-    const { container } = renderShell(preference, 'light', '/', ['zhouce'])
-
-    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', expected)
-    expect(screen.getByRole('complementary', { name: '当前 Team Agent' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '查看全部 Agent' })).not.toBeInTheDocument()
-    if (expected === 'expanded') {
-      expect(screen.getByText('当前 Team Agent')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: '收起 Agent 栏' })).toBeInTheDocument()
-      expect(within(screen.getByRole('complementary', { name: '当前 Team Agent' })).getByText('周策')).toBeInTheDocument()
-    } else {
-      expect(screen.queryByText('当前 Team Agent')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: '展开 Agent 栏' })).toBeInTheDocument()
-    }
-  })
-
-  it('直接进入 Agent 详情时首屏显示当前 Agent', async () => {
-    createMatchMedia(1440)
-    const { container } = renderShell('expanded', 'light', '/agents/zhouce')
-
-    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'expanded')
-    const recent = screen.getByRole('complementary', { name: '当前 Team Agent' })
-    expect(within(recent).getByRole('link', { name: /周策/ })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByText('Agent 详情')).toBeInTheDocument()
-    expect(screen.queryByText(/在线|运行中|Session/)).not.toBeInTheDocument()
-    await waitFor(() => expect(within(recent).getByRole('link', { name: /周策/ })).toBeInTheDocument())
-  })
-
-  it('Agent 二级栏在自身内部独立展开和收起', () => {
-    createMatchMedia(1440)
-    const view = renderShell('expanded', 'light', '/', ['zhouce'])
-    const rail = screen.getByLabelText('Bandi 配置管理')
-    const agentMenu = screen.getByRole('complementary', { name: '当前 Team Agent' })
-
-    expect(within(rail).queryByRole('button', { name: /Agent 栏/ })).not.toBeInTheDocument()
-    fireEvent.click(within(agentMenu).getByRole('button', { name: '收起 Agent 栏' }))
-    expect(view.container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'compact')
-    expect(view.container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'expanded')
-    fireEvent.click(within(agentMenu).getByRole('button', { name: '展开 Agent 栏' }))
-    expect(view.container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'expanded')
-  })
-
-  it('显式隐藏 Agent 二级栏时由设置恢复', () => {
-    createMatchMedia(1440)
-    const { container } = renderShell('hidden', 'light', '/', ['zhouce'])
-    const rail = screen.getByLabelText('Bandi 配置管理')
-
-    expect(screen.queryByLabelText('当前 Team Agent')).not.toBeInTheDocument()
-    expect(within(rail).queryByRole('button', { name: /Agent 栏/ })).not.toBeInTheDocument()
-    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'hidden')
-  })
-
   it('跟随系统暗色时首次点击立即切换到浅色', async () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'dark', '/', ['zhouce'], {
+    renderShell('dark', '/', {
       uiPreferences: { ...initialState.uiPreferences, theme: 'system' },
     })
 
@@ -393,81 +354,18 @@ describe('应用壳导航布局', () => {
     expect(JSON.parse(localStorage.getItem('bandi-ui-preferences-v1') ?? '{}').theme).toBe('light')
   })
 
-  it('可显式隐藏上下文栏且 Agent 深链不会重新显示', async () => {
-    createMatchMedia(1440)
-    const { container } = renderShell('hidden', 'light', '/agents/zhouce', ['songyan'])
-
-    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'hidden')
-    expect(screen.queryByLabelText('当前 Team Agent')).not.toBeInTheDocument()
-    await waitFor(() => expect(JSON.parse(localStorage.getItem('bandi-ui-preferences-v1') ?? '{}').mainMenuLayout).toBe('hidden'))
-  })
-
-  it('切换已有 Agent 只更新选中态，不改变列表排序', () => {
-    createMatchMedia(1440)
-    renderShell('expanded', 'light', '/agents/zhouce', ['songyan', 'zhouce'])
-
-    const links = within(screen.getByRole('navigation', { name: '当前 Team Agent' })).getAllByRole('link')
-    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
-      expect.stringMatching(/^周策/),
-      expect.stringMatching(/^知衡/),
-      expect.stringMatching(/^林序/),
-    ])
-    expect(links[0]).toHaveAttribute('aria-current', 'page')
-  })
-
-  it('Agent 项不显示左侧竖线，并可移除最近访问记录', () => {
-    createMatchMedia(1440)
-    const { container } = renderShell('expanded', 'light', '/', ['zhouce'])
-    const agentMenu = screen.getByRole('complementary', { name: '当前 Team Agent' })
-    const link = within(agentMenu).getByRole('link', { name: /周策/ })
-
-    expect(link.className).not.toContain('before:')
-    for (const button of within(agentMenu).getAllByRole('button', { name: /移除 .* 的最近访问记录/ })) fireEvent.click(button)
-    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'hidden')
-    expect(screen.queryByRole('complementary', { name: '当前 Team Agent' })).not.toBeInTheDocument()
-  })
-
-  it('当前 Team Agent 栏隔离其他 Team，最近访问只影响排序', () => {
-    createMatchMedia(1440)
-    const currentTeamId = initialState.currentTeamId
-    const otherTeamId = 'team-other'
-    const otherAgent = { ...initialState.agents[0], id: 'other-agent', name: '其他 Team Agent', teamId: otherTeamId }
-    renderShell('expanded', 'light', '/', [otherAgent.id, 'zhiheng', 'zhouce'], {
-      currentTeamId,
-      teams: [...initialState.teams, { ...initialState.teams[0], id: otherTeamId, name: '其他 Team' }],
-      agents: [...initialState.agents, otherAgent],
-    })
-
-    const links = within(screen.getByRole('navigation', { name: '当前 Team Agent' })).getAllByRole('link')
-    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
-      expect.stringMatching(/^知衡/),
-      expect.stringMatching(/^周策/),
-      expect.stringMatching(/^林序/),
-    ])
-    expect(screen.queryByRole('link', { name: /^其他 Team Agent/ })).not.toBeInTheDocument()
-  })
-
   it('窗口缩窄时收起一级菜单', async () => {
     const viewport = createMatchMedia(1440)
-    const { container } = renderShell('expanded')
+    const { container } = renderShell()
     expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'expanded')
 
     act(() => viewport.resize(390))
     await waitFor(() => expect(container.querySelector('[data-primary-menu-layout]')).toHaveAttribute('data-primary-menu-layout', 'compact'))
   })
 
-  it('跟随窗口调整当前 Team Agent栏宽度', async () => {
-    const viewport = createMatchMedia(1279)
-    const { container } = renderShell('follow-window', 'light', '/', ['zhouce'])
-    expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'compact')
-
-    act(() => viewport.resize(1280))
-    await waitFor(() => expect(container.querySelector('[data-main-menu-layout]')).toHaveAttribute('data-main-menu-layout', 'expanded'))
-  })
-
   it('AI 工具紧跟配置资产位于一级导航', () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/tasks', ['zhouce'])
+    renderShell('light', '/tasks')
 
     const navigation = within(screen.getByLabelText('Bandi 配置管理')).getByRole('navigation', { name: '一级导航' })
     const assetsLink = within(navigation).getByRole('link', { name: '配置资产' })
@@ -479,7 +377,7 @@ describe('应用壳导航布局', () => {
 
   it.each(['committed', 'restarting'] as const)('%s 时只显示重新打开终态', (status) => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/tasks', ['zhouce'], {
+    renderShell('light', '/tasks', {
       factoryReset: { status },
     })
 
@@ -491,7 +389,7 @@ describe('应用壳导航布局', () => {
 
   it('自动重新打开失败时只显示手动兜底和技术详情', () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/tasks', ['zhouce'], {
+    renderShell('light', '/tasks', {
       factoryReset: {
         status: 'manual-restart-required',
         technicalDetails: 'restart failed',
@@ -508,7 +406,7 @@ describe('应用壳导航布局', () => {
 
   it('旧开发数据库状态直达重置 Bandi 页签', async () => {
     createMatchMedia(1440)
-    renderShell('expanded', 'light', '/', [], {
+    renderShell('light', '/', {
       factoryReset: {
         status: 'legacy-database-required',
         technicalDetails: 'LEGACY_DATABASE_RESET_REQUIRED: old database',

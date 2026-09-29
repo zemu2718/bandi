@@ -123,6 +123,7 @@ pub(crate) fn create_at(
     revisions_root: &Path,
     request: CreateSharedAssetRequest,
     source: SharedAssetSourceDto,
+    imported_package: Option<&PackageSnapshot>,
 ) -> Result<SharedAssetMutationResult, String> {
     validate_request(
         &request.team_id,
@@ -167,12 +168,44 @@ pub(crate) fn create_at(
             false,
             "共享资产 manifest",
         )?;
-        restricted_atomic_write(
-            &staging.join(content_file(&request.kind).unwrap_or("CONTENT.md")),
-            content.as_bytes(),
-            false,
-            "共享资产正文",
-        )?;
+        if request.kind == "skill" {
+            if let Some(package) = imported_package {
+                for directory in package.directories() {
+                    let target = directory
+                        .split('/')
+                        .fold(staging.clone(), |path, part| path.join(part));
+                    fs::create_dir_all(target).map_err(|_| {
+                        "SHARED_ASSET_WRITE_FAILED: 无法创建 Skill 子目录".to_string()
+                    })?;
+                }
+                for file in &package.files {
+                    let target = file
+                        .path
+                        .split('/')
+                        .fold(staging.clone(), |path, part| path.join(part));
+                    if let Some(parent) = target.parent() {
+                        fs::create_dir_all(parent).map_err(|_| {
+                            "SHARED_ASSET_WRITE_FAILED: 无法创建 Skill 子目录".to_string()
+                        })?;
+                    }
+                    restricted_atomic_write(&target, &file.bytes, false, "Skill 包文件")?;
+                }
+            } else {
+                restricted_atomic_write(
+                    &staging.join("SKILL.md"),
+                    content.as_bytes(),
+                    false,
+                    "共享资产正文",
+                )?;
+            }
+        } else {
+            restricted_atomic_write(
+                &staging.join(content_file(&request.kind).unwrap_or("CONTENT.md")),
+                content.as_bytes(),
+                false,
+                "共享资产正文",
+            )?;
+        }
         fs::rename(&staging, &target)
             .map_err(|_| "SHARED_ASSET_WRITE_FAILED: 无法提交共享资产目录".to_string())
     })();
@@ -205,7 +238,10 @@ pub(crate) fn create_at(
         },
     );
     if node.parse_status != "parsed" {
-        return Err("SHARED_ASSET_VERIFY_FAILED: 写后重读验证失败".into());
+        fs::remove_dir_all(&target).map_err(|_| {
+            "SHARED_ASSET_VERIFY_FAILED: 写后重读失败且无法清理未登记资产".to_string()
+        })?;
+        return Err("SHARED_ASSET_VERIFY_FAILED: 写后重读验证失败，未保留未登记资产".into());
     }
     if domain_store::register_shared_asset_at(database, &request.team_id, &request.asset_id)
         .is_err()
@@ -275,6 +311,7 @@ pub(crate) fn load_editor_at(
         .ok_or_else(|| "SHARED_ASSET_CONTENT_MISSING".to_string())?;
     let canonical_content = fs::read_to_string(content_path)
         .map_err(|_| "SHARED_ASSET_CONTENT_UNREADABLE".to_string())?;
+    let package_files = package_snapshot(&package, &node.kind)?.files;
     let container_id = local_service::stable_id("container", &format!("shared:{}", node.id));
     let baseline_ref = BaselineRefDto {
         id: local_service::stable_id(
@@ -295,6 +332,7 @@ pub(crate) fn load_editor_at(
         request_id: request.request_id,
         asset: node,
         canonical_content,
+        package_files,
         baseline_ref,
         current_revision_id,
     })
@@ -307,6 +345,96 @@ fn side(content: String, manifest_bytes: &[u8]) -> ConfigSideDto {
         content,
         redacted: false,
     }
+}
+
+fn proposed_skill_package(
+    files: Option<Vec<PackageFile>>,
+    current_files: &[PackageFile],
+    entrypoint: &str,
+) -> Result<PackageSnapshot, String> {
+    let files = files.unwrap_or_else(|| {
+        let mut files = current_files.to_vec();
+        if let Some(current) = files.iter_mut().find(|file| file.path == "SKILL.md") {
+            current.bytes = entrypoint.as_bytes().to_vec();
+        } else {
+            files.push(PackageFile::text("SKILL.md", entrypoint));
+        }
+        files
+    });
+    let snapshot = asset_package::from_files(files, SKILL_LIMITS)?;
+    if snapshot
+        .files
+        .iter()
+        .find(|file| file.path == "SKILL.md")
+        .map(PackageFile::utf8)
+        .transpose()?
+        != Some(entrypoint)
+    {
+        return Err("SHARED_ASSET_PACKAGE_INVALID: SKILL.md 与 proposedContent 不一致".into());
+    }
+    Ok(snapshot)
+}
+
+fn replace_skill_package(
+    root: &Path,
+    asset_id: &str,
+    manifest: &[u8],
+    package: &PackageSnapshot,
+) -> Result<(), String> {
+    let target = root.join(asset_id);
+    let staging = root.join(format!(".bandi-staging-{asset_id}-update"));
+    let backup = root.join(format!(".bandi-staging-{asset_id}-backup"));
+    if staging.exists() || backup.exists() {
+        return Err("SHARED_ASSET_STAGING_CONFLICT: Skill 更新暂存目录已存在".into());
+    }
+    fs::create_dir(&staging)
+        .map_err(|_| "SHARED_ASSET_WRITE_FAILED: 无法创建 Skill 暂存目录".to_string())?;
+    let prepared = (|| {
+        restricted_atomic_write(
+            &staging.join("asset.yaml"),
+            manifest,
+            false,
+            "共享资产 manifest",
+        )?;
+        for directory in package.directories() {
+            let path = directory
+                .split('/')
+                .fold(staging.clone(), |path, part| path.join(part));
+            fs::create_dir_all(path)
+                .map_err(|_| "SHARED_ASSET_WRITE_FAILED: 无法创建 Skill 子目录".to_string())?;
+        }
+        for file in &package.files {
+            let path = file
+                .path
+                .split('/')
+                .fold(staging.clone(), |path, part| path.join(part));
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|_| "SHARED_ASSET_WRITE_FAILED: 无法创建 Skill 子目录".to_string())?;
+            }
+            restricted_atomic_write(&path, &file.bytes, false, "Skill 包文件")?;
+        }
+        let verified = package_snapshot(&staging, "skill")?;
+        if verified.fingerprint != package.fingerprint {
+            return Err("SHARED_ASSET_VERIFY_FAILED: Skill 包暂存验证失败".into());
+        }
+        Ok(())
+    })();
+    if let Err(error) = prepared {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    fs::rename(&target, &backup)
+        .map_err(|_| "SHARED_ASSET_WRITE_FAILED: 无法隔离原 Skill 包".to_string())?;
+    if fs::rename(&staging, &target).is_err() {
+        let _ = fs::rename(&backup, &target);
+        let _ = fs::remove_dir_all(&staging);
+        return Err("SHARED_ASSET_WRITE_FAILED: 无法提交 Skill 包".into());
+    }
+    if fs::remove_dir_all(&backup).is_err() {
+        return Err("SHARED_ASSET_RECOVERY_REQUIRED: Skill 已写入，但旧包清理失败".into());
+    }
+    Ok(())
 }
 
 pub(crate) fn save_at(
@@ -329,6 +457,18 @@ pub(crate) fn save_at(
     let manifest_bytes =
         fs::read(&manifest_path).map_err(|_| "SHARED_ASSET_MANIFEST_UNREADABLE".to_string())?;
     let proposed = validate_content(&loaded.asset.kind, &request.proposed_content)?;
+    if loaded.asset.kind != "skill" && request.package_files.is_some() {
+        return Err("SHARED_ASSET_PACKAGE_INVALID: 只有 Skill 支持目录包编辑".into());
+    }
+    let proposed_package = if loaded.asset.kind == "skill" {
+        Some(proposed_skill_package(
+            request.package_files.clone(),
+            &loaded.package_files,
+            &proposed,
+        )?)
+    } else {
+        None
+    };
     if loaded.baseline_ref.asset_id != request.expected_baseline.asset_id
         || loaded.baseline_ref.container_id != request.expected_baseline.container_id
     {
@@ -357,7 +497,10 @@ pub(crate) fn save_at(
             )],
         });
     }
-    if proposed == loaded.canonical_content {
+    let package_unchanged = proposed_package
+        .as_ref()
+        .is_none_or(|package| package.fingerprint == loaded.asset.container_content_hash);
+    if proposed == loaded.canonical_content && package_unchanged {
         return Ok(SharedAssetMutationResult::Unchanged {
             request_id: request.request_id,
             asset: loaded.asset,
@@ -413,9 +556,13 @@ pub(crate) fn save_at(
         fs::read(&content_path).map_err(|_| "SHARED_ASSET_CONTENT_UNREADABLE".to_string())?;
     let current_manifest =
         fs::read(&manifest_path).map_err(|_| "SHARED_ASSET_MANIFEST_UNREADABLE".to_string())?;
+    let current_container_hash = if loaded.asset.kind == "skill" {
+        package_snapshot(&root.join(&request.asset_id), "skill")?.fingerprint
+    } else {
+        container_hash(&current_manifest, &current_content)
+    };
     if hash(&current_content) != request.expected_baseline.asset_content_hash
-        || container_hash(&current_manifest, &current_content)
-            != request.expected_baseline.container_content_hash
+        || current_container_hash != request.expected_baseline.container_content_hash
     {
         return Ok(SharedAssetMutationResult::BaselineChanged {
             request_id: request.request_id,
@@ -436,15 +583,25 @@ pub(crate) fn save_at(
             )],
         });
     }
-    restricted_atomic_write(&content_path, proposed.as_bytes(), true, "共享资产正文")?;
-    let verified =
-        fs::read_to_string(&content_path).map_err(|_| "SHARED_ASSET_VERIFY_FAILED".to_string())?;
+    if let Some(package) = proposed_package.as_ref() {
+        replace_skill_package(root, &request.asset_id, &manifest_bytes, package)?;
+    } else {
+        restricted_atomic_write(&content_path, proposed.as_bytes(), true, "共享资产正文")?;
+    }
+    let verified = fs::read_to_string(
+        root.join(&request.asset_id)
+            .join(content_file(&loaded.asset.kind).unwrap_or("CONTENT.md")),
+    )
+    .map_err(|_| "SHARED_ASSET_VERIFY_FAILED".to_string())?;
     if verified != proposed {
         return Err("SHARED_ASSET_VERIFY_FAILED: 写后正文不一致".into());
     }
     let mut node = loaded.asset;
     node.content_hash = hash(verified.as_bytes());
-    node.container_content_hash = container_hash(&manifest_bytes, verified.as_bytes());
+    node.container_content_hash = proposed_package.as_ref().map_or_else(
+        || container_hash(&manifest_bytes, verified.as_bytes()),
+        |package| package.fingerprint.clone(),
+    );
     let saved_at = Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true);
     let (revision, receipt) = revision_for(
         &node,

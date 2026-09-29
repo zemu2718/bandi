@@ -1,7 +1,7 @@
 import { createContext, useContext, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { Copy, Info } from 'lucide-react'
+import { Copy } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib'
 import { useApp } from '../../state'
@@ -58,7 +58,7 @@ export function EntityTabPanel({ tabId, activeTab, children, scope = 'detail', c
 }
 
 export function MockBoundaryNote({ children = '所有业务更改仅在当前页面有效；不会访问本机、执行命令或写入文件。' }: { children?: ReactNode }) {
-  return <div className="flex gap-3 rounded-lg border border-border bg-muted/45 p-4 text-sm leading-6 text-muted-foreground"><Info size={18} aria-hidden="true" className="mt-0.5 shrink-0" /><div>{children}</div></div>
+  return <p className="text-xs leading-5 text-muted-foreground">{children}</p>
 }
 
 export function EmptyState({ title, description, action, className }: { title: string; description?: string; action?: ReactNode; className?: string }) {

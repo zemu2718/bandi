@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     fs,
+    io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Mutex, MutexGuard, OnceLock},
@@ -14,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ai_adapters::BuiltInClientId, local_service};
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum InstallSource {
     Npm,
@@ -25,7 +26,7 @@ pub(crate) enum InstallSource {
     NotApplicable,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum VersionState {
     NotApplicable,
@@ -48,6 +49,12 @@ pub(crate) struct VersionFacts {
     pub(crate) detection_failed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LatestSource {
+    NpmDistTags,
+    GitHubRelease,
+}
+
 #[cfg_attr(test, allow(dead_code))]
 #[derive(Clone, Copy)]
 struct VersionTarget {
@@ -57,6 +64,7 @@ struct VersionTarget {
     npm_package: Option<&'static str>,
     brew_package: Option<&'static str>,
     github_repo: Option<&'static str>,
+    latest_source: Option<LatestSource>,
     native_upgrade_args: Option<&'static [&'static str]>,
 }
 
@@ -68,6 +76,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: Some("@anthropic-ai/claude-code"),
         brew_package: Some("claude-code"),
         github_repo: Some("anthropics/claude-code"),
+        latest_source: Some(LatestSource::NpmDistTags),
         native_upgrade_args: Some(&["update"]),
     },
     VersionTarget {
@@ -77,6 +86,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: None,
         brew_package: None,
         github_repo: None,
+        latest_source: None,
         native_upgrade_args: None,
     },
     VersionTarget {
@@ -86,6 +96,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: Some("@openai/codex"),
         brew_package: Some("codex"),
         github_repo: Some("openai/codex"),
+        latest_source: Some(LatestSource::NpmDistTags),
         native_upgrade_args: None,
     },
     VersionTarget {
@@ -95,6 +106,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: Some("@google/gemini-cli"),
         brew_package: Some("gemini-cli"),
         github_repo: Some("google-gemini/gemini-cli"),
+        latest_source: Some(LatestSource::NpmDistTags),
         native_upgrade_args: None,
     },
     VersionTarget {
@@ -104,6 +116,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: None,
         brew_package: None,
         github_repo: None,
+        latest_source: None,
         native_upgrade_args: None,
     },
     VersionTarget {
@@ -113,6 +126,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: Some("opencode-ai"),
         brew_package: Some("opencode"),
         github_repo: Some("anomalyco/opencode"),
+        latest_source: Some(LatestSource::NpmDistTags),
         native_upgrade_args: Some(&["upgrade"]),
     },
     VersionTarget {
@@ -122,7 +136,8 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: Some("openclaw"),
         brew_package: Some("openclaw"),
         github_repo: Some("openclaw/openclaw"),
-        native_upgrade_args: Some(&["update"]),
+        latest_source: Some(LatestSource::NpmDistTags),
+        native_upgrade_args: Some(&["update", "--yes"]),
     },
     VersionTarget {
         tool_id: BuiltInClientId::Hermes,
@@ -131,6 +146,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: None,
         brew_package: None,
         github_repo: Some("NousResearch/hermes-agent"),
+        latest_source: Some(LatestSource::GitHubRelease),
         native_upgrade_args: None,
     },
     VersionTarget {
@@ -140,6 +156,7 @@ const TARGETS: [VersionTarget; 9] = [
         npm_package: Some("@mariozechner/pi-coding-agent"),
         brew_package: None,
         github_repo: Some("badlogic/pi-mono"),
+        latest_source: Some(LatestSource::NpmDistTags),
         native_upgrade_args: None,
     },
 ];
@@ -215,6 +232,7 @@ fn manager_dirs(home: &Path) -> Vec<PathBuf> {
         ".nvm/current/bin",
         ".bun/bin",
         ".opencode/bin",
+        ".openclaw/bin",
         "Library/pnpm",
     ]
     .into_iter()
@@ -296,7 +314,7 @@ fn executable_installations(
     {
         match fs::canonicalize(&candidate) {
             Ok(canonical) if canonical.is_file() && seen.insert(canonical.clone()) => {
-                let version = run_version(&canonical)
+                let version = run_version(&candidate)
                     .ok()
                     .and_then(|value| extract_version(&value));
                 installations.push(Installation {
@@ -350,34 +368,70 @@ fn app_installations(home: &Path, app_name: &str) -> (Vec<Installation>, bool) {
 }
 
 fn run_version(path: &Path) -> Result<String, String> {
-    let output = Command::new(path)
+    run_version_with_timeout(path, StdDuration::from_secs(2))
+}
+
+fn run_version_with_timeout(path: &Path, timeout: StdDuration) -> Result<String, String> {
+    let command_path = std::env::join_paths(path.parent().into_iter().chain([
+        Path::new("/opt/homebrew/bin"),
+        Path::new("/usr/local/bin"),
+        Path::new("/usr/bin"),
+    ]))
+    .map_err(|_| "VERSION_COMMAND_FAILED".to_string())?;
+    let mut child = Command::new(path)
         .arg("--version")
-        .output()
+        .env("PATH", command_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|_| "VERSION_COMMAND_FAILED".to_string())?;
-    if !output.status.success() || output.stdout.len() + output.stderr.len() > 4096 {
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(StdDuration::from_millis(10)),
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("VERSION_COMMAND_FAILED".into());
+            }
+        }
+    };
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    child
+        .stdout
+        .take()
+        .ok_or("VERSION_COMMAND_FAILED")?
+        .take(4097)
+        .read_to_end(&mut stdout)
+        .map_err(|_| "VERSION_COMMAND_FAILED")?;
+    child
+        .stderr
+        .take()
+        .ok_or("VERSION_COMMAND_FAILED")?
+        .take(4097)
+        .read_to_end(&mut stderr)
+        .map_err(|_| "VERSION_COMMAND_FAILED")?;
+    if !status.success() || stdout.len() + stderr.len() > 4096 {
         return Err("VERSION_COMMAND_FAILED".into());
     }
-    String::from_utf8(if output.stdout.is_empty() {
-        output.stderr
-    } else {
-        output.stdout
-    })
-    .map_err(|_| "VERSION_OUTPUT_INVALID".into())
+    String::from_utf8(if stdout.is_empty() { stderr } else { stdout })
+        .map_err(|_| "VERSION_OUTPUT_INVALID".into())
 }
 
 #[cfg_attr(test, allow(dead_code))]
-fn latest_version(item: &VersionTarget, source: InstallSource) -> Option<String> {
-    let url = match source {
-        InstallSource::Npm => format!("https://registry.npmjs.org/{}/latest", item.npm_package?),
-        InstallSource::Homebrew => format!(
-            "https://formulae.brew.sh/api/formula/{}.json",
-            item.brew_package?
+fn latest_version(item: &VersionTarget) -> Option<String> {
+    let url = match item.latest_source? {
+        LatestSource::NpmDistTags => format!(
+            "https://registry.npmjs.org/-/package/{}/dist-tags",
+            item.npm_package?
         ),
-        InstallSource::Native => format!(
+        LatestSource::GitHubRelease => format!(
             "https://api.github.com/repos/{}/releases/latest",
             item.github_repo?
         ),
-        _ => return None,
     };
     let output = Command::new("/usr/bin/curl")
         .args([
@@ -399,11 +453,9 @@ fn latest_version(item: &VersionTarget, source: InstallSource) -> Option<String>
         return None;
     }
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    let raw = match source {
-        InstallSource::Npm => value.get("version")?.as_str()?,
-        InstallSource::Homebrew => value.pointer("/versions/stable")?.as_str()?,
-        InstallSource::Native => value.get("tag_name")?.as_str()?,
-        _ => return None,
+    let raw = match item.latest_source? {
+        LatestSource::NpmDistTags => value.pointer("/dist-tags/latest")?.as_str()?,
+        LatestSource::GitHubRelease => value.get("tag_name")?.as_str()?,
     };
     extract_version(raw)
 }
@@ -509,7 +561,7 @@ pub(crate) fn inspect(tool_id: BuiltInClientId, home: &Path) -> VersionFacts {
         home,
         std::env::var_os("PATH"),
         &mut run_version,
-        &mut |item, source| latest_version(item, source),
+        &mut latest_version,
     )
 }
 
@@ -520,7 +572,7 @@ pub(crate) fn inspect(tool_id: BuiltInClientId, home: &Path) -> VersionFacts {
         home,
         None,
         &mut |_| Err("VERSION_COMMAND_DISABLED_IN_TEST".into()),
-        &mut |_, _| None,
+        &mut |_| None,
     )
 }
 
@@ -529,7 +581,7 @@ fn inspect_with(
     home: &Path,
     path: Option<OsString>,
     run: &mut impl FnMut(&Path) -> Result<String, String>,
-    latest: &mut impl FnMut(&VersionTarget, InstallSource) -> Option<String>,
+    latest: &mut impl FnMut(&VersionTarget) -> Option<String>,
 ) -> VersionFacts {
     let item = target(tool_id);
     let (installations, failed) = if let Some(executable) = item.executable {
@@ -539,9 +591,7 @@ fn inspect_with(
     } else {
         (Vec::new(), false)
     };
-    let remote = installations
-        .first()
-        .and_then(|installation| latest(item, installation.source));
+    let remote = installations.first().and_then(|_| latest(item));
     facts_from(item, &installations, failed, remote)
 }
 
@@ -830,7 +880,29 @@ pub(crate) fn commit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::symlink;
+    use std::os::unix::fs::{symlink, PermissionsExt};
+
+    #[test]
+    fn openclaw_uses_npm_latest_without_changing_native_upgrade() {
+        let item = target(BuiltInClientId::Openclaw);
+        assert_eq!(item.latest_source, Some(LatestSource::NpmDistTags));
+        assert_eq!(item.native_upgrade_args, Some(&["update", "--yes"][..]));
+    }
+
+    #[test]
+    fn version_command_times_out() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("slow-version");
+        fs::write(&executable, "#!/bin/sh\nwhile :; do :; done\n").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let started = Instant::now();
+
+        assert_eq!(
+            run_version_with_timeout(&executable, StdDuration::from_millis(20)),
+            Err("VERSION_COMMAND_FAILED".into())
+        );
+        assert!(started.elapsed() < StdDuration::from_millis(500));
+    }
 
     #[test]
     fn includes_only_fixed_native_and_version_manager_bins() {
@@ -840,8 +912,15 @@ mod tests {
             .path()
             .join(".local/share/fnm/node-versions/v22.1.0/installation/bin");
         let opencode_bin = home.path().join(".opencode/bin");
+        let openclaw_bin = home.path().join(".openclaw/bin");
         let unrelated_bin = home.path().join("custom/bin");
-        for path in [&nvm_bin, &fnm_bin, &opencode_bin, &unrelated_bin] {
+        for path in [
+            &nvm_bin,
+            &fnm_bin,
+            &opencode_bin,
+            &openclaw_bin,
+            &unrelated_bin,
+        ] {
             fs::create_dir_all(path).unwrap();
         }
 
@@ -853,6 +932,7 @@ mod tests {
         assert!(dirs.contains(&nvm_bin));
         assert!(dirs.contains(&fnm_bin));
         assert!(dirs.contains(&opencode_bin));
+        assert!(dirs.contains(&openclaw_bin));
         assert!(!dirs.contains(&unrelated_bin));
     }
 
@@ -877,6 +957,23 @@ mod tests {
         assert_eq!(opencode_installations.len(), 1);
         assert_eq!(opencode_installations[0].version.as_deref(), Some("1.1.34"));
         assert_eq!(opencode_installations[0].source, InstallSource::Native);
+    }
+
+    #[test]
+    fn discovers_openclaw_under_fixed_native_bin() {
+        let home = tempfile::tempdir().unwrap();
+        let openclaw = home.path().join(".openclaw/bin/openclaw");
+        fs::create_dir_all(openclaw.parent().unwrap()).unwrap();
+        fs::write(&openclaw, "isolated openclaw").unwrap();
+
+        let (installations, _) =
+            executable_installations(home.path(), None, "openclaw", &mut |_| {
+                Ok("OpenClaw 2026.7.1".into())
+            });
+
+        assert_eq!(installations.len(), 1);
+        assert_eq!(installations[0].version.as_deref(), Some("2026.7.1"));
+        assert_eq!(installations[0].source, InstallSource::Native);
     }
 
     #[test]

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
+    asset_package::{self, PackageFile, PackageSnapshot, SKILL_LIMITS},
     config_fs::{ensure_regular_directory, ensure_regular_file, restricted_atomic_write},
     domain_store::{self, LongTermDomainSnapshotDtoV4},
     local_service::{
@@ -124,6 +125,7 @@ pub(crate) struct SharedAssetImportPreviewDto {
     pub(crate) file_name: String,
     pub(crate) kind: String,
     pub(crate) size: usize,
+    pub(crate) file_count: usize,
     pub(crate) source_hash: String,
     pub(crate) suggested_name: String,
     pub(crate) suggested_id: String,
@@ -156,6 +158,7 @@ pub(crate) struct SharedAssetEditorDto {
     pub(crate) request_id: String,
     pub(crate) asset: SharedAssetNodeDto,
     pub(crate) canonical_content: String,
+    pub(crate) package_files: Vec<PackageFile>,
     pub(crate) baseline_ref: BaselineRefDto,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) current_revision_id: Option<String>,
@@ -169,6 +172,8 @@ pub(crate) struct SaveSharedAssetRequest {
     pub(crate) expected_baseline: BaselineRefDto,
     pub(crate) base_content: String,
     pub(crate) proposed_content: String,
+    #[serde(default)]
+    pub(crate) package_files: Option<Vec<PackageFile>>,
     #[serde(default)]
     pub(crate) confirmation_ref: Option<String>,
 }
@@ -283,6 +288,21 @@ fn container_hash(manifest: &[u8], content: &[u8]) -> String {
     digest.update([0]);
     digest.update(content);
     format!("sha256:{:x}", digest.finalize())
+}
+
+fn package_snapshot(package: &Path, kind: &str) -> Result<PackageSnapshot, String> {
+    if kind == "skill" {
+        return asset_package::read_managed_directory(package, SKILL_LIMITS, "asset.yaml");
+    }
+    let content = fs::read_to_string(package.join(content_file(kind).unwrap_or("CONTENT.md")))
+        .map_err(|_| "SHARED_ASSET_CONTENT_UNREADABLE".to_string())?;
+    asset_package::from_files(
+        vec![PackageFile::text(
+            content_file(kind).unwrap_or("CONTENT.md"),
+            content,
+        )],
+        SKILL_LIMITS,
+    )
 }
 
 fn content_file(kind: &str) -> Option<&'static str> {
@@ -578,8 +598,31 @@ fn discover_package(
         .unwrap_or(&content_path)
         .to_string_lossy()
         .into_owned();
+    let package_fingerprint = match package_snapshot(package, &manifest.kind) {
+        Ok(snapshot) => snapshot.fingerprint,
+        Err(_) => {
+            return invalid_node(
+                manifest.id,
+                manifest.kind,
+                manifest.team_id,
+                relative_manifest,
+                diagnostic(
+                    "shared_asset_package_rejected",
+                    "error",
+                    "共享资产包包含不安全或超限内容",
+                    None,
+                    Some("移除链接、特殊文件或超限内容"),
+                ),
+            )
+        }
+    };
     let writable =
         !fs::metadata(&content_path).is_ok_and(|metadata| metadata.permissions().readonly());
+    let package_container_hash = if manifest.kind == "skill" {
+        package_fingerprint
+    } else {
+        container_hash(&manifest_bytes, &bytes)
+    };
     SharedAssetNodeDto {
         id: manifest.id,
         name: manifest.name,
@@ -591,7 +634,7 @@ fn discover_package(
             relative_path: Some(relative_content),
         },
         content_hash: hash(&bytes),
-        container_content_hash: container_hash(&manifest_bytes, &bytes),
+        container_content_hash: package_container_hash,
         writable,
         source: manifest.source,
         current_revision_id: None,

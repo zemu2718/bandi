@@ -6,6 +6,7 @@ import { appDataPath, sandboxHome } from '../helpers/paths.js'
 
 type JsonRecord = Record<string, unknown>
 type ToolHostStatus = { toolId: string; availability: string }
+type ToolHostSnapshot = { statuses: ToolHostStatus[] }
 type ResetPreview = {
   requestId: string
   previewRef: string
@@ -24,7 +25,7 @@ const preservedExternalFile = path.join(externalSentinelDirectory, 'factory-rese
 const preservedClaudeFile = path.join(sandboxHome, '.claude', 'factory-reset-preserved.txt')
 
 async function reviewToolsAndGuide() {
-  const statuses = await invoke<ToolHostStatus[]>('list_ai_tool_host_statuses')
+  const { statuses } = await invoke<ToolHostSnapshot>('list_ai_tool_host_statuses', { request: { forceRefresh: false } })
   expect(statuses).toHaveLength(9)
   expect(new Set(statuses.map((item) => item.toolId)).size).toBe(9)
 
@@ -32,19 +33,20 @@ async function reviewToolsAndGuide() {
   await expect(browser.$('h1=AI 工具')).toBeDisplayed()
   const guideButton = await browser.$('button[aria-label="使用指南"]')
   await guideButton.click()
-  await expect(browser.$('h2=整理需求并在外部工具中继续')).toBeDisplayed()
-  await browser.$('button=保存与恢复').click()
-  await expect(browser.$('h2=处理保存、备份与恢复')).toBeDisplayed()
-  await browser.waitUntil(
-    async () => (await browser.$('[role="dialog"]').getText()).includes('不会修改配置、首次使用状态或本机数据'),
-    { timeoutMsg: '使用指南未显示无损说明' },
-  )
+  await expect(browser.$('h2=把长期上下文带到 AI 工具')).toBeDisplayed()
+  await expect(browser.$('[role="dialog"]*=任务执行、权限、日志和验收都在所选工具中完成')).toBeDisplayed()
+  await browser.$('button=开始使用').click()
+  await expect(browser.$('h2=从一个 Agent 开始')).toBeDisplayed()
+  await expect(browser.$('button=新建 Agent')).toBeDisplayed()
+  await expect(browser.$('button=导入已有 Agent')).toBeDisplayed()
+  await browser.$('button=备份与恢复').click()
+  await expect(browser.$('h2=安全保存和恢复配置')).toBeDisplayed()
   await browser.$('button=查看备份与恢复').click()
   await expect(browser.$('h1=设置')).toBeDisplayed()
 }
 
 async function verifyPersistenceAndReset() {
-  const statuses = await invoke<ToolHostStatus[]>('list_ai_tool_host_statuses')
+  const { statuses } = await invoke<ToolHostSnapshot>('list_ai_tool_host_statuses', { request: { forceRefresh: false } })
   expect(statuses).toHaveLength(9)
 
   await fs.writeFile(preservedExternalFile, 'external file preserved')
@@ -75,8 +77,9 @@ async function verifyPersistenceAndReset() {
 async function verifyFreshStateAfterReset() {
   await browser.execute(() => localStorage.removeItem('bandi-ui-preferences-v1'))
   await browser.refresh()
-  await expect(browser.$('h1=建立你的长期 Agent Team')).toBeDisplayed()
-  expect(await invoke<ToolHostStatus[]>('list_ai_tool_host_statuses')).toHaveLength(9)
+  await expect(browser.$('h1=创建你的第一个长期 Agent')).toBeDisplayed()
+  const { statuses } = await invoke<ToolHostSnapshot>('list_ai_tool_host_statuses', { request: { forceRefresh: false } })
+  expect(statuses).toHaveLength(9)
   await expect(fs.readFile(preservedExternalFile, 'utf8')).resolves.toBe('external file preserved')
   await expect(fs.readFile(preservedClaudeFile, 'utf8')).resolves.toBe('claude preserved')
 }

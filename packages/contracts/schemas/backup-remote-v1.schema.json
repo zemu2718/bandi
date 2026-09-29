@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bandi.local/contracts/backup-remote-v1.schema.json",
+  "title": "Bandi Remote Backup v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["overview", "history", "uploadResult"],
+  "properties": { "overview": { "$ref": "#/$defs/overview" }, "history": { "type": "array", "items": { "$ref": "#/$defs/history" } }, "uploadResult": { "$ref": "#/$defs/upload" } },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._-]+$" },
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "time": { "type": "string", "format": "date-time" },
+    "repo": { "type": "object", "additionalProperties": false, "required": ["owner", "name", "repositoryId"], "properties": { "owner": { "type": "string", "minLength": 1, "maxLength": 100 }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "repositoryId": { "type": "integer", "minimum": 1 } } },
+    "overview": { "type": "object", "additionalProperties": false, "required": ["github", "repository", "automaticBackupEnabled", "includeMemory"], "properties": { "github": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "enum": ["connected", "disconnected", "unavailable"] }, "login": { "type": "string", "minLength": 1 }, "reason": { "type": "string", "minLength": 1 } } }, "repository": { "anyOf": [{ "$ref": "#/$defs/repo" }, { "type": "null" }] }, "automaticBackupEnabled": { "type": "boolean" }, "includeMemory": { "type": "boolean" }, "lastSuccessfulBackupAt": { "$ref": "#/$defs/time" }, "capabilities": { "type": "object", "additionalProperties": false, "required": ["portableRestore"], "properties": { "portableRestore": { "type": "boolean" } } } } },
+    "summary": { "type": "object", "required": ["snapshotId", "createdAt", "includeMemory", "entryCount", "totalBytes", "manifestHash"], "properties": { "snapshotId": { "$ref": "#/$defs/id" }, "createdAt": { "$ref": "#/$defs/time" }, "includeMemory": { "type": "boolean" }, "entryCount": { "type": "integer", "minimum": 1 }, "totalBytes": { "type": "integer", "minimum": 0 }, "manifestHash": { "$ref": "#/$defs/hash" } } },
+    "history": { "allOf": [{ "$ref": "#/$defs/summary" }, { "type": "object", "required": ["status"], "properties": { "status": { "enum": ["uploaded", "pending_upload", "failed"] }, "commitOid": { "type": "string", "pattern": "^[0-9a-f]{40}$" }, "failure": { "type": "object" }, "uploadedAt": { "$ref": "#/$defs/time" } } }] },
+    "upload": { "type": "object", "additionalProperties": false, "required": ["snapshotId", "commitOid", "uploadedAt"], "properties": { "snapshotId": { "$ref": "#/$defs/id" }, "commitOid": { "type": "string", "pattern": "^[0-9a-f]{40}$" }, "uploadedAt": { "$ref": "#/$defs/time" } } }
+  }
+}

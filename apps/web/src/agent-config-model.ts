@@ -1,6 +1,6 @@
 import { AGENT_PACKAGE_SCHEMA_VERSION } from './agent-package-schema'
 import { isParameterBinding, type ParameterBinding } from './component-parameters'
-import { agentFunctionLabels, type AgentFile, type ContextPolicy, type EvidenceKind, type FullAgent } from './domain'
+import { normalizeAgentFunction, validateAgentFunction, type AgentFile, type ContextPolicy, type EvidenceKind, type FullAgent } from './domain'
 
 export type AgentIdentityConfig = Pick<
   FullAgent,
@@ -246,7 +246,8 @@ export function applyAgentConfig(agent: FullAgent, payload: AgentConfigPayload):
     case 'identity': return payload.value.id !== agent.id
       || payload.value.schemaVersion !== AGENT_PACKAGE_SCHEMA_VERSION
       || validateAgentName(payload.value.name)
-      || (payload.value.functionId !== undefined && !(payload.value.functionId in agentFunctionLabels))
+      || validateAgentFunction(payload.value.functionId)
+      || payload.value.functionId !== normalizeAgentFunction(payload.value.functionId)
       ? undefined
       : { ...agent, ...payload.value, name: normalizeAgentName(payload.value.name) }
     case 'instructions': return { ...agent, instructions: payload.value }
@@ -367,7 +368,9 @@ export function isAgentConfigPayload(value: unknown): value is AgentConfigPayloa
     return payloadValue.schemaVersion === AGENT_PACKAGE_SCHEMA_VERSION
       && ['id', 'name', 'mission', 'teamId'].every((key) => typeof payloadValue[key] === 'string')
       && (payloadValue.functionId === undefined
-        || (typeof payloadValue.functionId === 'string' && payloadValue.functionId in agentFunctionLabels))
+        || (typeof payloadValue.functionId === 'string'
+          && !validateAgentFunction(payloadValue.functionId)
+          && payloadValue.functionId === normalizeAgentFunction(payloadValue.functionId)))
       && isSafePathSegment(String(payloadValue.teamId))
       && !validateAgentName(String(payloadValue.name))
       && ['active', 'inactive', 'archived'].includes(String(payloadValue.status))

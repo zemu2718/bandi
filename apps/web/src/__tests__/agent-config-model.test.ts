@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyAgentConfig, getAgentConfigPath, isAgentConfigPayload, normalizeAgentName, parseAgentComponentRefs, parseAgentContextConfig, parseAgentMcpRefs, parseAgentPermissions, parseAgentRuleRefs, parseAgentSkillRefs, parseAgentSopRefs, serializeAgentConfig, snapshotAgentConfig, validateAgentName, validateContextPolicy, validateContextWindowTokens } from '../agent-config-model'
-import { initialAgents } from '../domain'
+import { agentFunctionLabel, initialAgents, normalizeAgentFunction, validateAgentFunction } from '../domain'
 
 const agent = initialAgents.find((item) => item.id === 'zhouce')!
 
@@ -16,13 +16,20 @@ describe('Agent 配置模型', () => {
     expect(isAgentConfigPayload({ ...identity, value: { ...identity.value, name: '---' } })).toBe(false)
   })
 
-  it('保存已知职能并兼容旧身份数据', () => {
+  it('保存预设或自定义职能并兼容旧身份数据', () => {
     const payload = snapshotAgentConfig(agent, 'identity')
     if (payload.kind !== 'identity') throw new Error('身份快照类型错误')
     expect(payload.value.functionId).toBe('engineering')
     expect(serializeAgentConfig(agent, payload)).toContain('functionId: "engineering"')
     expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: undefined } })).toBe(true)
-    expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: 'unknown' } })).toBe(false)
+    expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: '开发者体验' } })).toBe(true)
+    expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: ' 开发者体验 ' } })).toBe(false)
+    expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: 'A'.repeat(41) } })).toBe(false)
+    expect(isAgentConfigPayload({ ...payload, value: { ...payload.value, functionId: '安全\n审计' } })).toBe(false)
+    expect(normalizeAgentFunction(' 研发 ')).toBe('engineering')
+    expect(normalizeAgentFunction(' 开发者体验 ')).toBe('开发者体验')
+    expect(validateAgentFunction('A'.repeat(41))).toBeDefined()
+    expect(agentFunctionLabel('开发者体验')).toBe('开发者体验')
   })
 
   it('把普通配置映射到唯一规范路径', () => {
